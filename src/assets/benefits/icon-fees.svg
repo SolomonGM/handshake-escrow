@@ -1,0 +1,16 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="feesGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    <stop offset="100%" style="stop-color:#6D28D9;stop-opacity:1" />
+  </linearGradient>
+</defs>
+<rect width="48" height="48" rx="12" fill="url(#feesGradient)"/>
+<!-- Receipt/Document -->
+<path d="M17 14C16.4477 14 16 14.4477 16 15V33C16 33.5523 16.4477 34 17 34H31C31.5523 34 32 33.5523 32 33V15C32 14.4477 31.5523 14 31 14H17Z" stroke="white" stroke-width="2" fill="none"/>
+<!-- Lines on receipt -->
+<path d="M20 19H28M20 23H28M20 27H25" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+<!-- Pass/Ticket icon overlay -->
+<circle cx="33" cy="31" r="6" fill="#10B981"/>
+<path d="M31 31L32.5 32.5L35 30" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

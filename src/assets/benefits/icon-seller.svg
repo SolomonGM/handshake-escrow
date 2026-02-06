@@ -1,0 +1,15 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="sellerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" style="stop-color:#F59E0B;stop-opacity:1" />
+    <stop offset="100%" style="stop-color:#D97706;stop-opacity:1" />
+  </linearGradient>
+</defs>
+<rect width="48" height="48" rx="12" fill="url(#sellerGradient)"/>
+<!-- Document/Guide icon -->
+<rect x="14" y="11" width="20" height="26" rx="2" fill="white"/>
+<path d="M18 17H30M18 21H30M18 25H26" stroke="#D97706" stroke-width="2" stroke-linecap="round"/>
+<!-- Play button overlay -->
+<circle cx="24" cy="30" r="6" fill="#F59E0B"/>
+<path d="M22 27L28 30L22 33V27Z" fill="white"/>
+</svg>

@@ -1,0 +1,20 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="buyerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+    <stop offset="100%" style="stop-color:#1D4ED8;stop-opacity:1" />
+  </linearGradient>
+</defs>
+<rect width="48" height="48" rx="12" fill="url(#buyerGradient)"/>
+<!-- Shopping cart -->
+<path d="M18 16L20 18L22 32H32L34 18L22 18" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<circle cx="24" cy="35" r="1.5" fill="white"/>
+<circle cx="30" cy="35" r="1.5" fill="white"/>
+<!-- Checkmark badge -->
+<circle cx="32" cy="20" r="5" fill="#10B981"/>
+<path d="M30 20L31.5 21.5L34 19" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- Guide lines -->
+<path d="M15 22H17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+<path d="M15 26H18" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+<path d="M15 30H17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

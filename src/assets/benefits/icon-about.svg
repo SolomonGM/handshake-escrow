@@ -1,0 +1,14 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" style="stop-color:#10B981;stop-opacity:1" />
+    <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+  </linearGradient>
+</defs>
+<rect width="48" height="48" rx="12" fill="url(#bgGradient)"/>
+<!-- Info/About Icon with stylized 'i' -->
+<circle cx="24" cy="24" r="12" stroke="white" stroke-width="2.5" fill="none"/>
+<circle cx="24" cy="17" r="2" fill="white"/>
+<path d="M24 22V32" stroke="white" stroke-width="3" stroke-linecap="round"/>
+<path d="M21 32H27" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

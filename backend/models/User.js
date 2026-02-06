@@ -1,0 +1,159 @@
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+
+const userSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    unique: true,
+    index: true
+  },
+  username: {
+    type: String,
+    required: [true, 'Username is required'],
+    unique: true,
+    trim: true,
+    minlength: [3, 'Username must be at least 3 characters long'],
+    maxlength: [30, 'Username cannot exceed 30 characters']
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [
+      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      'Please enter a valid email address'
+    ]
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: [6, 'Password must be at least 6 characters long'],
+    select: false // Don't return password in queries by default
+  },
+  avatar: {
+    type: String,
+    default: 'https://via.placeholder.com/150'
+  },
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  rank: {
+    type: String,
+    enum: ['client', 'rich client', 'top client', 'whale', 'developer'],
+    default: 'client'
+  },
+  xp: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  passes: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalUSDValue: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalDeals: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  lastLogin: {
+    type: Date
+  },
+  lastChatView: {
+    type: Date,
+    default: null
+  },
+  passwordReset: {
+    codeHash: {
+      type: String
+    },
+    expiresAt: {
+      type: Date
+    },
+    attempts: {
+      type: Number,
+      default: 0
+    },
+    lastSentAt: {
+      type: Date
+    },
+    resetTokenHash: {
+      type: String
+    },
+    resetTokenExpiresAt: {
+      type: Date
+    }
+  },
+  customStickers: [{
+    id: String,
+    name: String,
+    data: String, // Base64 data URL
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
+}, {
+  timestamps: true // Adds createdAt and updatedAt fields
+});
+
+// Generate unique user ID before saving
+userSchema.pre('save', async function(next) {
+  // Only generate userId if it doesn't exist (for new users)
+  if (!this.userId) {
+    // Generate a unique 17-digit numeric ID
+    this.userId = Math.floor(Math.random() * 90000000000000000) + 10000000000000000;
+  }
+  next();
+});
+
+// Hash password before saving
+userSchema.pre('save', async function(next) {
+  // Only hash the password if it has been modified (or is new)
+  if (!this.isModified('password')) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Method to compare password for login
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw new Error('Password comparison failed');
+  }
+};
+
+// Method to generate user response (without sensitive data)
+userSchema.methods.toJSON = function() {
+  const user = this.toObject();
+  delete user.password;
+  delete user.__v;
+  return user;
+};
+
+const User = mongoose.model('User', userSchema);
+
+export default User;
