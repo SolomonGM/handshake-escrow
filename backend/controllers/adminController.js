@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
 import { refreshLeaderboard } from '../services/leaderboardService.js';
+import { getRankForTotalUSD, getXpForTotalUSD, isDeveloperRank } from '../utils/rankUtils.js';
 
 // Get all users (Admin only)
 export const getAllUsers = async (req, res) => {
@@ -91,19 +92,24 @@ export const updateUserXP = async (req, res) => {
     }
 
     const { userId, xp } = req.body;
+    const xpValue = Number(xp);
 
-    if (xp < 0) {
-      return res.status(400).json({ message: 'XP cannot be negative' });
+    if (!Number.isFinite(xpValue) || xpValue < 0) {
+      return res.status(400).json({ message: 'XP must be a non-negative number' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { xp },
-      { new: true, runValidators: true }
-    ).select('-password');
-
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (isDeveloperRank(user.rank)) {
+      user.xp = xpValue;
+      await user.save();
+    } else {
+      const computedXp = getXpForTotalUSD(user.totalUSDValue);
+      user.xp = computedXp;
+      await user.save();
     }
 
     res.json({ message: 'User XP updated successfully', user });
@@ -153,14 +159,26 @@ export const updateUserTotalUSDValue = async (req, res) => {
     }
 
     const { userId, totalUSDValue } = req.body;
+    const totalValue = Number(totalUSDValue);
 
-    if (totalUSDValue < 0) {
-      return res.status(400).json({ message: 'Total USD value cannot be negative' });
+    if (!Number.isFinite(totalValue) || totalValue < 0) {
+      return res.status(400).json({ message: 'Total USD value must be a non-negative number' });
+    }
+
+    const existingUser = await User.findById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const updateData = { totalUSDValue: totalValue };
+    if (!isDeveloperRank(existingUser.rank)) {
+      updateData.rank = getRankForTotalUSD(totalValue);
+      updateData.xp = getXpForTotalUSD(totalValue);
     }
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { totalUSDValue },
+      { $set: updateData },
       { new: true, runValidators: true }
     ).select('-password');
 

@@ -1,6 +1,7 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import { getIo } from '../utils/socketRegistry.js';
+import { MAX_USD_FOR_XP, MAX_XP, RANK_THRESHOLDS } from '../utils/rankUtils.js';
 import { buildTransactionFeedItem } from './transactionFeedService.js';
 
 const closureTimers = new Map();
@@ -40,17 +41,77 @@ export const applyTicketCompletionStats = async (ticket) => {
     return false;
   }
 
-  if (usdValue > 0) {
-    await User.updateMany(
-      { _id: { $in: participantIds } },
-      { $inc: { totalUSDValue: usdValue, totalDeals: 1 } }
-    );
-  } else {
-    await User.updateMany(
-      { _id: { $in: participantIds } },
-      { $inc: { totalDeals: 1 } }
-    );
-  }
+  const rankBranches = RANK_THRESHOLDS
+    .filter((entry) => entry.rank !== 'client')
+    .map((entry) => ({
+      case: { $gte: ['$totalUSDValue', entry.minUSD] },
+      then: entry.rank
+    }));
+
+  const clampedTotalUSD = {
+    $min: [
+      { $max: ['$totalUSDValue', 0] },
+      MAX_USD_FOR_XP
+    ]
+  };
+
+  const xpExpression = {
+    $min: [
+      MAX_XP,
+      {
+        $max: [
+          0,
+          {
+            $floor: {
+              $multiply: [
+                { $divide: [clampedTotalUSD, MAX_USD_FOR_XP] },
+                MAX_XP
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  };
+
+  const updatePipeline = [
+    {
+      $set: {
+        totalDeals: { $add: [{ $ifNull: ['$totalDeals', 0] }, 1] },
+        totalUSDValue: usdValue > 0
+          ? { $add: [{ $ifNull: ['$totalUSDValue', 0] }, usdValue] }
+          : { $ifNull: ['$totalUSDValue', 0] }
+      }
+    },
+    {
+      $set: {
+        rank: {
+          $cond: [
+            { $eq: ['$rank', 'developer'] },
+            '$rank',
+            {
+              $switch: {
+                branches: rankBranches,
+                default: 'client'
+              }
+            }
+          ]
+        },
+        xp: {
+          $cond: [
+            { $eq: ['$rank', 'developer'] },
+            '$xp',
+            xpExpression
+          ]
+        }
+      }
+    }
+  ];
+
+  await User.updateMany(
+    { _id: { $in: participantIds } },
+    updatePipeline
+  );
 
   ticket.statsApplied = true;
   await ticket.save();

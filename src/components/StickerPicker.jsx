@@ -2,6 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { toast } from '../utils/toast';
 
+const defaultStickerImports = import.meta.glob(
+  '../assets/stickers/*.{png,gif,jpg,jpeg,webp}',
+  { eager: true, import: 'default' }
+);
+
+const defaultStickerUrls = Object.entries(defaultStickerImports)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([, url]) => url);
+
 const StickerPicker = ({ onSelect, onClose }) => {
   const [activeTab, setActiveTab] = useState('default'); // 'default' or 'upload'
   const [defaultStickers, setDefaultStickers] = useState([]);
@@ -10,28 +19,9 @@ const StickerPicker = ({ onSelect, onClose }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Load default stickers from public folder
+  // Load default stickers from assets folder
   useEffect(() => {
-    // These are placeholder sticker URLs - add your own stickers to public/stickers/
-    const defaultStickerList = [
-      '/stickers/pepe-happy.png',
-      '/stickers/wojak-think.png',
-      '/stickers/doge.png',
-      '/stickers/stonks.gif',
-      '/stickers/rocket.png',
-      '/stickers/diamond-hands.png',
-      '/stickers/handshake.png',
-      '/stickers/moon.png',
-      '/stickers/fire.gif',
-      '/stickers/rocket-moon.gif',
-      '/stickers/lfg.png',
-      '/stickers/gm.png',
-    ].filter(url => {
-      // Only include stickers that exist
-      return true; // For now, include all
-    });
-
-    setDefaultStickers(defaultStickerList);
+    setDefaultStickers(defaultStickerUrls);
   }, []);
 
   // Load uploaded stickers from backend
@@ -287,7 +277,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
                 <img
                   src={url}
                   alt={`Sticker ${idx + 1}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   onError={(e) => {
                     // Hide broken image
                     e.target.parentElement.style.display = 'none';
@@ -298,7 +288,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
             {defaultStickers.length === 0 && (
               <div className="col-span-4 text-center py-8">
                 <p className="text-n-4 text-sm">No default stickers available</p>
-                <p className="text-n-5 text-xs mt-1">Add stickers to /public/stickers/</p>
+                <p className="text-n-5 text-xs mt-1">Add stickers to /src/assets/stickers/</p>
               </div>
             )}
           </div>
@@ -368,7 +358,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
                       <img
                         src={sticker.data}
                         alt={sticker.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                       />
                     </button>
                     <button

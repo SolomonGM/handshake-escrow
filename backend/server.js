@@ -66,8 +66,8 @@ connectDB();
 // Middleware
 app.use(helmet()); // Security headers
 app.use(cors(corsOptions));
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(express.json({ limit: '20mb' })); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true, limit: '20mb' })); // Parse URL-encoded bodies
 
 // Routes
 app.use('/api/auth', authRoutes);

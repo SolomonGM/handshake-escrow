@@ -70,6 +70,50 @@ const hasAllPrivacySelections = (ticket) => {
   return partyIds.every((partyId) => Boolean(getPrivacySelectionValue(ticket, partyId)));
 };
 
+const normalizeAttachmentsInput = (attachments, maxDataUrlLength) => {
+  let list = attachments;
+
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (error) {
+      const matches = list.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g);
+      list = matches && matches.length ? matches : [list];
+    }
+  }
+
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list.map((attachment) => {
+    const rawUrl = typeof attachment === 'string'
+      ? attachment
+      : (attachment?.url || attachment?.data || attachment?.dataUrl);
+
+    if (typeof rawUrl !== 'string' || !rawUrl.startsWith('data:image/')) {
+      return null;
+    }
+
+    if (maxDataUrlLength && rawUrl.length > maxDataUrlLength) {
+      return null;
+    }
+
+    const size = Number(attachment?.size);
+    const width = Number(attachment?.width);
+    const height = Number(attachment?.height);
+
+    return {
+      url: rawUrl,
+      name: attachment?.name || 'image',
+      type: attachment?.type || 'image',
+      size: Number.isFinite(size) ? size : undefined,
+      width: Number.isFinite(width) ? width : undefined,
+      height: Number.isFinite(height) ? height : undefined
+    };
+  }).filter(Boolean);
+};
+
 const buildPayoutDetails = (ticket) => {
   const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency] || 1;
   const dealAmount = Number(ticket.dealAmount ?? ticket.expectedAmount ?? 0);
@@ -460,8 +504,11 @@ export const addUserToTicket = async (req, res) => {
 export const sendMessage = async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const { content } = req.body;
+    const { content = '', attachments = [] } = req.body;
     const userId = req.user._id;
+    const trimmedContent = typeof content === 'string' ? content.trim() : '';
+    const MAX_ATTACHMENTS = 4;
+    const MAX_DATA_URL_LENGTH = 6000000; // ~4.5MB base64 payload
 
     const ticket = await TradeTicket.findOne({ ticketId });
 
@@ -485,11 +532,53 @@ export const sendMessage = async (req, res) => {
       });
     }
 
+    const normalizedIncoming = normalizeAttachmentsInput(attachments, MAX_DATA_URL_LENGTH);
+
+    if (!trimmedContent && normalizedIncoming.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message content or image attachment is required'
+      });
+    }
+
+    if (normalizedIncoming.length > MAX_ATTACHMENTS) {
+      return res.status(400).json({
+        success: false,
+        message: `You can send up to ${MAX_ATTACHMENTS} images at once`
+      });
+    }
+
+    const sanitizedAttachments = normalizedIncoming;
+
+    if (!trimmedContent && sanitizedAttachments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only image attachments are supported'
+      });
+    }
+
+    // Normalize any existing attachments on the ticket to avoid casting errors
+    let didNormalizeExisting = false;
+    if (Array.isArray(ticket.messages)) {
+      ticket.messages.forEach((message) => {
+        if (message && message.attachments !== undefined) {
+          const normalizedExisting = normalizeAttachmentsInput(message.attachments, MAX_DATA_URL_LENGTH);
+          message.attachments = normalizedExisting;
+          didNormalizeExisting = true;
+        }
+      });
+    }
+
     ticket.messages.push({
       sender: userId,
-      content,
-      type: 'text'
+      content: trimmedContent,
+      type: 'text',
+      attachments: sanitizedAttachments
     });
+
+    if (didNormalizeExisting) {
+      ticket.markModified('messages');
+    }
 
     await ticket.save();
     await ticket.populate('messages.sender', 'username userId avatar');

@@ -674,7 +674,7 @@ const LiveChat = ({ isOpen, onClose }) => {
                       <img
                         src={msg.sticker}
                         alt="Sticker"
-                        className="max-w-[120px] max-h-[120px] rounded-lg object-contain bg-n-6/50"
+                        className="w-[120px] h-[120px] rounded-lg object-contain bg-n-6/50"
                         onError={(e) => {
                           e.target.style.display = 'none';
                         }}
@@ -762,7 +762,7 @@ const LiveChat = ({ isOpen, onClose }) => {
             <StickerPicker
               onSelect={(stickerUrl) => {
                 // Send sticker as a separate message or append to text
-                if (stickerUrl.startsWith('data:') || stickerUrl.startsWith('/')) {
+                if (stickerUrl.startsWith('data:') || stickerUrl.startsWith('/') || stickerUrl.startsWith('http')) {
                   // It's an image sticker, send it directly
                   handleSendMessage(null, stickerUrl);
                 } else {

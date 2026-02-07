@@ -26,11 +26,19 @@ const TradeTicket = () => {
   const [showPassModal, setShowPassModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [availablePasses, setAvailablePasses] = useState(0);
+  const [pendingImages, setPendingImages] = useState([]);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [viewerImage, setViewerImage] = useState(null);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
   const lastUpdatedAtRef = useRef(null);
   const syncInFlightRef = useRef(false);
   const closeRedirectTimeoutRef = useRef(null);
   const LIVE_SYNC_INTERVAL_MS = 2000;
+  const MAX_IMAGE_ATTACHMENTS = 4;
+  const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+  const MAX_IMAGE_DIMENSION = 1024;
 
   const formatCryptoAmount = (value) => {
     const parsed = Number(value);
@@ -72,6 +80,152 @@ const TradeTicket = () => {
       toast.success('Amount copied');
     } catch (error) {
       toast.error('Failed to copy amount');
+    }
+  };
+
+  const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+
+  const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = dataUrl;
+  });
+
+  const buildImageAttachment = async (file) => {
+    if (!file.type.startsWith('image/')) {
+      toast.warning(`${file.name} is not an image`);
+      return null;
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.warning(`${file.name} is too large (max 3MB)`);
+      return null;
+    }
+
+    const isGif = file.type === 'image/gif';
+    let dataUrl = await readFileAsDataUrl(file);
+    let width = null;
+    let height = null;
+
+    if (!isGif) {
+      try {
+        const img = await loadImageFromDataUrl(dataUrl);
+        const maxDim = Math.max(img.width, img.height);
+        const scale = maxDim > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / maxDim : 1;
+        const targetWidth = Math.round(img.width * scale);
+        const targetHeight = Math.round(img.height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        dataUrl = canvas.toDataURL('image/png');
+        width = targetWidth;
+        height = targetHeight;
+      } catch (error) {
+        console.error('Failed to resize image', error);
+      }
+    } else {
+      try {
+        const img = await loadImageFromDataUrl(dataUrl);
+        width = img.width;
+        height = img.height;
+      } catch (error) {
+        console.error('Failed to read gif dimensions', error);
+      }
+    }
+
+    return {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      dataUrl,
+      width,
+      height
+    };
+  };
+
+  const addImageFiles = async (files) => {
+    if (!files || files.length === 0) return;
+
+    const existingCount = pendingImages.length;
+    if (existingCount >= MAX_IMAGE_ATTACHMENTS) {
+      toast.warning(`You can only attach ${MAX_IMAGE_ATTACHMENTS} images at once`);
+      return;
+    }
+
+    const remainingSlots = MAX_IMAGE_ATTACHMENTS - existingCount;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+
+    setIsProcessingImage(true);
+    try {
+      const processed = [];
+      for (const file of filesToProcess) {
+        const attachment = await buildImageAttachment(file);
+        if (attachment) {
+          processed.push(attachment);
+        }
+      }
+      if (processed.length > 0) {
+        setPendingImages((prev) => [...prev, ...processed]);
+      }
+    } finally {
+      setIsProcessingImage(false);
+    }
+
+    if (files.length > remainingSlots) {
+      toast.warning(`Only ${remainingSlots} image${remainingSlots === 1 ? '' : 's'} added (max ${MAX_IMAGE_ATTACHMENTS})`);
+    }
+  };
+
+  const removePendingImage = (id) => {
+    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+  };
+
+  const handleImageDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingImage(true);
+  };
+
+  const handleImageDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingImage(false);
+  };
+
+  const handleImageDrop = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingImage(false);
+    await addImageFiles(event.dataTransfer.files);
+  };
+
+  const handleImagePaste = async (event) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    const files = [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      event.preventDefault();
+      await addImageFiles(files);
     }
   };
 
@@ -173,6 +327,21 @@ const TradeTicket = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    setPendingImages([]);
+  }, [ticketIdParam]);
+
+  useEffect(() => {
+    if (!viewerImage) return;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setViewerImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewerImage]);
 
   // Create or load ticket
   useEffect(() => {
@@ -328,10 +497,41 @@ const TradeTicket = () => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!messageInput.trim() || !ticket) return;
+    if (!ticket) return;
 
     const content = messageInput.trim();
+    const hasAttachments = pendingImages.length > 0;
+
+    if (!content && !hasAttachments) return;
+
     setMessageInput("");
+
+    if (hasAttachments) {
+      try {
+        const response = await axios.post(
+          `${API_URL}/tickets/${encodeURIComponent(ticket.ticketId)}/messages`,
+          {
+            content,
+            attachments: pendingImages.map((image) => ({
+              url: image.dataUrl,
+              name: image.name,
+              type: image.type,
+              size: image.size,
+              width: image.width,
+              height: image.height
+            }))
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        setMessages((prev) => [...prev, response.data.message]);
+        setPendingImages([]);
+      } catch (err) {
+        console.error('Error sending message with images:', err);
+        toast.error(err.response?.data?.message || 'Failed to send image');
+      }
+      return;
+    }
 
     if (ticket?.awaitingPayoutAddress && isUserReceiver()) {
       const addressPatterns = {
@@ -1434,7 +1634,44 @@ const TradeTicket = () => {
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-n-3">{msg.content}</p>
+                      <div className="space-y-2">
+                        {msg.content ? (
+                          <p className="text-sm text-n-3">{msg.content}</p>
+                        ) : null}
+                        {Array.isArray(msg.attachments) && msg.attachments.length > 0 ? (
+                          <div
+                            className={`grid gap-3 ${
+                              msg.attachments.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                            }`}
+                          >
+                            {msg.attachments.map((attachment, index) => {
+                              const attachmentUrl = typeof attachment === 'string' ? attachment : attachment?.url;
+                              const attachmentName = typeof attachment === 'string' ? 'Attachment' : (attachment?.name || 'Attachment');
+
+                              if (!attachmentUrl) {
+                                return null;
+                              }
+
+                              return (
+                              <button
+                                key={`${attachmentUrl.slice(0, 24)}-${index}`}
+                                type="button"
+                                onClick={() => setViewerImage(attachmentUrl)}
+                                className="rounded-xl overflow-hidden bg-n-6/70 border border-n-6 hover:border-[#10B981]/60 transition-colors"
+                              >
+                                <img
+                                  src={attachmentUrl}
+                                  alt={attachmentName}
+                                  className={`w-full ${
+                                    msg.attachments.length === 1 ? 'max-h-[320px]' : 'h-40'
+                                  } object-contain`}
+                                />
+                              </button>
+                            );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1454,9 +1691,60 @@ const TradeTicket = () => {
                 </div>
               </div>
             ) : (
-              <div className="border-t border-n-6 p-6 bg-n-7">
+              <div
+                className={`border-t border-n-6 p-6 bg-n-7 transition-colors ${
+                  isDraggingImage ? 'bg-n-6/60' : ''
+                }`}
+                onDragOver={handleImageDragOver}
+                onDragLeave={handleImageDragLeave}
+                onDrop={handleImageDrop}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    addImageFiles(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+
+                {pendingImages.length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-3">
+                    {pendingImages.map((image) => (
+                      <div key={image.id} className="relative">
+                        <img
+                          src={image.dataUrl}
+                          alt={image.name}
+                          className="w-20 h-20 rounded-lg object-contain bg-n-6/70 border border-n-6"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePendingImage(image.id)}
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-n-8 text-n-1 border border-n-5 hover:bg-red-500 hover:border-red-500 transition-colors flex items-center justify-center"
+                          title="Remove"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex items-center text-xs text-n-4">
+                      {pendingImages.length}/{MAX_IMAGE_ATTACHMENTS} images ready
+                    </div>
+                  </div>
+                )}
+
                 <form onSubmit={handleSendMessage} className="flex items-center gap-4">
-                  <button type="button" className="p-3 hover:bg-n-6 rounded-lg transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-3 hover:bg-n-6 rounded-lg transition-colors"
+                    title="Attach images"
+                  >
                     <svg className="w-6 h-6 text-n-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
@@ -1465,19 +1753,20 @@ const TradeTicket = () => {
                     type="text"
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
+                    onPaste={handleImagePaste}
                     placeholder={inputPlaceholder}
                     className="flex-1 px-5 py-4 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] transition-colors text-base"
                   />
                   <button 
                     type="submit"
-                    disabled={!messageInput.trim()}
+                    disabled={(!messageInput.trim() && pendingImages.length === 0) || isProcessingImage}
                     className={`px-8 py-4 rounded-lg font-semibold transition-colors ${
-                      messageInput.trim()
+                      (messageInput.trim() || pendingImages.length > 0) && !isProcessingImage
                         ? 'bg-[#10B981] hover:bg-[#059669] text-white shadow-lg'
                         : 'bg-n-6 text-n-4 cursor-not-allowed'
                     }`}
                   >
-                    Send
+                    {isProcessingImage ? 'Processing...' : 'Send'}
                   </button>
                 </form>
                 <p className="text-xs text-n-4 mt-3 text-center">
@@ -1489,6 +1778,35 @@ const TradeTicket = () => {
         </div>
 
       </div>
+
+      {/* Image Viewer */}
+      {viewerImage && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center"
+          onClick={() => setViewerImage(null)}
+        >
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div
+            className="relative z-10 max-w-[90vw] max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setViewerImage(null)}
+              className="absolute -top-4 -right-4 w-9 h-9 rounded-full bg-n-8 border border-n-5 text-n-1 flex items-center justify-center hover:bg-red-500 hover:border-red-500 transition-colors"
+              title="Close"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img
+              src={viewerImage}
+              alt="Preview"
+              className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Cancel Ticket Confirmation Modal */}
       {showCloseModal && (

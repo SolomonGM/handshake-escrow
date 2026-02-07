@@ -1,5 +1,53 @@
 import mongoose from 'mongoose';
 
+const extractDataUrls = (value) => {
+  if (typeof value !== 'string') {
+    return [];
+  }
+  const matches = value.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g);
+  return matches || [];
+};
+
+const normalizeMessageAttachments = (attachments) => {
+  let list = attachments;
+
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (error) {
+      const extracted = extractDataUrls(list);
+      list = extracted.length ? extracted : [list];
+    }
+  }
+
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list.map((attachment) => {
+    const rawUrl = typeof attachment === 'string'
+      ? attachment
+      : (attachment?.url || attachment?.data || attachment?.dataUrl);
+
+    if (typeof rawUrl !== 'string' || !rawUrl.startsWith('data:image/')) {
+      return null;
+    }
+
+    const size = Number(attachment?.size);
+    const width = Number(attachment?.width);
+    const height = Number(attachment?.height);
+
+    return {
+      url: rawUrl,
+      name: attachment?.name || 'image',
+      type: attachment?.type || 'image',
+      size: Number.isFinite(size) ? size : undefined,
+      width: Number.isFinite(width) ? width : undefined,
+      height: Number.isFinite(height) ? height : undefined
+    };
+  }).filter(Boolean);
+};
+
 const tradeTicketSchema = new mongoose.Schema({
   ticketId: {
     type: String,
@@ -231,12 +279,18 @@ const tradeTicketSchema = new mongoose.Schema({
     },
     content: {
       type: String,
-      required: true
+      default: ''
     },
     type: {
       type: String,
       enum: ['text', 'system', 'embed'],
       default: 'text'
+    },
+    attachments: {
+      // Use Mixed to tolerate legacy string payloads, normalize via setter.
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+      set: normalizeMessageAttachments
     },
     embedData: {
       title: String,
@@ -293,6 +347,18 @@ tradeTicketSchema.index({ creator: 1, status: 1 });
 tradeTicketSchema.index({ 'participants.user': 1 });
 tradeTicketSchema.index({ botWalletAddress: 1, awaitingTransaction: 1 });
 tradeTicketSchema.index({ status: 1, closeScheduledAt: 1 });
+
+tradeTicketSchema.pre('validate', function(next) {
+  if (Array.isArray(this.messages)) {
+    this.messages.forEach((message) => {
+      if (!message) return;
+      if (message.attachments !== undefined) {
+        message.attachments = normalizeMessageAttachments(message.attachments);
+      }
+    });
+  }
+  next();
+});
 
 // Helper method to prevent duplicate prompts
 tradeTicketSchema.methods.addUniqueMessage = function(messageData) {

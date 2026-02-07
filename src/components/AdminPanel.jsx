@@ -396,7 +396,8 @@ const AdminPanel = () => {
                         type="number"
                         defaultValue={user.xp}
                         onBlur={(e) => handleUpdateXP(user._id, e.target.value)}
-                        className="w-20 bg-n-7 border border-n-5 rounded px-2 py-1 text-n-1 text-sm"
+                        disabled={user.rank !== 'developer'}
+                        className={`w-20 bg-n-7 border border-n-5 rounded px-2 py-1 text-n-1 text-sm ${user.rank !== 'developer' ? 'opacity-50 cursor-not-allowed' : ''}`}
                       />
                     ) : (
                       <span className="text-n-1">{user.xp}</span>

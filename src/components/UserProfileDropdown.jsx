@@ -52,8 +52,8 @@ const UserProfileDropdown = () => {
 
   // Calculate XP progress (max 1000 XP per level)
   const maxXP = 1000;
-  const currentXP = user?.xp || 500;
-  const xpProgress = (currentXP / maxXP) * 100;
+  const currentXP = Number.isFinite(user?.xp) ? user.xp : 0;
+  const xpProgress = Math.min(100, Math.max(0, (currentXP / maxXP) * 100));
   const isMaxedOut = currentXP >= maxXP;
 
   const handleNavigation = (path) => {
