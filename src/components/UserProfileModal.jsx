@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 const UserProfileModal = ({ userId, onClose }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,7 +30,7 @@ const UserProfileModal = ({ userId, onClose }) => {
           return;
         }
 
-        const response = await fetch(`http://localhost:5001/api/auth/profile/${userId}`, {
+        const response = await fetch(`${API_URL}/auth/profile/${userId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
