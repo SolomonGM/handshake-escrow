@@ -3,6 +3,7 @@ import PassTransaction from '../models/PassTransaction.js';
 import User from '../models/User.js';
 import axios from 'axios';
 import { upsertPassTransactionHistory } from '../services/passTransactionHistory.js';
+import { BTC_NETWORK_MODE, LTC_NETWORK_MODE, getUtxoNetwork } from '../config/wallets.js';
 
 const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
 
@@ -24,15 +25,49 @@ const CRYPTO_PRICES = {
   'usdc-erc20': 1
 };
 
+const getMasterWallet = (crypto) => {
+  if (crypto === 'bitcoin') {
+    return BTC_NETWORK_MODE === 'mainnet'
+      ? (process.env.BTC_MAINNET_WALLET || '')
+      : (process.env.BTC_TESTNET_WALLET || 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn');
+  }
+
+  if (crypto === 'litecoin') {
+    if (LTC_NETWORK_MODE === 'mainnet') {
+      return process.env.LTC_MAINNET_WALLET || '';
+    }
+    return process.env.LTC_TESTNET_WALLET || 'miJwGUNLFGhFVfr7kDqskVotW4HgY1ePmP';
+  }
+
+  const fallbackWallets = {
+    'ethereum': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E', // Sepolia testnet wallet
+    'solana': 'DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK',
+    'usdt-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E',
+    'usdc-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E'
+  };
+
+  return fallbackWallets[crypto] || '';
+};
+
 // Master wallet addresses for each crypto (where funds ultimately go)
 const MASTER_WALLETS = {
-  'litecoin': 'mzQk8nUpFa6E8gZB1ViWaLLWPG4BUZwQDt', // Testnet master wallet
-  'bitcoin': 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn', // Testnet master wallet
-  'ethereum': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E', // Sepolia testnet wallet
-  'solana': 'DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK',
-  'usdt-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E',
-  'usdc-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E'
+  'litecoin': getMasterWallet('litecoin'),
+  'bitcoin': getMasterWallet('bitcoin'),
+  'ethereum': getMasterWallet('ethereum'),
+  'solana': getMasterWallet('solana'),
+  'usdt-erc20': getMasterWallet('usdt-erc20'),
+  'usdc-erc20': getMasterWallet('usdc-erc20')
 };
+
+const UTXO_CRYPTOS = new Set(['litecoin', 'bitcoin']);
+const SUPPORTED_CRYPTOS = new Set([
+  'litecoin',
+  'bitcoin',
+  'ethereum',
+  'solana',
+  'usdt-erc20',
+  'usdc-erc20'
+]);
 
 /**
  * Generate a unique payment address for an order using BlockCypher API
@@ -44,11 +79,15 @@ const MASTER_WALLETS = {
  */
 const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
   try {
-    // For Litecoin and Bitcoin testnet, use BlockCypher's address generation
+    // For Litecoin and Bitcoin, use BlockCypher's address generation
     if (cryptocurrency === 'litecoin' || cryptocurrency === 'bitcoin') {
-      const networkPath = cryptocurrency === 'litecoin' ? 'ltc/test3' : 'btc/test3';
+      const network = getUtxoNetwork(cryptocurrency);
+      if (!network) {
+        throw new Error(`Unsupported UTXO network: ${cryptocurrency}`);
+      }
+
       const response = await axios.post(
-        `https://api.blockcypher.com/v1/${networkPath}/addrs?token=${BLOCKCYPHER_TOKEN}`
+        `${network.apiBase}/addrs?token=${BLOCKCYPHER_TOKEN}`
       );
       
       console.log(`Generated unique address for order ${orderId}: ${response.data.address}`);
@@ -69,8 +108,13 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
     // This allows multiple simultaneous orders to be tracked properly
     console.log(`ðŸ”‘ Using master wallet for ${cryptocurrency} order ${orderId}: ${MASTER_WALLETS[cryptocurrency]}`);
     
+    const fallbackAddress = MASTER_WALLETS[cryptocurrency];
+    if (!fallbackAddress) {
+      throw new Error(`Master wallet not configured for ${cryptocurrency}`);
+    }
+
     return {
-      address: MASTER_WALLETS[cryptocurrency],
+      address: fallbackAddress,
       private: null,
       public: null,
       wif: null
@@ -78,8 +122,12 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
   } catch (error) {
     console.error('Error generating unique address:', error.message);
     // Fallback to master wallet if generation fails
+    const fallbackAddress = MASTER_WALLETS[cryptocurrency];
+    if (!fallbackAddress) {
+      throw new Error(`Master wallet not configured for ${cryptocurrency}`);
+    }
     return {
-      address: MASTER_WALLETS[cryptocurrency],
+      address: fallbackAddress,
       private: null,
       public: null,
       wif: null
@@ -155,8 +203,14 @@ export const createPassOrder = async (req, res) => {
     }
 
     // Validate cryptocurrency
-    if (!MASTER_WALLETS[cryptocurrency]) {
+    if (!SUPPORTED_CRYPTOS.has(cryptocurrency)) {
       return res.status(400).json({ success: false, message: 'Unsupported cryptocurrency' });
+    }
+    if (!UTXO_CRYPTOS.has(cryptocurrency) && !MASTER_WALLETS[cryptocurrency]) {
+      return res.status(400).json({ success: false, message: 'Wallet not configured for selected cryptocurrency' });
+    }
+    if (UTXO_CRYPTOS.has(cryptocurrency) && !getUtxoNetwork(cryptocurrency)) {
+      return res.status(400).json({ success: false, message: 'UTXO network not configured for selected cryptocurrency' });
     }
 
     // Calculate crypto amount

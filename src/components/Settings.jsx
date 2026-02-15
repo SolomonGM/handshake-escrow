@@ -4,7 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from './Header';
 import Button from './Button';
 import AdminPanel from './AdminPanel';
+import ModeratorPanel from './ModeratorPanel';
 import { passAPI } from '../services/api';
+import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
 const Settings = () => {
   const { user, logout, updateProfile } = useAuth();
@@ -27,6 +29,8 @@ const Settings = () => {
   const fileInputRef = useRef(null);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
   const MAX_AVATAR_SIZE_MB = 5;
+  const normalizedRank = normalizeRank(user?.rank);
+  const rankLabel = getRankLabel(user?.rank);
 
   const formatFileSize = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
 
@@ -74,6 +78,8 @@ const Settings = () => {
       setActiveTab('transactions');
     } else if (tab === 'admin' && user?.rank === 'developer') {
       setActiveTab('admin');
+    } else if (tab === 'moderator' && user?.role === 'moderator') {
+      setActiveTab('moderator');
     }
   }, [searchParams, user]);
 
@@ -294,6 +300,26 @@ const Settings = () => {
                     </button>
                   </>
                 )}
+
+                {/* Moderator Panel */}
+                {user?.role === 'moderator' && (
+                  <>
+                    <div className="border-t border-n-6 my-2"></div>
+                    <button
+                      onClick={() => setActiveTab('moderator')}
+                      className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+                        activeTab === 'moderator' ? 'bg-[#10B981]/20 text-[#10B981]' : 'text-[#10B981]/70 hover:bg-[#10B981]/10 hover:text-[#10B981]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        <span>Moderator Panel</span>
+                      </div>
+                    </button>
+                  </>
+                )}
               </nav>
               
               <div className="mt-6 pt-6 border-t border-n-6">
@@ -376,10 +402,10 @@ const Settings = () => {
                       <div className="space-y-4">
                         <div>
                           <p className="text-sm text-n-4 mb-1">Rank</p>
-                          {user?.rank === 'developer' ? (
-                            <p className="text-lg font-bold uppercase gradient-text">Developer</p>
+                          {normalizedRank === 'developer' ? (
+                            <p className="text-lg font-bold gradient-text">Developer</p>
                           ) : (
-                            <p className="text-n-1 text-lg capitalize">{user?.rank}</p>
+                            <p className="text-n-1 text-lg">{rankLabel}</p>
                           )}
                         </div>
                         <div>
@@ -694,6 +720,11 @@ const Settings = () => {
               {/* Admin Panel Tab - Only for developers */}
               {activeTab === 'admin' && user?.rank === 'developer' && (
                 <AdminPanel />
+              )}
+
+              {/* Moderator Panel Tab */}
+              {activeTab === 'moderator' && user?.role === 'moderator' && (
+                <ModeratorPanel />
               )}
 
             </div>

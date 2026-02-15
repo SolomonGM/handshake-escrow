@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { getRankBgClass, getRankLabel, getRankTextClass, normalizeRank } from '../utils/rankDisplay';
 
 const UserProfileDropdown = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -26,29 +27,10 @@ const UserProfileDropdown = () => {
     };
   }, [isOpen]);
 
-  // Get rank color based on rank
-  const getRankColor = (rank) => {
-    const colors = {
-      'whale': 'text-[#1e40af]', // dark blue
-      'top client': 'text-[#9333ea]', // purple
-      'rich client': 'text-[#ea580c]', // orange
-      'client': 'text-[#06b6d4]', // cyan
-      'developer': 'text-[#ef4444]', // red
-    };
-    return colors[rank] || colors['client'];
-  };
-
-  // Get rank background color for badge
-  const getRankBgColor = (rank) => {
-    const colors = {
-      'whale': 'bg-[#1e40af]/20 border-[#1e40af]/50', // dark blue
-      'top client': 'bg-[#9333ea]/20 border-[#9333ea]/50', // purple
-      'rich client': 'bg-[#ea580c]/20 border-[#ea580c]/50', // orange
-      'client': 'bg-[#06b6d4]/20 border-[#06b6d4]/50', // cyan
-      'developer': 'bg-[#ef4444]/20 border-[#ef4444]/50', // red
-    };
-    return colors[rank] || colors['client'];
-  };
+  const normalizedRank = normalizeRank(user?.rank);
+  const rankLabel = getRankLabel(user?.rank);
+  const rankTextClass = getRankTextClass(user?.rank);
+  const rankBgClass = getRankBgClass(user?.rank);
 
   // Calculate XP progress (max 1000 XP per level)
   const maxXP = 1000;
@@ -82,13 +64,13 @@ const UserProfileDropdown = () => {
         {/* Rank Badge and Progress Bar Container */}
         <div className="flex flex-col gap-2 items-center min-w-[64px]">
           {/* Rank Badge */}
-          {user?.rank === 'developer' ? (
-            <div className="px-2 py-0.5 rounded-md border border-n-1/20 text-xs font-semibold uppercase tracking-wider text-center bg-n-8/50 whitespace-nowrap">
+          {normalizedRank === 'developer' ? (
+            <div className="px-2 py-0.5 rounded-md border border-n-1/20 text-xs font-semibold tracking-wider text-center bg-n-8/50 whitespace-nowrap">
               <span className="gradient-text">Developer</span>
             </div>
           ) : (
-            <div className={`px-2 py-0.5 rounded-md border text-xs font-semibold uppercase tracking-wider text-center whitespace-nowrap ${getRankBgColor(user?.rank)} ${getRankColor(user?.rank)}`}>
-              {user?.rank || 'client'}
+            <div className={`px-2 py-0.5 rounded-md border text-xs font-semibold tracking-wider text-center whitespace-nowrap ${rankBgClass} ${rankTextClass}`}>
+              {rankLabel}
             </div>
           )}
           
@@ -158,13 +140,13 @@ const UserProfileDropdown = () => {
               </div>
               <div>
                 <p className="text-n-1 font-semibold">{user?.username}</p>
-                {user?.rank === 'developer' ? (
-                  <div className="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase bg-n-8/50 border border-n-1/20">
+                {normalizedRank === 'developer' ? (
+                  <div className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-n-8/50 border border-n-1/20">
                     <span className="gradient-text">Developer</span>
                   </div>
                 ) : (
-                  <div className={`inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase ${getRankBgColor(user?.rank)} ${getRankColor(user?.rank)}`}>
-                    {user?.rank || 'client'}
+                  <div className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${rankBgClass} ${rankTextClass}`}>
+                    {rankLabel}
                   </div>
                 )}
               </div>

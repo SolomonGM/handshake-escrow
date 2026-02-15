@@ -1,21 +1,17 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-
+import { getRankBadge, getRankColor, getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+
 const UserProfileModal = ({ userId, onClose }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copiedUserId, setCopiedUserId] = useState(false);
 
-  // Rank colors
-  const rankColors = {
-    client: '#06b6d4',
-    'rich client': '#f97316',
-    'top client': '#a855f7',
-    whale: '#1e3a8a',
-    developer: 'gradient'
-  };
+  const normalizedRank = normalizeRank(profile?.rank);
+  const rankLabel = getRankLabel(profile?.rank);
+  const rankBadge = getRankBadge(profile?.rank);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -89,9 +85,6 @@ const UserProfileModal = ({ userId, onClose }) => {
     }
   };
 
-  const getRankColor = (rank) => {
-    return rankColors[rank] || '#9ca3af';
-  };
 
   // Close on backdrop click
   const handleBackdropClick = (e) => {
@@ -165,40 +158,14 @@ const UserProfileModal = ({ userId, onClose }) => {
                   </div>
 
                   {/* Badge */}
-                  {(profile.badge || profile.rank === 'rich client' || profile.rank === 'top client' || profile.rank === 'whale') && (
+                  {rankBadge && (
                     <div className="absolute -bottom-1 -right-1 w-10 h-10 bg-n-8 rounded-full flex items-center justify-center border-2 border-n-6">
-                      {profile.badge === 'admin' && (
-                        <img
-                          src="/badges/admin.png"
-                          alt="Admin"
-                          className="w-8 h-8"
-                          onError={(e) => e.target.style.display = 'none'}
-                        />
-                      )}
-                      {profile.rank === 'whale' && !profile.badge && (
-                        <img
-                          src="/badges/whale.png"
-                          alt="Whale"
-                          className="w-8 h-8"
-                          onError={(e) => e.target.style.display = 'none'}
-                        />
-                      )}
-                      {profile.rank === 'top client' && !profile.badge && (
-                        <img
-                          src="/badges/top-client.png"
-                          alt="Top Client"
-                          className="w-8 h-8"
-                          onError={(e) => e.target.style.display = 'none'}
-                        />
-                      )}
-                      {profile.rank === 'rich client' && !profile.badge && (
-                        <img
-                          src="/badges/rich-client.png"
-                          alt="Rich Client"
-                          className="w-8 h-8"
-                          onError={(e) => e.target.style.display = 'none'}
-                        />
-                      )}
+                      <img
+                        src={rankBadge}
+                        alt={`${rankLabel} badge`}
+                        className="w-8 h-8"
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
                     </div>
                   )}
                 </div>
@@ -206,7 +173,7 @@ const UserProfileModal = ({ userId, onClose }) => {
 
               {/* Username and Rank */}
               <div className="text-center mb-6">
-                {profile.rank === 'developer' ? (
+                {normalizedRank === 'developer' ? (
                   <h2 className="text-2xl font-bold gradient-text mb-1">
                     {profile.username}
                   </h2>
@@ -218,7 +185,7 @@ const UserProfileModal = ({ userId, onClose }) => {
                     {profile.username}
                   </h2>
                 )}
-                <p className="text-n-4 text-sm capitalize">{profile.rank}</p>
+                <p className="text-n-4 text-sm">{rankLabel}</p>
               </div>
 
               {/* Stats Grid */}

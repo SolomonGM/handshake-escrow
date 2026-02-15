@@ -1,7 +1,20 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
+import TradeTicket from '../models/TradeTicket.js';
 import { refreshLeaderboard } from '../services/leaderboardService.js';
-import { getRankForTotalUSD, getXpForTotalUSD, isDeveloperRank } from '../utils/rankUtils.js';
+import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
+import { isStaffUser } from '../utils/staffUtils.js';
+
+const MAX_RECENT_PAGES = 10;
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parsePageParams = (req) => {
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 25, 1), 100);
+  return { page, pageSize };
+};
 
 // Get all users (Admin only)
 export const getAllUsers = async (req, res) => {
@@ -28,15 +41,17 @@ export const updateUserRank = async (req, res) => {
     }
 
     const { userId, rank } = req.body;
-    const validRanks = ['client', 'rich client', 'top client', 'whale', 'developer'];
+    const normalizedRank = typeof rank === 'string' ? rank.trim().toLowerCase() : rank;
+    const resolvedRank = normalizedRank === 'whale' ? 'ruby rich' : normalizedRank;
+    const validRanks = ['client', 'rich client', 'top client', 'ruby rich', 'moderator', 'developer'];
 
-    if (!validRanks.includes(rank)) {
+    if (!validRanks.includes(resolvedRank)) {
       return res.status(400).json({ message: 'Invalid rank' });
     }
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { rank },
+      { rank: resolvedRank },
       { new: true, runValidators: true }
     ).select('-password');
 
@@ -60,7 +75,7 @@ export const updateUserRole = async (req, res) => {
     }
 
     const { userId, role } = req.body;
-    const validRoles = ['user', 'admin'];
+    const validRoles = ['user', 'admin', 'moderator'];
 
     if (!validRoles.includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
@@ -103,7 +118,7 @@ export const updateUserXP = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (isDeveloperRank(user.rank)) {
+    if (isStaffRank(user.rank)) {
       user.xp = xpValue;
       await user.save();
     } else {
@@ -171,7 +186,7 @@ export const updateUserTotalUSDValue = async (req, res) => {
     }
 
     const updateData = { totalUSDValue: totalValue };
-    if (!isDeveloperRank(existingUser.rank)) {
+    if (!isStaffRank(existingUser.rank)) {
       updateData.rank = getRankForTotalUSD(totalValue);
       updateData.xp = getXpForTotalUSD(totalValue);
     }
@@ -289,31 +304,62 @@ export const getTradeRequests = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
 
-    const { search } = req.query;
+    const search = String(req.query.search || '').trim();
+    const { page, pageSize } = parsePageParams(req);
+    const isSearch = Boolean(search);
+    const query = {};
 
-    let tradeRequests = await TradeRequest.find()
-      .populate('creator', 'username avatar')
-      .sort({ createdAt: -1 });
+    if (isSearch) {
+      const regex = new RegExp(escapeRegExp(search), 'i');
+      const userMatches = await User.find({ username: regex }).select('_id');
+      const userIds = userMatches.map((user) => user._id);
+      const orConditions = [
+        { itemOffered: regex },
+        { itemDescription: regex },
+        { requestId: regex }
+      ];
 
-    if (search) {
-      const query = search.toLowerCase();
-      tradeRequests = tradeRequests.filter((request) => {
-        const creatorName = request.creator?.username?.toLowerCase() || '';
-        const itemOffered = request.itemOffered?.toLowerCase() || '';
-        const itemDescription = request.itemDescription?.toLowerCase() || '';
-        const requestId = request.requestId?.toLowerCase() || '';
-        const recordId = request._id?.toString().toLowerCase() || '';
-        return (
-          creatorName.includes(query) ||
-          itemOffered.includes(query) ||
-          itemDescription.includes(query) ||
-          requestId.includes(query) ||
-          recordId.includes(query)
-        );
+      if (userIds.length) {
+        orConditions.push({ creator: { $in: userIds } });
+      }
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      query.$or = orConditions;
+    }
+
+    const totalCount = await TradeRequest.countDocuments(query);
+    const rawTotalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const totalPages = isSearch ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
+
+    if (!isSearch && page > MAX_RECENT_PAGES) {
+      return res.json({
+        tradeRequests: [],
+        page,
+        pageSize,
+        totalCount,
+        totalPages,
+        restricted: true
       });
     }
 
-    res.json({ tradeRequests });
+    const safePage = Math.min(page, totalPages);
+    const tradeRequests = await TradeRequest.find(query)
+      .populate('creator', 'username avatar')
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * pageSize)
+      .limit(pageSize);
+
+    res.json({
+      tradeRequests,
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages,
+      restricted: !isSearch && rawTotalPages > MAX_RECENT_PAGES
+    });
   } catch (error) {
     console.error('Get trade requests error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -384,6 +430,126 @@ export const deleteTradeRequest = async (req, res) => {
     res.json({ message: 'Trade request deleted successfully' });
   } catch (error) {
     console.error('Delete trade request error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const resolveTicketRoleUser = (ticket, role) => {
+  if (!ticket || !role) return null;
+
+  if (ticket.creatorRole === role && ticket.creator) {
+    return ticket.creator;
+  }
+
+  const participant = ticket.participants?.find(
+    (p) => p?.status === 'accepted' && p?.role === role && p?.user
+  );
+
+  return participant?.user || null;
+};
+
+const formatTicketUser = (user) => {
+  if (!user) return null;
+  return {
+    _id: user._id,
+    username: user.username,
+    userId: user.userId,
+    avatar: user.avatar
+  };
+};
+
+// Get all trade tickets (Staff only - admin/moderator/developer)
+export const getTradeTickets = async (req, res) => {
+  try {
+    if (!isStaffUser(req.user)) {
+      return res.status(403).json({ message: 'Access denied. Staff only.' });
+    }
+
+    const search = String(req.query.search || '').trim();
+    const { page, pageSize } = parsePageParams(req);
+    const isSearch = Boolean(search);
+    const query = {};
+
+    if (isSearch) {
+      const regex = new RegExp(escapeRegExp(search), 'i');
+      const userMatches = await User.find({ username: regex }).select('_id');
+      const userIds = userMatches.map((user) => user._id);
+      const orConditions = [
+        { ticketId: regex }
+      ];
+
+      if (userIds.length) {
+        orConditions.push({ creator: { $in: userIds } });
+        orConditions.push({ 'participants.user': { $in: userIds } });
+      }
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      query.$or = orConditions;
+    }
+
+    const totalCount = await TradeTicket.countDocuments(query);
+    const rawTotalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const totalPages = isSearch ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
+
+    if (!isSearch && page > MAX_RECENT_PAGES) {
+      return res.json({
+        tickets: [],
+        page,
+        pageSize,
+        totalCount,
+        totalPages,
+        restricted: true
+      });
+    }
+
+    const safePage = Math.min(page, totalPages);
+
+    const tickets = await TradeTicket.find(query)
+      .select('ticketId status cryptocurrency createdAt updatedAt creator creatorRole rolesConfirmed participants')
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar')
+      .sort({ updatedAt: -1 })
+      .skip((safePage - 1) * pageSize)
+      .limit(pageSize)
+      .lean();
+
+    const formattedTickets = tickets.map((ticket) => {
+      const senderUser = resolveTicketRoleUser(ticket, 'sender');
+      const receiverUser = resolveTicketRoleUser(ticket, 'receiver');
+
+      return {
+        _id: ticket._id,
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        cryptocurrency: ticket.cryptocurrency,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+        creatorRole: ticket.creatorRole,
+        rolesConfirmed: ticket.rolesConfirmed,
+        creator: formatTicketUser(ticket.creator),
+        participants: (ticket.participants || []).map((p) => ({
+          status: p.status,
+          role: p.role,
+          user: formatTicketUser(p.user)
+        })),
+        sender: formatTicketUser(senderUser),
+        receiver: formatTicketUser(receiverUser)
+      };
+    });
+
+    res.json({
+      tickets: formattedTickets,
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages,
+      restricted: !isSearch && rawTotalPages > MAX_RECENT_PAGES
+    });
+  } catch (error) {
+    console.error('Get trade tickets error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

@@ -4,25 +4,11 @@ import { ethers } from 'ethers';
 import TradeTicket from '../models/TradeTicket.js';
 import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
-import { ETH_RPC_CONFIG, ETH_NETWORK_MODE, EXCHANGE_RATES } from '../config/wallets.js';
+import { ETH_RPC_CONFIG, ETH_NETWORK_MODE, EXCHANGE_RATES, getUtxoNetwork, getUtxoNetworkMode } from '../config/wallets.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
 
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
-const UTXO_NETWORKS = {
-  litecoin: {
-    apiBase: 'https://api.blockcypher.com/v1/ltc/test3',
-    explorer: 'https://live.blockcypher.com/ltc-testnet',
-    symbol: 'LTC',
-    confirmationsRequired: 2
-  },
-  bitcoin: {
-    apiBase: 'https://api.blockcypher.com/v1/btc/test3',
-    explorer: 'https://live.blockcypher.com/btc-testnet',
-    symbol: 'BTC',
-    confirmationsRequired: 2
-  }
-};
 
 const getExchangeRate = (crypto) => EXCHANGE_RATES[crypto] || 1;
 
@@ -89,8 +75,6 @@ const getAlchemyTransferValueWei = (transfer) => {
 
   return null;
 };
-
-const getUtxoNetwork = (crypto) => UTXO_NETWORKS[crypto];
 
 const getBlockCypherTxLink = (txHash, crypto) => {
   const network = getUtxoNetwork(crypto);
@@ -1604,8 +1588,8 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
 // Start monitoring all awaiting tickets
 export const startTransactionMonitoring = (io) => {
   console.log('Starting transaction monitoring service...');
-  console.log('   Bitcoin: TESTNET (BlockCypher API)');
-  console.log('   Litecoin: TESTNET (BlockCypher API)');
+  console.log(`   Bitcoin: ${getUtxoNetworkMode('bitcoin').toUpperCase()} (BlockCypher API)`);
+  console.log(`   Litecoin: ${getUtxoNetworkMode('litecoin').toUpperCase()} (BlockCypher API)`);
   console.log(`   Ethereum: ${ETH_NETWORK_MODE.toUpperCase()} (${ETH_RPC_CONFIG[ETH_NETWORK_MODE].name})`);
   console.log('   Monitoring interval: Every 3 seconds\n');
   

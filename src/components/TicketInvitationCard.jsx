@@ -2,7 +2,7 @@ import { useState } from 'react';
 import PropTypes from 'prop-types';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const TicketInvitationCard = ({ ticket, onRespond }) => {
   const [isResponding, setIsResponding] = useState(false);

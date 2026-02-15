@@ -2,11 +2,13 @@ export const MAX_XP = 1000;
 export const MAX_USD_FOR_XP = 10000;
 
 export const RANK_THRESHOLDS = [
-  { rank: 'whale', minUSD: 10000 },
+  { rank: 'ruby rich', minUSD: 10000 },
   { rank: 'top client', minUSD: 5000 },
   { rank: 'rich client', minUSD: 1000 },
   { rank: 'client', minUSD: 0 }
 ];
+
+export const STAFF_RANKS = ['developer', 'moderator'];
 
 const toNumber = (value) => {
   const numeric = Number(value);
@@ -14,6 +16,7 @@ const toNumber = (value) => {
 };
 
 export const isDeveloperRank = (rank) => rank === 'developer';
+export const isStaffRank = (rank) => STAFF_RANKS.includes(rank);
 
 export const getRankForTotalUSD = (totalUSDValue) => {
   const usdValue = toNumber(totalUSDValue);

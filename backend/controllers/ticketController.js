@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { ethers } from 'ethers';
 import { BOT_WALLETS, calculateTotalAmount, EXCHANGE_RATES, ETH_RPC_CONFIG, ETH_NETWORK_MODE } from '../config/wallets.js';
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
+import { isStaffUser } from '../utils/staffUtils.js';
 
 const getEthProvider = () => {
   const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
@@ -27,8 +28,8 @@ const getEthWallet = () => {
 const getAddressPrefixMatch = (rawValue, crypto) => {
   const patterns = {
     ethereum: /^(0x[a-fA-F0-9]{40})/,
-    bitcoin: /^((?:tb1|bc1)[0-9a-z]{20,}|[mn2][a-zA-Z0-9]{25,34})/,
-    litecoin: /^((?:tltc1)[0-9a-z]{20,}|[mn2][a-zA-Z0-9]{25,34})/
+    bitcoin: /^((?:bc1|tb1)[0-9a-z]{20,}|[13mn2][a-zA-Z0-9]{25,34})/,
+    litecoin: /^((?:ltc1|tltc1)[0-9a-z]{20,}|[LM3mn2Q][a-zA-Z0-9]{25,34})/
   };
   const pattern = patterns[crypto];
   if (!pattern) {
@@ -68,6 +69,94 @@ const hasAllPrivacySelections = (ticket) => {
     return false;
   }
   return partyIds.every((partyId) => Boolean(getPrivacySelectionValue(ticket, partyId)));
+};
+
+const addStaffActionMessage = (ticket, { title, description, color = 'blue' }) => {
+  ticket.messages.push({
+    isBot: true,
+    content: title,
+    type: 'embed',
+    embedData: {
+      title,
+      description,
+      color,
+      requiresAction: false
+    },
+    timestamp: new Date()
+  });
+};
+
+const applyRescanTransaction = (ticket) => {
+  ticket.rescanAttempts += 1;
+  ticket.lastRescanTime = new Date();
+
+  if (ticket.rescanAttempts > 3) {
+    ticket.messages = ticket.messages.filter(msg =>
+      msg.embedData?.actionType !== 'transaction-timeout'
+    );
+
+    ticket.messages.push({
+      isBot: true,
+      content: 'Maximum Attempts Reached',
+      type: 'embed',
+      embedData: {
+        title: 'Maximum Attempts Reached',
+        description: 'After 3 rescan attempts, we cannot proceed with automatic detection.\n\nPlease type <strong>/ping</strong> to contact staff for manual verification.',
+        color: 'red',
+        requiresAction: false
+      },
+      timestamp: new Date()
+    });
+
+    ticket.awaitingTransaction = false;
+    ticket.transactionTimedOut = true;
+    return { maxAttemptsReached: true };
+  }
+
+  ticket.messages = ticket.messages.filter(msg =>
+    msg.embedData?.actionType !== 'transaction-timeout'
+  );
+
+  ticket.messages.push({
+    isBot: true,
+    content: 'Rescanning for Transaction',
+    type: 'embed',
+    embedData: {
+      title: 'Rescanning for Transaction',
+      description: `Attempt ${ticket.rescanAttempts} of 3. Scanning for payment...\n\nTime limit: ${ticket.rescanAttempts === 1 ? '10' : ticket.rescanAttempts === 2 ? '8' : '12'} minutes`,
+      color: 'blue',
+      requiresAction: false
+    },
+    timestamp: new Date()
+  });
+
+  ticket.transactionTimedOut = false;
+  ticket.awaitingTransaction = true;
+  ticket.transactionTimeoutAt = null;
+
+  return { maxAttemptsReached: false };
+};
+
+const applyCancelTransaction = (ticket) => {
+  ticket.messages = ticket.messages.filter(msg =>
+    msg.embedData?.actionType !== 'transaction-timeout'
+  );
+
+  ticket.messages.push({
+    isBot: true,
+    content: 'Transaction Cancelled',
+    type: 'embed',
+    embedData: {
+      title: 'Transaction Cancelled',
+      description: 'Transaction monitoring has been cancelled.\n\nIf you need assistance, please type <strong>/ping</strong> to contact staff.',
+      color: 'red',
+      requiresAction: false
+    },
+    timestamp: new Date()
+  });
+
+  ticket.awaitingTransaction = false;
+  ticket.transactionTimedOut = true;
 };
 
 const normalizeAttachmentsInput = (attachments, maxDataUrlLength) => {
@@ -351,8 +440,9 @@ export const getTicket = async (req, res) => {
     const isParticipant = ticket.participants.some(
       p => p.user && p.user._id.toString() === userId.toString() && p.status === 'accepted'
     );
+    const isStaff = isStaffUser(req.user);
 
-    if (!isCreator && !isParticipant) {
+    if (!isCreator && !isParticipant && !isStaff) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
@@ -524,11 +614,138 @@ export const sendMessage = async (req, res) => {
     const isParticipant = ticket.participants.some(
       p => p.user.toString() === userId.toString() && p.status === 'accepted'
     );
+    const isStaff = isStaffUser(req.user);
 
-    if (!isCreator && !isParticipant) {
+    if (!isCreator && !isParticipant && !isStaff) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
+      });
+    }
+
+    if (isStaff && trimmedContent.startsWith('/staff')) {
+      const parts = trimmedContent.split(' ').filter(Boolean);
+      const staffCommand = (parts[1] || 'help').toLowerCase();
+
+      const sendStaffHelp = async () => {
+        const description = [
+          '<strong>/staff rescan</strong> - Rescan for a transaction',
+          '<strong>/staff cancel-transaction</strong> - Cancel transaction monitoring',
+          '<strong>/staff close</strong> - Close this ticket (60s countdown)',
+          '<strong>/staff cancel</strong> - Cancel this ticket immediately',
+          '<strong>/staff dispute</strong> - Mark ticket as disputed',
+          '<strong>/staff refund</strong> - Mark ticket as refunded'
+        ].join('<br/>');
+        addStaffActionMessage(ticket, {
+          title: 'Staff Commands',
+          description,
+          color: 'blue'
+        });
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      };
+
+      if (staffCommand === 'help') {
+        return sendStaffHelp();
+      }
+
+      if (staffCommand === 'rescan') {
+        applyRescanTransaction(ticket);
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      if (staffCommand === 'cancel-transaction') {
+        applyCancelTransaction(ticket);
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      if (staffCommand === 'close') {
+        const alreadyClosed = ['completed', 'cancelled', 'refunded'].includes(ticket.status);
+        if (alreadyClosed) {
+          return res.status(400).json({
+            success: false,
+            message: 'Ticket is already closed.'
+          });
+        }
+
+        const closeAt = new Date(Date.now() + 60 * 1000);
+        ticket.status = 'closing';
+        ticket.closeScheduledAt = closeAt;
+        ticket.closeInitiatedBy = userId;
+
+        const hasClosingMessage = ticket.messages.some(
+          (msg) => msg.embedData?.actionType === 'ticket-closing'
+        );
+        if (!hasClosingMessage) {
+          ticket.messages.push({
+            isBot: true,
+            content: 'Ticket Closing',
+            type: 'embed',
+            embedData: {
+              title: 'Ticket Closing',
+              description: 'Staff initiated closure. This ticket will close in 1 minute.',
+              color: 'yellow',
+              requiresAction: false,
+              actionType: 'ticket-closing'
+            },
+            timestamp: new Date()
+          });
+        }
+
+        await ticket.save();
+        scheduleTicketClosure(ticket._id, ticket.closeScheduledAt);
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      if (staffCommand === 'cancel') {
+        ticket.status = 'cancelled';
+        ticket.closedAt = new Date();
+        ticket.closedBy = userId;
+        addStaffActionMessage(ticket, {
+          title: 'Ticket Cancelled',
+          description: 'A staff member cancelled this ticket.',
+          color: 'red'
+        });
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      if (staffCommand === 'dispute') {
+        ticket.status = 'disputed';
+        addStaffActionMessage(ticket, {
+          title: 'Ticket Disputed',
+          description: 'This ticket has been marked as disputed by staff.',
+          color: 'orange'
+        });
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      if (staffCommand === 'refund') {
+        ticket.status = 'refunded';
+        ticket.closedAt = new Date();
+        ticket.closedBy = userId;
+        addStaffActionMessage(ticket, {
+          title: 'Ticket Refunded',
+          description: 'This ticket has been marked as refunded by staff.',
+          color: 'red'
+        });
+        await ticket.save();
+        await ticket.populate('messages.sender', 'username userId avatar');
+        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: 'Unknown staff command. Use /staff help for options.'
       });
     }
 
@@ -2144,6 +2361,27 @@ export const confirmPassUse = async (req, res) => {
       const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
       const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
 
+      if (!botWallet) {
+        ticket.messages.push({
+          isBot: true,
+          content: 'Wallet Not Configured',
+          type: 'embed',
+          embedData: {
+            title: 'Wallet Not Configured',
+            description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for this network. Please contact staff.`,
+            color: 'red'
+          },
+          timestamp: new Date()
+        });
+        await ticket.save();
+
+        return res.status(500).json({
+          success: false,
+          message: 'Bot wallet not configured for selected cryptocurrency',
+          ticket
+        });
+      }
+
       ticket.messages.push({
         isBot: true,
         content: 'Send Funds',
@@ -2262,6 +2500,27 @@ export const confirmFees = async (req, res) => {
         const botWallet = BOT_WALLETS[ticket.cryptocurrency];
         const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
         const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
+
+        if (!botWallet) {
+          ticket.messages.push({
+            isBot: true,
+            content: 'Wallet Not Configured',
+            type: 'embed',
+            embedData: {
+              title: 'Wallet Not Configured',
+              description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for this network. Please contact staff.`,
+              color: 'red'
+            },
+            timestamp: new Date()
+          });
+          await ticket.save();
+
+          return res.status(500).json({
+            success: false,
+            message: 'Bot wallet not configured for selected cryptocurrency',
+            ticket
+          });
+        }
 
         ticket.messages.push({
           isBot: true,
@@ -2409,6 +2668,13 @@ export const copyTransactionDetails = async (req, res) => {
     const botWallet = BOT_WALLETS[ticket.cryptocurrency];
     const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
     const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
+
+    if (!botWallet) {
+      return res.status(500).json({
+        success: false,
+        message: 'Bot wallet not configured for selected cryptocurrency'
+      });
+    }
 
     // Increment copy count
     ticket.copyDetailsClickCount += 1;
@@ -2854,69 +3120,10 @@ export const rescanTransaction = async (req, res) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    // Increment rescan attempts
-    ticket.rescanAttempts += 1;
-    ticket.lastRescanTime = new Date();
-
-    // Check if max attempts reached
-    if (ticket.rescanAttempts > 3) {
-      // Remove timeout message
-      ticket.messages = ticket.messages.filter(msg => 
-        msg.embedData?.actionType !== 'transaction-timeout'
-      );
-
-      // Add max attempts message
-      ticket.messages.push({
-        isBot: true,
-        content: 'Maximum Attempts Reached',
-        type: 'embed',
-        embedData: {
-          title: 'Maximum Attempts Reached',
-          description: `After 3 rescan attempts, we cannot proceed with automatic detection.\n\nPlease type <strong>/ping</strong> to contact staff for manual verification.`,
-          color: 'red',
-          requiresAction: false
-        },
-        timestamp: new Date()
-      });
-
-      ticket.awaitingTransaction = false;
-      ticket.transactionTimedOut = true;
-      await ticket.save();
-
-      return res.json({ 
-        success: true, 
-        ticket,
-        maxAttemptsReached: true
-      });
-    }
-
-    // Remove timeout message
-    ticket.messages = ticket.messages.filter(msg => 
-      msg.embedData?.actionType !== 'transaction-timeout'
-    );
-
-    // Add rescanning message
-    ticket.messages.push({
-      isBot: true,
-      content: 'Rescanning for Transaction',
-      type: 'embed',
-      embedData: {
-        title: 'Rescanning for Transaction',
-        description: `Attempt ${ticket.rescanAttempts} of 3. Scanning for payment...\n\nTime limit: ${ticket.rescanAttempts === 1 ? '10' : ticket.rescanAttempts === 2 ? '8' : '12'} minutes`,
-        color: 'blue',
-        requiresAction: false
-      },
-      timestamp: new Date()
-    });
-
-    // Reset timeout settings
-    ticket.transactionTimedOut = false;
-    ticket.awaitingTransaction = true;
-    ticket.transactionTimeoutAt = null; // Will be reset by monitor
-
+    const { maxAttemptsReached } = applyRescanTransaction(ticket);
     await ticket.save();
 
-    res.json({ success: true, ticket });
+    res.json({ success: true, ticket, maxAttemptsReached });
   } catch (error) {
     console.error('Error rescanning transaction:', error);
     res.status(500).json({ message: 'Server error' });
@@ -2933,27 +3140,7 @@ export const cancelTransaction = async (req, res) => {
       return res.status(404).json({ message: 'Ticket not found' });
     }
 
-    // Remove timeout message
-    ticket.messages = ticket.messages.filter(msg => 
-      msg.embedData?.actionType !== 'transaction-timeout'
-    );
-
-    // Add cancellation message
-    ticket.messages.push({
-      isBot: true,
-      content: 'Transaction Cancelled',
-      type: 'embed',
-      embedData: {
-        title: 'Transaction Cancelled',
-        description: `Transaction monitoring has been cancelled.\n\nIf you need assistance, please type <strong>/ping</strong> to contact staff.`,
-        color: 'red',
-        requiresAction: false
-      },
-      timestamp: new Date()
-    });
-
-    ticket.awaitingTransaction = false;
-    ticket.transactionTimedOut = true;
+    applyCancelTransaction(ticket);
 
     await ticket.save();
 

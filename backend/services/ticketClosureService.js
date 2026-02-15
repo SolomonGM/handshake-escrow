@@ -1,7 +1,7 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import { getIo } from '../utils/socketRegistry.js';
-import { MAX_USD_FOR_XP, MAX_XP, RANK_THRESHOLDS } from '../utils/rankUtils.js';
+import { MAX_USD_FOR_XP, MAX_XP, RANK_THRESHOLDS, STAFF_RANKS } from '../utils/rankUtils.js';
 import { buildTransactionFeedItem } from './transactionFeedService.js';
 
 const closureTimers = new Map();
@@ -87,7 +87,7 @@ export const applyTicketCompletionStats = async (ticket) => {
       $set: {
         rank: {
           $cond: [
-            { $eq: ['$rank', 'developer'] },
+            { $in: ['$rank', STAFF_RANKS] },
             '$rank',
             {
               $switch: {
@@ -99,7 +99,7 @@ export const applyTicketCompletionStats = async (ticket) => {
         },
         xp: {
           $cond: [
-            { $eq: ['$rank', 'developer'] },
+            { $in: ['$rank', STAFF_RANKS] },
             '$xp',
             xpExpression
           ]

@@ -137,7 +137,7 @@ const Leaderboard = () => {
       <div className="container md:pb-10">
         {/* Leaderboard Header */}
         <div className="text-center mb-16">
-          <h2 className="h2 mb-4">Top Whales</h2>
+          <h2 className="h2 mb-4">Top RUBY Rich</h2>
           <p className="body-2 text-n-4 max-w-3xl mx-auto">
             Our top 3 highest USD value exchangers with the largest trade volumes
           </p>

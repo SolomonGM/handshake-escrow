@@ -6,7 +6,7 @@ import 'react-circular-progressbar/dist/styles.css';
 import axios from "axios";
 import { toast } from "../utils/toast";
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
   const navigate = useNavigate();

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from '../models/User.js';
-import { getRankForTotalUSD, getXpForTotalUSD, isDeveloperRank } from '../utils/rankUtils.js';
+import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 
 dotenv.config();
 
@@ -14,7 +14,7 @@ const recalculateUserProgress = async () => {
     const bulkOps = [];
 
     for (const user of users) {
-      if (isDeveloperRank(user.rank)) {
+      if (isStaffRank(user.rank)) {
         continue;
       }
 

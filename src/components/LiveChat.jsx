@@ -5,6 +5,7 @@ import StickerPicker from './StickerPicker';
 import UserProfileModal from './UserProfileModal';
 import socketService from '../services/socket';
 import { chatAPI } from '../services/api';
+import { getRankBadge, getRankColor, getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
 const LiveChat = ({ isOpen, onClose }) => {
   const { user } = useAuth();
@@ -25,6 +26,7 @@ const LiveChat = ({ isOpen, onClose }) => {
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [helpData, setHelpData] = useState(null);
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -57,14 +59,6 @@ const LiveChat = ({ isOpen, onClose }) => {
     }
   ];
 
-  // Rank colors
-  const rankColors = {
-    client: '#06b6d4', // cyan
-    'rich client': '#f97316', // orange
-    'top client': '#a855f7', // purple
-    whale: '#1e3a8a', // dark blue
-    developer: 'gradient' // animated gradient
-  };
 
   // Connect to WebSocket and load message history
   useEffect(() => {
@@ -159,7 +153,13 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     // Listen for errors
     socketService.onError((err) => {
-      setError(err.message);
+      const nextError = typeof err === 'string'
+        ? { message: err, showToUser: false }
+        : {
+          message: err?.message || 'An error occurred',
+          showToUser: Boolean(err?.showToUser)
+        };
+      setError(nextError);
       setTimeout(() => setError(null), 5000);
     });
 
@@ -176,6 +176,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     // Listen for help command response
     socketService.on('chat_help', (data) => {
       console.log('Received help data:', data);
+      setHelpData(data);
       setShowHelpModal(true);
     });
 
@@ -281,10 +282,6 @@ const LiveChat = ({ isOpen, onClose }) => {
     scrollToBottom();
   }, [messages]);
 
-  // Get rank color
-  const getRankColor = (rank) => {
-    return rankColors[rank] || '#9ca3af';
-  };
 
   // Parse message for mentions
   const parseMessage = (text) => {
@@ -385,6 +382,13 @@ const LiveChat = ({ isOpen, onClose }) => {
     return date.toLocaleDateString();
   };
 
+  const helpSections = helpData?.sections?.length
+    ? helpData.sections
+    : [{ title: 'Commands', commands: adminCommands }];
+  const helpTitle = helpData?.title || 'Commands';
+  const helpSubtitle = helpData?.subtitle || 'Available chat commands';
+  const helpFooter = helpData?.footer || null;
+
   return (
     <>
       {/* Chat Toggle Button */}
@@ -429,10 +433,17 @@ const LiveChat = ({ isOpen, onClose }) => {
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
+        {/* User-facing moderation notices */}
+        {error?.showToUser && (
+          <div className="m-4 p-3 bg-yellow-500/10 border border-yellow-500/40 rounded text-yellow-300 text-xs">
+            <span className="font-semibold">Notice:</span> {error.message}
+          </div>
+        )}
+
         {/* Developer-only error display */}
-        {error && user && user.badge === 'admin' && (
+        {!error?.showToUser && error?.message && user?.rank === 'developer' && (
           <div className="m-4 p-2 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-xs">
-            <span className="font-semibold">DEV ERROR:</span> {error}
+            <span className="font-semibold">DEV ERROR:</span> {error.message}
           </div>
         )}
 
@@ -547,14 +558,21 @@ const LiveChat = ({ isOpen, onClose }) => {
           )}
 
           {/* Render only visible messages */}
-          {messages.slice(visibleRange.start, visibleRange.end).map((msg) => (
-            <div
-              key={msg.id}
-              id={`message-${msg.id}`}
-              className="group relative message-item"
-              onMouseEnter={() => setHoveredMessageId(msg.id)}
-              onMouseLeave={() => setHoveredMessageId(null)}
-            >
+          {messages.slice(visibleRange.start, visibleRange.end).map((msg) => {
+            const normalizedRank = normalizeRank(msg.rank);
+            const rankBadge = getRankBadge(msg.rank);
+            const fallbackBadge = rankBadge ? null : getRankBadge(msg.badge);
+            const badgeSrc = rankBadge || fallbackBadge;
+            const badgeLabel = rankBadge ? getRankLabel(msg.rank) : (fallbackBadge ? getRankLabel(msg.badge) : '');
+
+            return (
+              <div
+                key={msg.id}
+                id={`message-${msg.id}`}
+                className="group relative message-item"
+                onMouseEnter={() => setHoveredMessageId(msg.id)}
+                onMouseLeave={() => setHoveredMessageId(null)}
+              >
               {/* Reply indicator - clickable to jump to original */}
               {msg.replyTo && (
                 <div 
@@ -613,7 +631,7 @@ const LiveChat = ({ isOpen, onClose }) => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {/* Username with rank color */}
-                    {msg.rank === 'developer' ? (
+                    {normalizedRank === 'developer' ? (
                       <span className="font-semibold text-sm gradient-text">
                         {msg.username}
                       </span>
@@ -627,40 +645,14 @@ const LiveChat = ({ isOpen, onClose }) => {
                     )}
 
                     {/* Badge */}
-                    {(msg.badge || msg.rank === 'rich client' || msg.rank === 'top client' || msg.rank === 'whale') && (
+                    {badgeSrc && (
                       <span className="w-4 h-4 flex items-center justify-center">
-                        {msg.badge === 'admin' && (
-                          <img 
-                            src="/badges/admin.png" 
-                            alt="Admin" 
-                            className="w-4 h-4"
-                            onError={(e) => e.target.style.display = 'none'}
-                          />
-                        )}
-                        {msg.rank === 'whale' && !msg.badge && (
-                          <img 
-                            src="/badges/whale.png" 
-                            alt="Whale" 
-                            className="w-4 h-4"
-                            onError={(e) => e.target.style.display = 'none'}
-                          />
-                        )}
-                        {msg.rank === 'top client' && !msg.badge && (
-                          <img 
-                            src="/badges/top-client.png" 
-                            alt="Top Client" 
-                            className="w-4 h-4"
-                            onError={(e) => e.target.style.display = 'none'}
-                          />
-                        )}
-                        {msg.rank === 'rich client' && !msg.badge && (
-                          <img 
-                            src="/badges/rich-client.png" 
-                            alt="Rich Client" 
-                            className="w-4 h-4"
-                            onError={(e) => e.target.style.display = 'none'}
-                          />
-                        )}
+                        <img 
+                          src={badgeSrc} 
+                          alt={badgeLabel ? `${badgeLabel} badge` : 'Rank badge'} 
+                          className="w-4 h-4"
+                          onError={(e) => e.target.style.display = 'none'}
+                        />
                       </span>
                     )}
 
@@ -713,8 +705,9 @@ const LiveChat = ({ isOpen, onClose }) => {
                   </button>
                 )}
               </div>
-            </div>
-          ))}
+              </div>
+            );
+          })}
 
           {/* Spacer for scrolled-out messages at bottom */}
           {visibleRange.end < messages.length && (
@@ -868,23 +861,16 @@ const LiveChat = ({ isOpen, onClose }) => {
       {/* Help Modal */}
       {showHelpModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-gradient-to-br from-[#1a1f3a] via-[#2a2d4a] to-[#1a1f3a] rounded-2xl border border-[#3a3f5a] shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+          <div className="bg-n-8 border border-n-6 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
             {/* Header */}
-            <div className="border-b border-[#3a3f5a] px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-white font-bold text-lg">Admin Commands</h2>
-                  <p className="text-gray-400 text-xs">Developer tools and commands</p>
-                </div>
+            <div className="border-b border-n-6 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-n-1 font-bold text-lg">{helpTitle}</h2>
+                <p className="text-n-4 text-xs">{helpSubtitle}</p>
               </div>
               <button
                 onClick={() => setShowHelpModal(false)}
-                className="text-gray-400 hover:text-white transition-colors p-1"
+                className="text-n-4 hover:text-n-1 transition-colors p-1"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -893,48 +879,39 @@ const LiveChat = ({ isOpen, onClose }) => {
             </div>
 
             {/* Content */}
-            <div className="px-6 py-4 overflow-y-auto max-h-[calc(80vh-100px)] custom-scrollbar">
-              <div className="space-y-4">
-                {adminCommands.map((cmd, index) => (
-                  <div 
-                    key={index}
-                    className="bg-[#1a2035] rounded-lg border border-[#2a3f5a] p-4 hover:border-emerald-500/30 transition-colors"
-                  >
-                    {/* Command */}
-                    <div className="flex items-start gap-2 mb-2">
-                      <div className="mt-1 text-emerald-400">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
+            <div className="px-6 py-5 overflow-y-auto max-h-[calc(80vh-120px)] custom-scrollbar space-y-6">
+              {helpSections.map((section, sectionIndex) => (
+                <div key={`${section.title}-${sectionIndex}`}>
+                  <div className="text-xs uppercase tracking-wider text-n-4 mb-3">{section.title}</div>
+                  <div className="space-y-3">
+                    {section.commands.map((cmd, index) => (
+                      <div
+                        key={`${cmd.command}-${index}`}
+                        className="bg-n-7 border border-n-6 rounded-lg p-4"
+                      >
+                        <code className="text-emerald-300 font-mono text-sm font-semibold block mb-2">
+                          {cmd.command}
+                        </code>
+                        <p className="text-n-3 text-sm">{cmd.description}</p>
+                        {cmd.example ? (
+                          <div className="mt-3 bg-n-8 rounded-lg border border-n-6 px-3 py-2">
+                            <p className="text-n-4 text-xs font-semibold mb-1">Example</p>
+                            <code className="text-n-3 text-xs font-mono break-all">{cmd.example}</code>
+                          </div>
+                        ) : null}
                       </div>
-                      <code className="text-emerald-300 font-mono text-sm font-semibold">
-                        {cmd.command}
-                      </code>
-                    </div>
-
-                    {/* Description */}
-                    <p className="text-gray-300 text-sm mb-3 ml-6">
-                      {cmd.description}
-                    </p>
-
-                    {/* Example */}
-                    <div className="ml-6 bg-black/30 rounded-lg p-3 border border-[#2a3f5a]">
-                      <p className="text-gray-500 text-xs mb-1 font-semibold">Example:</p>
-                      <code className="text-gray-400 text-xs font-mono break-all">
-                        {cmd.example}
-                      </code>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
 
             {/* Footer */}
-            <div className="border-t border-[#3a3f5a] px-6 py-3 bg-[#1a1f3a]/50">
-              <p className="text-gray-500 text-xs text-center">
-                ⚡ Developer tools only • Commands require admin privileges
-              </p>
-            </div>
+            {helpFooter && (
+              <div className="border-t border-n-6 px-6 py-3 bg-n-7/40">
+                <p className="text-n-4 text-xs text-center">{helpFooter}</p>
+              </div>
+            )}
           </div>
         </div>
       )}

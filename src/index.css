@@ -347,7 +347,7 @@ input:focus {
 }
 
 .gradient-text {
-  background: linear-gradient(90deg, #ffffff, #a0a0a0, #ffffff, #d0d0d0, #ffffff);
+  background: linear-gradient(90deg, #ffffff 0%, #ff1f3d 20%, #ffffff 40%, #ff5c7a 60%, #ffffff 80%, #ff1f3d 100%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

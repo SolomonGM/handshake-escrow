@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
+import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
 const AdminPanel = () => {
   const [users, setUsers] = useState([]);
@@ -11,24 +13,43 @@ const AdminPanel = () => {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [tradeRequests, setTradeRequests] = useState([]);
   const [tradeSearchTerm, setTradeSearchTerm] = useState('');
+  const [tradeRequestsPage, setTradeRequestsPage] = useState(1);
+  const [tradeRequestsTotalPages, setTradeRequestsTotalPages] = useState(1);
+  const [tradeRequestsTotalCount, setTradeRequestsTotalCount] = useState(0);
+  const [tradeRequestsRestricted, setTradeRequestsRestricted] = useState(false);
   const [editingTradeRequestId, setEditingTradeRequestId] = useState(null);
   const [tradeRequestDraft, setTradeRequestDraft] = useState(null);
+  const [tradeTickets, setTradeTickets] = useState([]);
+  const [ticketSearchTerm, setTicketSearchTerm] = useState('');
+  const [ticketsPage, setTicketsPage] = useState(1);
+  const [ticketsTotalPages, setTicketsTotalPages] = useState(1);
+  const [ticketsTotalCount, setTicketsTotalCount] = useState(0);
+  const [ticketsRestricted, setTicketsRestricted] = useState(false);
+
+  const PAGE_SIZE = 25;
+  const navigate = useNavigate();
 
   useEffect(() => {
-    loadData();
+    loadUsersAndStats();
   }, []);
 
-  const loadData = async () => {
+  useEffect(() => {
+    loadTradeRequests();
+  }, [tradeSearchTerm, tradeRequestsPage]);
+
+  useEffect(() => {
+    loadTradeTickets();
+  }, [ticketSearchTerm, ticketsPage]);
+
+  const loadUsersAndStats = async () => {
     try {
       setLoading(true);
-      const [usersData, statsData, tradeRequestsData] = await Promise.all([
+      const [usersData, statsData] = await Promise.all([
         adminAPI.getAllUsers(),
-        adminAPI.getSiteStats(),
-        adminAPI.getTradeRequests()
+        adminAPI.getSiteStats()
       ]);
       setUsers(usersData.users);
       setStats(statsData);
-      setTradeRequests(tradeRequestsData.tradeRequests || []);
     } catch (error) {
       setMessage('Error loading data: ' + (error.response?.data?.message || error.message));
     } finally {
@@ -36,11 +57,49 @@ const AdminPanel = () => {
     }
   };
 
+  const loadTradeRequests = async () => {
+    try {
+      const tradeRequestsData = await adminAPI.getTradeRequests(
+        tradeSearchTerm,
+        tradeRequestsPage,
+        PAGE_SIZE
+      );
+      setTradeRequests(tradeRequestsData.tradeRequests || []);
+      setTradeRequestsTotalPages(tradeRequestsData.totalPages || 1);
+      setTradeRequestsTotalCount(tradeRequestsData.totalCount || 0);
+      setTradeRequestsRestricted(Boolean(tradeRequestsData.restricted));
+      if (tradeRequestsData.page && tradeRequestsData.page !== tradeRequestsPage) {
+        setTradeRequestsPage(tradeRequestsData.page);
+      }
+    } catch (error) {
+      setMessage('Error loading trade requests: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const loadTradeTickets = async () => {
+    try {
+      const tradeTicketsData = await adminAPI.getTradeTickets(
+        ticketSearchTerm,
+        ticketsPage,
+        PAGE_SIZE
+      );
+      setTradeTickets(tradeTicketsData.tickets || []);
+      setTicketsTotalPages(tradeTicketsData.totalPages || 1);
+      setTicketsTotalCount(tradeTicketsData.totalCount || 0);
+      setTicketsRestricted(Boolean(tradeTicketsData.restricted));
+      if (tradeTicketsData.page && tradeTicketsData.page !== ticketsPage) {
+        setTicketsPage(tradeTicketsData.page);
+      }
+    } catch (error) {
+      setMessage('Error loading trade tickets: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   const handleUpdateRank = async (userId, rank) => {
     try {
       await adminAPI.updateUserRank(userId, rank);
       setMessage('User rank updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -52,7 +111,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.updateUserRole(userId, role);
       setMessage('User role updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -64,7 +123,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.updateUserXP(userId, parseInt(xp));
       setMessage('User XP updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -76,7 +135,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.updateUserPasses(userId, parseInt(passes));
       setMessage('User passes updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -88,7 +147,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.updateUserTotalUSDValue(userId, parseFloat(totalUSDValue));
       setMessage('User total USD value updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -100,7 +159,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.updateUserTotalDeals(userId, parseInt(totalDeals));
       setMessage('User total deals updated successfully');
-      loadData();
+      loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -116,7 +175,7 @@ const AdminPanel = () => {
     try {
       await adminAPI.deleteUser(userId);
       setMessage('User deleted successfully');
-      loadData();
+      loadUsersAndStats();
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       setMessage('Error deleting user: ' + (error.response?.data?.message || error.message));
@@ -128,22 +187,23 @@ const AdminPanel = () => {
     user.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
   );
 
-  const filteredTradeRequests = tradeRequests.filter((request) => {
-    const query = tradeSearchTerm.toLowerCase();
-    if (!query) return true;
-    const creatorName = request.creator?.username?.toLowerCase() || '';
-    const itemOffered = request.itemOffered?.toLowerCase() || '';
-    const itemDescription = request.itemDescription?.toLowerCase() || '';
-    const requestId = request.requestId?.toLowerCase() || '';
-    const recordId = request._id?.toLowerCase() || '';
-    return (
-      creatorName.includes(query) ||
-      itemOffered.includes(query) ||
-      itemDescription.includes(query) ||
-      requestId.includes(query) ||
-      recordId.includes(query)
-    );
-  });
+  const normalizedRankCounts = stats?.rankCounts
+    ? stats.rankCounts.reduce((acc, entry) => {
+        const key = normalizeRank(entry._id);
+        acc[key] = (acc[key] || 0) + entry.count;
+        return acc;
+      }, {})
+    : null;
+
+  const rankCountEntries = normalizedRankCounts
+    ? Object.entries(normalizedRankCounts).map(([rank, count]) => ({
+        rank,
+        count
+      }))
+    : [];
+
+  const filteredTradeRequests = tradeRequests;
+  const filteredTickets = tradeTickets;
 
   const startEditingTradeRequest = (request) => {
     setEditingTradeRequestId(request._id);
@@ -200,8 +260,7 @@ const AdminPanel = () => {
       setMessage('Trade request updated successfully');
       setTimeout(() => setMessage(''), 3000);
       cancelEditingTradeRequest();
-      const tradeRequestsData = await adminAPI.getTradeRequests();
-      setTradeRequests(tradeRequestsData.tradeRequests || []);
+      await loadTradeRequests();
     } catch (error) {
       setMessage('Error updating trade request: ' + (error.response?.data?.message || error.message));
     }
@@ -216,22 +275,23 @@ const AdminPanel = () => {
       await adminAPI.deleteTradeRequest(requestId);
       setMessage('Trade request deleted successfully');
       setTimeout(() => setMessage(''), 3000);
-      const tradeRequestsData = await adminAPI.getTradeRequests();
-      setTradeRequests(tradeRequestsData.tradeRequests || []);
+      await loadTradeRequests();
     } catch (error) {
       setMessage('Error deleting trade request: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const getRankColor = (rank) => {
+    const normalizedRank = normalizeRank(rank);
     const colors = {
-      'whale': 'text-[#1e40af] bg-[#1e40af]/20',
-      'top client': 'text-[#9333ea] bg-[#9333ea]/20',
-      'rich client': 'text-[#ea580c] bg-[#ea580c]/20',
+      'ruby rich': 'text-[#ff4da6] bg-[#ff4da6]/20',
+      'top client': 'text-[#2563eb] bg-[#2563eb]/20',
+      'rich client': 'text-[#f97316] bg-[#f97316]/20',
+      'moderator': 'text-[#6ee7b7] bg-[#6ee7b7]/20',
       'client': 'text-[#06b6d4] bg-[#06b6d4]/20',
       'developer': 'text-[#ef4444] bg-[#ef4444]/20',
     };
-    return colors[rank] || colors['client'];
+    return colors[normalizedRank] || colors['client'];
   };
 
   const getTradeStatusStyle = (status) => {
@@ -242,6 +302,57 @@ const AdminPanel = () => {
       deleted: 'bg-red-500/20 text-red-400',
     };
     return styles[status] || 'bg-n-5 text-n-3';
+  };
+
+  const getTicketStatusStyle = (status) => {
+    const styles = {
+      open: 'bg-blue-500/20 text-blue-400',
+      'in-progress': 'bg-emerald-500/20 text-emerald-400',
+      'awaiting-close': 'bg-amber-500/20 text-amber-400',
+      closing: 'bg-orange-500/20 text-orange-400',
+      completed: 'bg-green-500/20 text-green-400',
+      cancelled: 'bg-red-500/20 text-red-400',
+      disputed: 'bg-purple-500/20 text-purple-400',
+      refunded: 'bg-slate-500/20 text-slate-400'
+    };
+    return styles[status] || 'bg-n-5 text-n-3';
+  };
+
+  const renderPagination = ({ page, totalPages, totalCount, onPageChange }) => {
+    if (totalPages <= 1) return null;
+    return (
+      <div className="mt-4 flex items-center justify-between">
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            page <= 1
+              ? 'bg-n-6 text-n-4 cursor-not-allowed'
+              : 'bg-n-7 text-n-1 hover:bg-n-5'
+          }`}
+        >
+          Previous
+        </button>
+        <div className="text-n-4 text-sm">
+          Page <span className="text-n-1 font-semibold">{page}</span> of{' '}
+          <span className="text-n-1 font-semibold">{totalPages}</span>
+          {Number.isFinite(totalCount) && totalCount > 0 ? (
+            <span className="ml-2 text-n-5">({totalCount} total)</span>
+          ) : null}
+        </div>
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            page >= totalPages
+              ? 'bg-n-6 text-n-4 cursor-not-allowed'
+              : 'bg-n-7 text-n-1 hover:bg-n-5'
+          }`}
+        >
+          Next
+        </button>
+      </div>
+    );
   };
 
   const tradeCurrencyOptions = [
@@ -268,7 +379,11 @@ const AdminPanel = () => {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="h3 text-[#ef4444]">Administrator Panel</h2>
-        <Button onClick={loadData}>
+        <Button onClick={() => {
+          loadUsersAndStats();
+          loadTradeTickets();
+          loadTradeRequests();
+        }}>
           Refresh Data
         </Button>
       </div>
@@ -297,9 +412,9 @@ const AdminPanel = () => {
           <div className="bg-n-6 p-4 rounded-lg border border-n-5">
             <p className="text-n-4 text-sm mb-1">Rank Distribution</p>
             <div className="mt-2 space-y-1">
-              {stats.rankCounts.map((rank) => (
-                <div key={rank._id} className="flex justify-between text-xs">
-                  <span className="text-n-4 capitalize">{rank._id}:</span>
+              {rankCountEntries.map((rank) => (
+                <div key={rank.rank} className="flex justify-between text-xs">
+                  <span className="text-n-4">{getRankLabel(rank.rank)}:</span>
                   <span className="text-n-1 font-semibold">{rank.count}</span>
                 </div>
               ))}
@@ -358,19 +473,20 @@ const AdminPanel = () => {
                   <td className="px-4 py-4 whitespace-nowrap">
                     {editingUser === user._id ? (
                       <select
-                        defaultValue={user.rank}
+                        defaultValue={normalizeRank(user.rank)}
                         onChange={(e) => handleUpdateRank(user._id, e.target.value)}
                         className="bg-n-7 border border-n-5 rounded px-2 py-1 text-n-1 text-sm"
                       >
                         <option value="client">Client</option>
                         <option value="rich client">Rich Client</option>
                         <option value="top client">Top Client</option>
-                        <option value="whale">Whale</option>
+                        <option value="ruby rich">RUBY Rich</option>
+                        <option value="moderator">Moderator</option>
                         <option value="developer">Developer</option>
                       </select>
                     ) : (
-                      <span className={`px-2 py-1 rounded text-xs font-semibold uppercase ${getRankColor(user.rank)}`}>
-                        {user.rank}
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getRankColor(user.rank)}`}>
+                        {getRankLabel(user.rank)}
                       </span>
                     )}
                   </td>
@@ -383,9 +499,16 @@ const AdminPanel = () => {
                       >
                         <option value="user">User</option>
                         <option value="admin">Admin</option>
+                        <option value="moderator">Moderator</option>
                       </select>
                     ) : (
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${user.role === 'admin' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-n-5 text-n-3'}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        user.role === 'admin'
+                          ? 'bg-yellow-500/20 text-yellow-500'
+                          : user.role === 'moderator'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'bg-n-5 text-n-3'
+                      }`}>
                         {user.role}
                       </span>
                     )}
@@ -472,11 +595,106 @@ const AdminPanel = () => {
         </div>
       )}
 
+      {/* Trade Tickets Section */}
+      <div className="mt-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="h4 text-n-1">Trade Tickets</h3>
+            <p className="text-n-4 text-sm">Search by sender, receiver, or ticket ID</p>
+          </div>
+          <Button onClick={loadTradeTickets}>Refresh Tickets</Button>
+        </div>
+
+        <div className="mb-6">
+          <input
+            type="text"
+            placeholder="Search tickets by sender, receiver, or ticket ID..."
+            value={ticketSearchTerm}
+            onChange={(e) => {
+              setTicketSearchTerm(e.target.value);
+              setTicketsPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+          />
+        </div>
+
+        <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-n-7 border-b border-n-5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Ticket ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Sender</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Receiver</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Crypto</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Updated</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-n-5">
+                {filteredTickets.map((ticket) => (
+                  <tr key={ticket._id} className="hover:bg-n-7/50 transition-colors">
+                    <td className="px-4 py-4 whitespace-nowrap text-xs text-n-2 font-mono">
+                      {ticket.ticketId}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1">
+                      {ticket.sender?.username ? `@${ticket.sender.username}` : 'Pending'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1">
+                      {ticket.receiver?.username ? `@${ticket.receiver.username}` : 'Pending'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${getTicketStatusStyle(ticket.status)}`}>
+                        {ticket.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-2 uppercase">
+                      {ticket.cryptocurrency}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-3">
+                      {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => navigate(`/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}`)}
+                        className="text-color-4 hover:text-color-4/80 text-sm font-semibold"
+                      >
+                        View Ticket
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {ticketsRestricted && !ticketSearchTerm && (
+          <div className="mt-3 text-xs text-n-4">
+            Showing the 10 most recent pages. Use search to access older tickets.
+          </div>
+        )}
+
+        {renderPagination({
+          page: ticketsPage,
+          totalPages: ticketsTotalPages,
+          totalCount: ticketsTotalCount,
+          onPageChange: setTicketsPage
+        })}
+
+        {filteredTickets.length === 0 && (
+          <div className="text-center py-8 text-n-4">
+            No trade tickets found matching your search.
+          </div>
+        )}
+      </div>
+
       {/* Trade Requests Section */}
       <div className="mt-12">
         <div className="flex items-center justify-between mb-6">
           <h3 className="h4 text-n-1">Trade Requests</h3>
-          <Button onClick={loadData}>Refresh Trade Requests</Button>
+          <Button onClick={loadTradeRequests}>Refresh Trade Requests</Button>
         </div>
 
         <div className="mb-6">
@@ -484,7 +702,10 @@ const AdminPanel = () => {
             type="text"
             placeholder="Search trade requests by request ID, creator, or item..."
             value={tradeSearchTerm}
-            onChange={(e) => setTradeSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setTradeSearchTerm(e.target.value);
+              setTradeRequestsPage(1);
+            }}
             className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
           />
         </div>
@@ -675,6 +896,19 @@ const AdminPanel = () => {
             </table>
           </div>
         </div>
+
+        {tradeRequestsRestricted && !tradeSearchTerm && (
+          <div className="mt-3 text-xs text-n-4">
+            Showing the 10 most recent pages. Use search to access older trade requests.
+          </div>
+        )}
+
+        {renderPagination({
+          page: tradeRequestsPage,
+          totalPages: tradeRequestsTotalPages,
+          totalCount: tradeRequestsTotalCount,
+          onPageChange: setTradeRequestsPage
+        })}
 
         {filteredTradeRequests.length === 0 && (
           <div className="text-center py-8 text-n-4">

@@ -6,7 +6,7 @@ import Section from "./Section";
 import { toast } from "../utils/toast";
 import { QRCodeSVG } from 'qrcode.react';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const TradeTicket = () => {
   const [searchParams] = useSearchParams();
@@ -257,6 +257,25 @@ const TradeTicket = () => {
   const getReceiverParticipant = () => ticket?.participants?.find(p => p.role === 'receiver');
 
   const getCurrentUserId = () => (user?._id ?? user?.id ?? '');
+  const isStaffUser = Boolean(user && (user.role === 'admin' || user.role === 'moderator' || user.rank === 'developer'));
+
+  const isTicketCreator = () => {
+    const currentUserId = getCurrentUserId();
+    if (!ticket || !currentUserId) return false;
+    return isSameUser(currentUserId, ticket.creator?._id ?? ticket.creator);
+  };
+
+  const isTicketParticipant = () => {
+    const currentUserId = getCurrentUserId();
+    if (!ticket || !currentUserId) return false;
+    return ticket.participants?.some((participant) =>
+      participant?.status === 'accepted' &&
+      isSameUser(currentUserId, participant.user?._id ?? participant.user)
+    );
+  };
+
+  const isTicketMember = isTicketCreator() || isTicketParticipant();
+  const isStaffViewer = Boolean(ticket && isStaffUser && !isTicketMember);
 
   const isUserSender = () => {
     const currentUserId = getCurrentUserId();
@@ -310,14 +329,18 @@ const TradeTicket = () => {
 
   const isAwaitingPayoutAddress = Boolean(ticket?.awaitingPayoutAddress && isUserReceiver());
   const isActiveChat = ['in-progress', 'awaiting-close', 'closing', 'completed'].includes(ticket?.status);
-  const inputPlaceholder = isAwaitingPayoutAddress
-    ? 'Paste your Ethereum address (0x...)'
-    : (isActiveChat ? 'Send message...' : 'Paste User ID here (17 digits)...');
-  const inputHelperText = isAwaitingPayoutAddress
-    ? 'Receiver: paste the payout address you want to receive funds at.'
-    : (isActiveChat
-      ? 'Send a message to the other party here.'
-      : 'Click on a user\'s profile picture in the live chat to copy their User ID, then paste it here');
+  const inputPlaceholder = isStaffViewer
+    ? 'Send staff message...'
+    : (isAwaitingPayoutAddress
+      ? 'Paste your Ethereum address (0x...)'
+      : (isActiveChat ? 'Send message...' : 'Paste User ID here (17 digits)...'));
+  const inputHelperText = isStaffViewer
+    ? 'Staff spectator mode: you can chat, but ticket actions are disabled.'
+    : (isAwaitingPayoutAddress
+      ? 'Receiver: paste the payout address you want to receive funds at.'
+      : (isActiveChat
+        ? 'Send a message to the other party here.'
+        : 'Click on a user\'s profile picture in the live chat to copy their User ID, then paste it here'));
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -470,7 +493,7 @@ const TradeTicket = () => {
 
   // Trigger bot prompt after 5 seconds (persistent, stored in database)
   useEffect(() => {
-    if (ticket && !ticket.hasShownPrompt && ticket.status === 'open') {
+    if (ticket && !ticket.hasShownPrompt && ticket.status === 'open' && !isStaffViewer) {
       const timer = setTimeout(async () => {
         try {
           const response = await axios.post(
@@ -533,11 +556,11 @@ const TradeTicket = () => {
       return;
     }
 
-    if (ticket?.awaitingPayoutAddress && isUserReceiver()) {
+    if (!isStaffViewer && ticket?.awaitingPayoutAddress && isUserReceiver()) {
       const addressPatterns = {
         ethereum: /^(0x[a-fA-F0-9]{40})/,
-        bitcoin: /^((?:tb1|bc1)[0-9a-z]{20,}|[mn2][a-zA-Z0-9]{25,34})/,
-        litecoin: /^((?:tltc1)[0-9a-z]{20,}|[mn2][a-zA-Z0-9]{25,34})/
+        bitcoin: /^((?:bc1|tb1)[0-9a-z]{20,}|[13mn2][a-zA-Z0-9]{25,34})/,
+        litecoin: /^((?:ltc1|tltc1)[0-9a-z]{20,}|[LM3mn2Q][a-zA-Z0-9]{25,34})/
       };
       const cryptoKey = ticket?.cryptocurrency || 'ethereum';
       const pattern = addressPatterns[cryptoKey];
@@ -551,7 +574,7 @@ const TradeTicket = () => {
     }
 
     // Check if we're in amount entry phase and this could be an amount
-    if (ticket.rolesConfirmed && !ticket.dealAmountConfirmed) {
+    if (!isStaffViewer && ticket.rolesConfirmed && !ticket.dealAmountConfirmed) {
       // Try to detect amount in the message
       try {
         const amountResponse = await axios.post(
@@ -573,7 +596,7 @@ const TradeTicket = () => {
     }
 
     // Check if message is a 17-digit user ID (no @mentions)
-    if (/^\d{17}$/.test(content)) {
+    if (!isStaffViewer && /^\d{17}$/.test(content)) {
       try {
         const response = await axios.post(
           `${API_URL}/tickets/${encodeURIComponent(ticket.ticketId)}/add-user`,
@@ -1120,7 +1143,8 @@ const TradeTicket = () => {
                             actionType: msg.embedData.actionType,
                             shouldShowButtons: shouldShow
                           });
-                          return shouldShow ? (
+                          if (!shouldShow || isStaffViewer) return null;
+                          return (
                             <div className="flex gap-3 mt-4">
                               <button
                                 onClick={() => handleSelectRole('sender')}
@@ -1135,7 +1159,7 @@ const TradeTicket = () => {
                                 <span>I'm the Receiver</span>
                               </button>
                             </div>
-                          ) : null;
+                          );
                         })()}
                         
                         {/* Role Confirmation Buttons */}
@@ -1156,7 +1180,7 @@ const TradeTicket = () => {
                             shouldShowButtons: shouldShow,
                             hasConfirmedRole
                           });
-                          if (!shouldShow) return null;
+                          if (!shouldShow || isStaffViewer) return null;
 
                           if (hasConfirmedRole) {
                             return (
@@ -1201,7 +1225,7 @@ const TradeTicket = () => {
                             )
                           );
 
-                          if (!shouldShow) return null;
+                          if (!shouldShow || isStaffViewer) return null;
 
                           if (hasConfirmedAmount) {
                             return (
@@ -1238,7 +1262,8 @@ const TradeTicket = () => {
                         {/* Fee Selection Buttons */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'fee-selection';
-                          return shouldShow ? (
+                          if (!shouldShow || isStaffViewer) return null;
+                          return (
                             <div className="flex flex-col gap-3 mt-4">
                               <button
                                 onClick={() => handleFeeOption('use-pass')}
@@ -1259,13 +1284,14 @@ const TradeTicket = () => {
                                 <span>Proceed with Fees</span>
                               </button>
                             </div>
-                          ) : null;
+                          );
                         })()}
 
                         {/* Fee Confirmation Buttons */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'fee-confirmation';
-                          return shouldShow ? (
+                          if (!shouldShow || isStaffViewer) return null;
+                          return (
                             <div className="flex gap-3 mt-4">
                               <button
                                 onClick={() => handleConfirmFees(true)}
@@ -1286,13 +1312,13 @@ const TradeTicket = () => {
                                 <span>This is Wrong</span>
                               </button>
                             </div>
-                          ) : null;
+                          );
                         })()}
 
                         {/* Payout Address Confirmation Buttons */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'payout-address-confirmation';
-                          if (!shouldShow) return null;
+                          if (!shouldShow || isStaffViewer) return null;
 
                           const isReceiver = isUserReceiver();
 
@@ -1331,6 +1357,7 @@ const TradeTicket = () => {
                         {/* Transaction Send Section with QR Code */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'transaction-send';
+                          if (!shouldShow || isStaffViewer) return null;
                           const timeoutAt = ticket?.transactionTimeoutAt ? new Date(ticket.transactionTimeoutAt).getTime() : null;
                           const timeLeftMs = timeoutAt ? timeoutAt - Date.now() : null;
                           const showOneMinuteLeft = timeLeftMs !== null && timeLeftMs > 0 && timeLeftMs <= 60 * 1000;
@@ -1340,7 +1367,7 @@ const TradeTicket = () => {
                             ? totalAmountValue.toFixed(2)
                             : '0.00';
                           const cryptoAmountValue = getCryptoAmountFromEmbed(msg.embedData, totalAmountValue);
-                          return shouldShow ? (
+                          return (
                             <div className="mt-4 space-y-4">
                               {/* QR Code and Address */}
                               <div className="bg-white p-6 rounded-lg flex flex-col items-center gap-4">
@@ -1416,7 +1443,7 @@ const TradeTicket = () => {
                                 </p>
                               </div>
                             </div>
-                          ) : null;
+                          );
                         })()}
 
                         {/* Transaction Confirming State */}
@@ -1496,7 +1523,7 @@ const TradeTicket = () => {
                         {/* Privacy Selection */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'privacy-selection';
-                          if (!shouldShow) return null;
+                          if (!shouldShow || isStaffViewer) return null;
 
                           const currentSelection = getPrivacySelectionForUser(getCurrentUserId());
                           const allSelected = hasAllPrivacySelections();
@@ -1576,7 +1603,7 @@ const TradeTicket = () => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'release-funds';
                           const isSender = isUserSender();
 
-                          if (!shouldShow) return null;
+                          if (!shouldShow || isStaffViewer) return null;
 
                           return (
                             <div className="mt-4 flex justify-center">
@@ -1602,8 +1629,9 @@ const TradeTicket = () => {
                         {/* Transaction Timeout Buttons */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'transaction-timeout';
-                          
-                          return shouldShow ? (
+                          if (!shouldShow || isStaffViewer) return null;
+
+                          return (
                             <div className="mt-4 flex gap-3">
                               <button
                                 onClick={handleRescanTransaction}
@@ -1624,7 +1652,7 @@ const TradeTicket = () => {
                                 <span>Cancel</span>
                               </button>
                             </div>
-                          ) : null;
+                          );
                         })()}
                         
                         {msg.embedData.footer && (

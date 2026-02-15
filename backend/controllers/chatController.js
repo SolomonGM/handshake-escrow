@@ -1,5 +1,52 @@
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import { isStaffUser } from '../utils/staffUtils.js';
+
+const resolveChatModerationBlock = async (user) => {
+  const moderation = user?.chatModeration || {};
+  const now = new Date();
+  const updates = {};
+
+  if (moderation.isBanned) {
+    if (moderation.bannedUntil && moderation.bannedUntil <= now) {
+      updates['chatModeration.isBanned'] = false;
+      updates['chatModeration.bannedUntil'] = null;
+      updates['chatModeration.bannedReason'] = null;
+      updates['chatModeration.bannedBy'] = null;
+    } else {
+      const untilText = moderation.bannedUntil
+        ? ` until ${new Date(moderation.bannedUntil).toLocaleString()}`
+        : '';
+      return {
+        blocked: true,
+        message: `You are banned from chat${untilText}.`
+      };
+    }
+  }
+
+  if (moderation.isMuted) {
+    if (moderation.mutedUntil && moderation.mutedUntil <= now) {
+      updates['chatModeration.isMuted'] = false;
+      updates['chatModeration.mutedUntil'] = null;
+      updates['chatModeration.mutedReason'] = null;
+      updates['chatModeration.mutedBy'] = null;
+    } else {
+      const untilText = moderation.mutedUntil
+        ? ` until ${new Date(moderation.mutedUntil).toLocaleString()}`
+        : '';
+      return {
+        blocked: true,
+        message: `You are muted in chat${untilText}.`
+      };
+    }
+  }
+
+  if (Object.keys(updates).length > 0 && user?._id) {
+    await User.findByIdAndUpdate(user._id, { $set: updates });
+  }
+
+  return { blocked: false };
+};
 
 // Get chat messages with pagination
 export const getMessages = async (req, res) => {
@@ -44,6 +91,15 @@ export const sendMessage = async (req, res) => {
     const { message = '', mentions, replyTo, sticker } = req.body;
     const user = req.user;
 
+    const moderationCheck = await resolveChatModerationBlock(user);
+    if (moderationCheck.blocked) {
+      return res.status(403).json({
+        success: false,
+        message: moderationCheck.message,
+        showToUser: true
+      });
+    }
+
     // Validation - either message or sticker must be present
     if (!message.trim() && !sticker) {
       return res.status(400).json({
@@ -65,7 +121,7 @@ export const sendMessage = async (req, res) => {
       username: user.username,
       avatar: user.avatar,
       rank: user.rank,
-      badge: user.rank === 'developer' ? 'admin' : null,
+      badge: user.rank === 'developer' ? 'developer' : null,
       message: message || '',
       mentions: mentions || [],
       replyTo: replyTo || null,
@@ -105,7 +161,7 @@ export const deleteMessage = async (req, res) => {
 
     // Check permissions
     const canDelete = 
-      user.rank === 'developer' || 
+      isStaffUser(user) || 
       message.userId.toString() === user._id.toString();
 
     if (!canDelete) {

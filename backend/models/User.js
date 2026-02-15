@@ -38,12 +38,12 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'admin'],
+    enum: ['user', 'admin', 'moderator'],
     default: 'user'
   },
   rank: {
     type: String,
-    enum: ['client', 'rich client', 'top client', 'whale', 'developer'],
+    enum: ['client', 'rich client', 'top client', 'ruby rich', 'whale', 'moderator', 'developer'],
     default: 'client'
   },
   xp: {
@@ -76,6 +76,42 @@ const userSchema = new mongoose.Schema({
   lastChatView: {
     type: Date,
     default: null
+  },
+  chatModeration: {
+    isMuted: {
+      type: Boolean,
+      default: false
+    },
+    mutedUntil: {
+      type: Date,
+      default: null
+    },
+    mutedReason: {
+      type: String,
+      default: null
+    },
+    mutedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    isBanned: {
+      type: Boolean,
+      default: false
+    },
+    bannedUntil: {
+      type: Date,
+      default: null
+    },
+    bannedReason: {
+      type: String,
+      default: null
+    },
+    bannedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    }
   },
   passwordReset: {
     codeHash: {

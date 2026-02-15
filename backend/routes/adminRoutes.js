@@ -11,7 +11,8 @@ import {
   getSiteStats,
   getTradeRequests,
   updateTradeRequest,
-  deleteTradeRequest
+  deleteTradeRequest,
+  getTradeTickets
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -30,5 +31,6 @@ router.delete('/users/:userId', protect, deleteUser);
 router.get('/trade-requests', protect, getTradeRequests);
 router.put('/trade-requests/:requestId', protect, updateTradeRequest);
 router.delete('/trade-requests/:requestId', protect, deleteTradeRequest);
+router.get('/tickets', protect, getTradeTickets);
 
 export default router;

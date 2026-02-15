@@ -12,6 +12,12 @@ import { QRCodeSVG } from 'qrcode.react';
 import socketService from "../services/socket";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const normalizeNetworkMode = (value, fallback) => {
+  const mode = String(value || '').trim().toLowerCase();
+  return mode === 'mainnet' || mode === 'testnet' ? mode : fallback;
+};
+const BTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
+const LTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
 
 const PassesPurchase = () => {
   const navigate = useNavigate();
@@ -443,11 +449,16 @@ const PassesPurchase = () => {
     }
 
     if (crypto === 'litecoin') {
-      return `https://live.blockcypher.com/ltc-testnet/tx/${hash}`;
+      const resolvedMode = LTC_NETWORK_MODE === 'testnet' ? 'mainnet' : LTC_NETWORK_MODE;
+      return resolvedMode === 'mainnet'
+        ? `https://live.blockcypher.com/ltc/tx/${hash}`
+        : `https://live.blockcypher.com/ltc-testnet/tx/${hash}`;
     }
 
     if (crypto === 'bitcoin') {
-      return `https://live.blockcypher.com/btc-testnet/tx/${hash}`;
+      return BTC_NETWORK_MODE === 'mainnet'
+        ? `https://live.blockcypher.com/btc/tx/${hash}`
+        : `https://live.blockcypher.com/btc-testnet/tx/${hash}`;
     }
 
     return null;

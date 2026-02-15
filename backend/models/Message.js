@@ -16,12 +16,12 @@ const messageSchema = new mongoose.Schema({
   },
   rank: {
     type: String,
-    enum: ['client', 'rich client', 'top client', 'whale', 'developer'],
+    enum: ['client', 'rich client', 'top client', 'ruby rich', 'whale', 'moderator', 'developer'],
     default: 'client'
   },
   badge: {
     type: String,
-    enum: ['admin', 'verified', 'premium', null],
+    enum: ['admin', 'developer', 'verified', 'premium', null],
     default: null
   },
   message: {

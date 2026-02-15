@@ -127,10 +127,10 @@ export const adminAPI = {
     return response.data;
   },
 
-  getTradeRequests: async (search = '') => {
-    const response = await api.get('/admin/trade-requests', {
-      params: search ? { search } : undefined
-    });
+  getTradeRequests: async (search = '', page = 1, pageSize = 25) => {
+    const params = { page, pageSize };
+    if (search) params.search = search;
+    const response = await api.get('/admin/trade-requests', { params });
     return response.data;
   },
 
@@ -141,6 +141,13 @@ export const adminAPI = {
 
   deleteTradeRequest: async (requestId) => {
     const response = await api.delete(`/admin/trade-requests/${requestId}`);
+    return response.data;
+  },
+
+  getTradeTickets: async (search = '', page = 1, pageSize = 25) => {
+    const params = { page, pageSize };
+    if (search) params.search = search;
+    const response = await api.get('/admin/tickets', { params });
     return response.data;
   },
 };

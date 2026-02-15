@@ -11,6 +11,8 @@ const defaultStickerUrls = Object.entries(defaultStickerImports)
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([, url]) => url);
 
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
 const StickerPicker = ({ onSelect, onClose }) => {
   const [activeTab, setActiveTab] = useState('default'); // 'default' or 'upload'
   const [defaultStickers, setDefaultStickers] = useState([]);
@@ -31,7 +33,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
       if (!token) return;
 
       try {
-        const response = await fetch('http://localhost:5001/api/stickers', {
+        const response = await fetch(`${API_URL}/stickers`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -58,7 +60,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     }
 
     try {
-      const response = await fetch('http://localhost:5001/api/stickers', {
+      const response = await fetch(`${API_URL}/stickers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -205,7 +207,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://localhost:5001/api/stickers/${id}`, {
+      const response = await fetch(`${API_URL}/stickers/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

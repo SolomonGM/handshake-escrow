@@ -5,9 +5,26 @@
  * @returns {string} The complete explorer URL
  */
 export const getExplorerUrl = (blockchain, transactionId) => {
+  const normalizeNetworkMode = (value, fallback) => {
+    const mode = String(value || '').trim().toLowerCase();
+    return mode === 'mainnet' || mode === 'testnet' ? mode : fallback;
+  };
+
+  const btcMode = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
+  const ltcMode = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
+  const resolvedLtcMode = ltcMode === 'testnet' ? 'mainnet' : ltcMode;
+
+  const btcExplorerBase = btcMode === 'mainnet'
+    ? 'https://live.blockcypher.com/btc'
+    : 'https://live.blockcypher.com/btc-testnet';
+
+  const ltcExplorerBase = resolvedLtcMode === 'mainnet'
+    ? 'https://live.blockcypher.com/ltc'
+    : 'https://live.blockcypher.com/ltc-testnet';
+
   const explorerMap = {
-    litecoin: `https://live.blockcypher.com/ltc/tx/${transactionId}/`,
-    bitcoin: `https://live.blockcypher.com/btc/tx/${transactionId}/`,
+    litecoin: `${ltcExplorerBase}/tx/${transactionId}/`,
+    bitcoin: `${btcExplorerBase}/tx/${transactionId}/`,
     ethereum: `https://etherscan.io/tx/${transactionId}`,
     solana: `https://solscan.io/tx/${transactionId}`,
     polygon: `https://polygonscan.com/tx/${transactionId}`,
