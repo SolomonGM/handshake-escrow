@@ -1,4 +1,5 @@
 import ButtonSvg from "../assets/svg/ButtonSvg";
+import { Link } from "react-router-dom";
 
 const Button = ({ className, href, onClick, children, px, white }) => {
   const classes = `button relative inline-flex items-center justify-center h-11 transition-colors hover:text-[#10B981] ${
@@ -14,10 +15,17 @@ const Button = ({ className, href, onClick, children, px, white }) => {
   );
 
   const renderLink = () => (
-    <a href={href} className={classes}>
-      <span className={spanClasses}>{children}</span>
-      {ButtonSvg(white)}
-    </a>
+    href?.startsWith("/") ? (
+      <Link to={href} className={classes}>
+        <span className={spanClasses}>{children}</span>
+        {ButtonSvg(white)}
+      </Link>
+    ) : (
+      <a href={href} className={classes}>
+        <span className={spanClasses}>{children}</span>
+        {ButtonSvg(white)}
+      </a>
+    )
   );
 
   return href ? renderLink() : renderButton();
