@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { getRankBadge, getRankColor, getRankLabel, normalizeRank } from '../utils/rankDisplay';
+import { grid } from '../assets';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -130,7 +131,10 @@ const UserProfileModal = ({ userId, onClose }) => {
           <>
             {/* Header Background with Gradient */}
             <div className="h-24 bg-gradient-to-r from-color-4/20 to-color-5/20 relative">
-              <div className="absolute inset-0 bg-[url('/hero/grid.png')] opacity-10"></div>
+              <div
+                className="absolute inset-0 bg-cover bg-center opacity-10"
+                style={{ backgroundImage: `url(${grid})` }}
+              />
             </div>
 
             {/* Profile Content */}

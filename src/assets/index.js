@@ -1,64 +1,36 @@
-import handshake from "./handshake.png";
-import check from "./check.svg";
-import handshakeSymbol from "./handshake-symbol.svg";
-import brainwaveWhiteSymbol from "./brainwave-symbol-white.svg";
-import play from "./play.svg";
-import gradient from "./gradient.png";
-import passes from "./passes.png";
-import grid from "./grid.png";
-import check2 from "./check-02.svg";
-import loading1 from "./loading-01.svg";
-import yourlogo from "./yourlogo.svg";
-import homeSmile from "./home-smile.svg";
-import file02 from "./file-02.svg";
-import searchMd from "./search-md.svg";
-import plusSquare from "./plus-square.svg";
-import buyIcon from "./buy-icon.svg";
-import sellIcon from "./sell-icon.svg";
-import walletIcon from "./wallet-icon.svg";
-import recording03 from "./recording-03.svg";
-import recording01 from "./recording-01.svg";
-import disc02 from "./disc-02.svg";
-import chromecast from "./chrome-cast.svg";
-import sliders04 from "./sliders-04.svg";
-import loading from "./loading.png";
-import background from "./background.jpg";
+import handshake from "./svg/handshake.png";
+import check from "./svg/check.svg";
+import handshakeSymbol from "./svg/handshake-symbol.svg";
+import gradient from "./svg/gradient.png";
+import passes from "./svg/passes.png";
+import grid from "./svg/grid.png";
+import file02 from "./svg/file-02.svg";
+import homeSmile from "./svg/home-smile.svg";
+import searchMd from "./svg/search-md.svg";
+import plusSquare from "./svg/plus-square.svg";
+import buyIcon from "./svg/buy-icon.svg";
+import sellIcon from "./svg/sell-icon.svg";
+import walletIcon from "./svg/wallet-icon.svg";
+import recording03 from "./svg/recording-03.svg";
+import recording01 from "./svg/recording-01.svg";
+import disc02 from "./svg/disc-02.svg";
+import chromecast from "./svg/chrome-cast.svg";
+import sliders04 from "./svg/sliders-04.svg";
+import loading from "./svg/loading.png";
 
-import curve from "./hero/curve.png";
-import robot from "./hero/robot.jpg";
-import heroBackground from "./hero/hero-background.jpg";
-
-import curve1 from "./collaboration/curve-1.svg";
-import curve2 from "./collaboration/curve-2.svg";
-import etherscan from "./collaboration/etherscan.png";
-import polygonscan from "./collaboration/polygonscan.png";
-import blockchain from "./collaboration/blockchain.png";
-import solscan from "./collaboration/solscan.png";
-import xrpscan from "./collaboration/xrpscan.png";
-import blockcypher from "./collaboration/blockcypher.png";
-import arbiscan from "./collaboration/arbiscan.png";
-import bscscan from "./collaboration/bnbscan.png";
-
-import service1 from "./services/service-1.png";
-import service2 from "./services/service-2.png";
-import service3 from "./services/service-3.png";
+import curve1 from "./explorers/curve-1.svg";
+import curve2 from "./explorers/curve-2.svg";
+import etherscan from "./explorers/etherscan.png";
+import polygonscan from "./explorers/polygonscan.png";
+import blockchain from "./explorers/blockchain.png";
+import solscan from "./explorers/solscan.png";
+import xrpscan from "./explorers/xrpscan.png";
+import blockcypher from "./explorers/blockcypher.png";
+import arbiscan from "./explorers/arbiscan.png";
+import bscscan from "./explorers/bnbscan.png";
 
 import lines from "./pricing/lines.svg";
 import cryptocoins from "./pricing/cryptocoins.png";
-
-import coins from "./roadmap/coins.png";
-import done from "./roadmap/done.svg";
-import hero from "./roadmap/hero.png";
-import roadmap1 from "./roadmap/image-1.png";
-import roadmap2 from "./roadmap/image-2.png";
-import roadmap3 from "./roadmap/image-3.png";
-import roadmap4 from "./roadmap/image-4.png";
-import undone from "./roadmap/undone.svg";
-
-import notification1 from "./notification/image-1.png";
-import notification2 from "./notification/image-2.png";
-import notification3 from "./notification/image-3.png";
-import notification4 from "./notification/image-4.png";
 
 import benefitCard1 from "./benefits/card-1.svg";
 import benefitCard2 from "./benefits/card-2.svg";
@@ -80,62 +52,20 @@ import instagram from "./socials/instagram.svg";
 import telegram from "./socials/telegram.svg";
 import twitter from "./socials/twitter.svg";
 
+const background = gradient;
+const robot = handshakeSymbol;
+const yourlogo = handshake;
+const roadmap1 = benefitImage2;
+const roadmap2 = benefitImage2;
+const roadmap3 = benefitImage2;
+const roadmap4 = benefitImage2;
+const notification2 = benefitImage2;
+const notification3 = benefitImage2;
+const notification4 = benefitImage2;
+
 export {
-  handshake,
-  check,
-  check2,
-  loading1,
-  handshakeSymbol,
-  brainwaveWhiteSymbol,
-  play,
-  gradient,
-  passes,
-  grid,
-  yourlogo,
-  homeSmile,
-  file02,
-  searchMd,
-  plusSquare,
-  buyIcon,
-  sellIcon,
-  walletIcon,
-  recording03,
-  recording01,
-  disc02,
-  chromecast,
-  sliders04,
-  loading,
-  background,
-  curve,
-  robot,
-  heroBackground,
-  curve1,
-  curve2,
-  etherscan,
-  polygonscan,
-  blockchain,
-  solscan,
-  xrpscan,
-  blockcypher,
   arbiscan,
-  bscscan,
-  service1,
-  service2,
-  service3,
-  lines,
-  cryptocoins,
-  coins,
-  done,
-  hero,
-  roadmap1,
-  roadmap2,
-  roadmap3,
-  roadmap4,
-  undone,
-  notification1,
-  notification2,
-  notification3,
-  notification4,
+  background,
   benefitCard1,
   benefitCard2,
   benefitCard3,
@@ -144,14 +74,53 @@ export {
   benefitCard6,
   benefitIconAbout,
   benefitIconBuyer,
-  benefitIconSeller,
-  benefitIconFees,
   benefitIconCoins,
+  benefitIconFees,
+  benefitIconSeller,
   benefitIconSupport,
   benefitImage2,
+  blockchain,
+  blockcypher,
+  bscscan,
+  buyIcon,
+  check,
+  chromecast,
+  cryptocoins,
+  curve1,
+  curve2,
+  disc02,
   discordBlack,
+  etherscan,
   facebook,
+  file02,
+  gradient,
+  grid,
+  handshake,
+  handshakeSymbol,
+  homeSmile,
   instagram,
+  lines,
+  loading,
+  notification2,
+  notification3,
+  notification4,
+  passes,
+  plusSquare,
+  polygonscan,
+  recording01,
+  recording03,
+  robot,
+  roadmap1,
+  roadmap2,
+  roadmap3,
+  roadmap4,
+  searchMd,
+  sellIcon,
+  sliders04,
+  solscan,
   telegram,
   twitter,
+  walletIcon,
+  xrpscan,
+  yourlogo,
 };

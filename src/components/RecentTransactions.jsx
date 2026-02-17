@@ -1,23 +1,39 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import useTransactionFeed from "../hooks/useTransactionFeed";
 import Section from "./Section";
 import { currencyFlags } from "../assets/currencies";
 import { formatTransactionId, getExplorerUrl, getExplorerName } from "../utils/blockchainUtils";
 
+const BASE_COIN_FILTERS = ["BTC", "ETH", "LTC", "SOL", "USDT", "USDC"];
+
 const RecentTransactions = () => {
+  const navigate = useNavigate();
   const { transactions } = useTransactionFeed({ includePlaceholders: false, limit: 30 });
   const [sortBy, setSortBy] = useState("recent"); // "recent" or "price"
   const [filterCoin, setFilterCoin] = useState("all"); // "all", "BTC", "ETH", "LTC", "SOL"
 
   const getCoinLogo = (coin) => {
-    const coinKey = coin.toLowerCase();
+    const coinKey = String(coin || "").trim().toLowerCase();
+    if (coinKey === "usdc") return currencyFlags.usdt;
     return currencyFlags[coinKey] || currencyFlags.btc;
   };
 
   // Get unique coins from transactions
   const availableCoins = useMemo(() => {
-    const coins = [...new Set(transactions.map(t => t.coinReceived))];
-    return coins.sort();
+    const dynamicCoins = transactions
+      .map((transaction) => String(transaction.coinReceived || "").toUpperCase())
+      .filter(Boolean);
+
+    const merged = Array.from(new Set([...BASE_COIN_FILTERS, ...dynamicCoins]));
+    return merged.sort((left, right) => {
+      const leftIndex = BASE_COIN_FILTERS.indexOf(left);
+      const rightIndex = BASE_COIN_FILTERS.indexOf(right);
+      if (leftIndex !== -1 && rightIndex !== -1) return leftIndex - rightIndex;
+      if (leftIndex !== -1) return -1;
+      if (rightIndex !== -1) return 1;
+      return left.localeCompare(right);
+    });
   }, [transactions]);
 
   // Filter and sort transactions
@@ -26,7 +42,9 @@ const RecentTransactions = () => {
 
     // Filter by coin
     if (filterCoin !== "all") {
-      filtered = filtered.filter(t => t.coinReceived === filterCoin);
+      filtered = filtered.filter(
+        (transaction) => String(transaction.coinReceived || "").toUpperCase() === filterCoin
+      );
     }
 
     // Sort by price or recent
@@ -216,7 +234,10 @@ const RecentTransactions = () => {
 
         {/* View More Button */}
         <div className="flex justify-center mt-10">
-          <button className="button relative inline-flex items-center justify-center h-11 px-7 text-n-1 transition-colors hover:text-color-1">
+          <button
+            onClick={() => navigate("/transactions")}
+            className="button relative inline-flex items-center justify-center h-11 px-7 text-n-1 transition-colors hover:text-color-1"
+          >
             View All Transactions
           </button>
         </div>

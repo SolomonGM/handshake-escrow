@@ -23,6 +23,7 @@ import DocsBot from "./components/docs/DocsBot";
 import DocsFees from "./components/docs/DocsFees";
 import DocsOther from "./components/docs/DocsOther";
 import DocsTerms from "./components/docs/DocsTerms";
+import AllTransactions from "./components/AllTransactions";
 
 const PageLayout = ({ children }) => (
   <div className="min-h-[calc(100vh-4.75rem)] lg:min-h-[calc(100vh-5.25rem)] flex flex-col">
@@ -141,6 +142,15 @@ const DocsTermsPage = () => (
   </PageLayout>
 );
 
+const AllTransactionsPage = () => (
+  <PageLayout>
+    <Header />
+    <main className="flex-1 overflow-hidden">
+      <AllTransactions />
+    </main>
+  </PageLayout>
+);
+
 const App = () => {
   // Persist chat state in localStorage
   const [isChatOpen, setIsChatOpen] = useState(() => {
@@ -170,6 +180,7 @@ const App = () => {
           <Route path="/docs/fees" element={<DocsFeesPage />} />
           <Route path="/docs/other" element={<DocsOtherPage />} />
           <Route path="/docs/terms" element={<DocsTermsPage />} />
+          <Route path="/transactions" element={<AllTransactionsPage />} />
           <Route path="/trade-ticket" element={<TradeTicketPage />} />
           <Route 
             path="/my-requests" 

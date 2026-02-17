@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import ButtonSvg from '../assets/svg/ButtonSvg';
-import handshakeSymbol from '../assets/handshake-symbol.svg';
+import { handshakeSymbol } from '../assets';
 
 const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const [mode, setMode] = useState(initialMode || 'login'); // 'login' | 'register' | 'forgot'
