@@ -4,7 +4,7 @@ Full-stack web application with a modern React frontend and an Express/MongoDB b
 
 ## Live Site
 
-Add your live site URL here: <ADD_LINK_HERE>
+Add your live site URL here: [Handshake](https://handshake-frontend-9zqv.onrender.com/)
 
 ## Highlights
 
