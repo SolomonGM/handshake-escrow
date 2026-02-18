@@ -141,12 +141,15 @@ const AllTransactions = () => {
   const pageLabel = `${pagination.page} / ${pagination.totalPages}`;
 
   return (
-    <section className="h-full overflow-hidden">
+    <section className="h-full overflow-hidden pb-4 sm:pb-6">
       <div className="container h-full">
-        <div className="h-full flex flex-col rounded-2xl border border-n-6 bg-n-8/80 backdrop-blur-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-n-6 bg-gradient-to-r from-n-8 via-n-7 to-n-8">
+        <div className="h-full flex flex-col overflow-hidden rounded-[1.5rem] border border-n-6/80 bg-n-8/90 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+          <div className="border-b border-n-6/80 bg-gradient-to-r from-n-8 via-n-7/95 to-n-8 px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
+                <p className="mb-1 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-[#10B981]">
+                  All Transactions
+                </p>
                 <h1 className="text-2xl font-semibold text-n-1">All Transactions</h1>
                 <p className="text-sm text-n-3">
                   Live feed of completed user trades. Newest transactions appear first.
@@ -154,7 +157,7 @@ const AllTransactions = () => {
               </div>
               <Link
                 to="/#recent-transactions"
-                className="text-sm font-semibold text-[#10B981] hover:text-[#34D399] transition-colors"
+                className="inline-flex items-center rounded-lg border border-[#10B981]/40 bg-[#10B981]/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#6EE7B7] transition-colors hover:border-[#10B981]/70 hover:bg-[#10B981]/20 hover:text-[#A7F3D0]"
               >
                 Back to Home
               </Link>
@@ -164,7 +167,7 @@ const AllTransactions = () => {
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Search by user, coin, tx hash, or ticket..."
-                className="flex-1 min-w-[16rem] px-4 py-2 rounded-lg bg-n-7 border border-n-6 text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981]"
+                className="min-w-[16rem] flex-1 rounded-lg border border-n-6/80 bg-n-7/70 px-4 py-2 text-n-1 placeholder-n-4 focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]/40"
               />
               <select
                 value={coinFilter}
@@ -172,7 +175,7 @@ const AllTransactions = () => {
                   setCoinFilter(event.target.value);
                   setPage(1);
                 }}
-                className="px-4 py-2 rounded-lg bg-n-7 border border-n-6 text-n-1 focus:outline-none focus:border-[#10B981]"
+                className="rounded-lg border border-n-6/80 bg-n-7/70 px-4 py-2 text-n-1 focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]/40"
               >
                 {COIN_FILTERS.map((filter) => (
                   <option key={filter.value} value={filter.value}>
@@ -180,104 +183,108 @@ const AllTransactions = () => {
                   </option>
                 ))}
               </select>
-              <span className="text-xs text-n-4 whitespace-nowrap">
+              <span className="whitespace-nowrap rounded-md border border-n-6/80 bg-n-7/60 px-2.5 py-1 text-xs text-n-3">
                 {pagination.total} total
               </span>
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="grid grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-n-3 bg-[#191a44] border-b border-[#2c2d6b]">
-              <span>Coin</span>
-              <span>Sender</span>
-              <span>Receiver</span>
-              <span>Time</span>
-              <span>Amount</span>
-              <span>Value</span>
-              <span>Transaction</span>
-            </div>
+          <div className="flex-1 min-h-0 overflow-hidden bg-n-8/60">
+            <div className="h-full overflow-x-auto overflow-y-hidden custom-scrollbar">
+              <div className="min-w-[760px]">
+                <div className="grid grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 border-b border-n-6/90 bg-n-7/80 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-n-3">
+                  <span>Coin</span>
+                  <span>Sender</span>
+                  <span>Receiver</span>
+                  <span>Time</span>
+                  <span>Amount</span>
+                  <span>Value</span>
+                  <span>Transaction</span>
+                </div>
 
-            <div className="h-full overflow-hidden">
-              {loading ? (
-                <div className="h-full flex items-center justify-center text-n-3">Loading transactions...</div>
-              ) : (
-                paddedRows.map((transaction) => {
-                  if (transaction.isPlaceholder) {
-                    return (
-                      <div
-                        key={transaction.id}
-                        className="grid grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 px-6 h-12 border-b border-n-7 text-n-5"
-                      >
-                        <span>-</span>
-                        <span>-</span>
-                        <span>-</span>
-                        <span>-</span>
-                        <span>-</span>
-                        <span>-</span>
-                        <span>-</span>
-                      </div>
-                    );
-                  }
+                <div className="h-full overflow-hidden">
+                  {loading ? (
+                    <div className="flex h-full items-center justify-center text-n-3">Loading transactions...</div>
+                  ) : (
+                    paddedRows.map((transaction) => {
+                      if (transaction.isPlaceholder) {
+                        return (
+                          <div
+                            key={transaction.id}
+                            className="grid h-12 grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 border-b border-n-6/50 px-6 text-n-5"
+                          >
+                            <span>-</span>
+                            <span>-</span>
+                            <span>-</span>
+                            <span>-</span>
+                            <span>-</span>
+                            <span>-</span>
+                            <span>-</span>
+                          </div>
+                        );
+                      }
 
-                  const coinKey = resolveCoinAssetKey(transaction.coinReceived);
-                  const coinLogo = currencyFlags[coinKey] || currencyFlags.btc;
+                      const coinKey = resolveCoinAssetKey(transaction.coinReceived);
+                      const coinLogo = currencyFlags[coinKey] || currencyFlags.btc;
 
-                  return (
-                    <div
-                      key={transaction.id}
-                      className="grid grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 px-6 h-12 border-b border-n-7 hover:bg-n-7/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <img src={coinLogo} alt={transaction.coinReceived} className="w-6 h-6 object-contain" />
-                        <span className="text-sm font-semibold text-n-1 truncate">{transaction.coinReceived}</span>
-                      </div>
-                      <span className="text-sm text-n-2 truncate">{transaction.sender}</span>
-                      <span className="text-sm text-n-2 truncate">{transaction.receiver}</span>
-                      <span className="text-sm text-n-3">{formatTimestamp(transaction.completedAt, transaction.timestamp)}</span>
-                      <span className="text-sm font-semibold text-[#4ADE80] truncate">
-                        {transaction.amount} {transaction.coinReceived}
-                      </span>
-                      <span className="text-sm font-semibold text-[#22D3EE]">
-                        {usdFormatter.format(Number(transaction.usdValue || 0))}
-                      </span>
-                      {transaction.transactionId && transaction.transactionId !== "N/A" ? (
-                        <a
-                          href={getExplorerUrl(transaction.blockchain, transaction.transactionId)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[#60A5FA] hover:text-[#93C5FD] truncate"
-                          title={`Open in ${getExplorerName(transaction.blockchain)}`}
+                      return (
+                        <div
+                          key={transaction.id}
+                          className="grid h-12 grid-cols-[0.8fr_1fr_1fr_0.9fr_1fr_0.9fr_1.2fr] items-center gap-3 border-b border-n-6/60 px-6 transition-colors odd:bg-n-8/40 hover:bg-[#10B981]/[0.06]"
                         >
-                          {formatTransactionId(transaction.transactionId)}
-                        </a>
-                      ) : (
-                        <span className="text-xs text-n-4">N/A</span>
-                      )}
-                    </div>
-                  );
-                })
-              )}
+                          <div className="flex min-w-0 items-center gap-2">
+                            <img src={coinLogo} alt={transaction.coinReceived} className="h-6 w-6 object-contain" />
+                            <span className="truncate text-sm font-semibold text-n-1">{transaction.coinReceived}</span>
+                          </div>
+                          <span className="truncate text-sm text-n-2">{transaction.sender}</span>
+                          <span className="truncate text-sm text-n-2">{transaction.receiver}</span>
+                          <span className="text-sm text-n-3">{formatTimestamp(transaction.completedAt, transaction.timestamp)}</span>
+                          <span className="truncate text-sm font-semibold text-[#6EE7B7]">
+                            {transaction.amount} {transaction.coinReceived}
+                          </span>
+                          <span className="text-sm font-semibold text-[#22D3EE]">
+                            {usdFormatter.format(Number(transaction.usdValue || 0))}
+                          </span>
+                          {transaction.transactionId && transaction.transactionId !== "N/A" ? (
+                            <a
+                              href={getExplorerUrl(transaction.blockchain, transaction.transactionId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate text-xs text-[#7DD3FC] hover:text-[#BAE6FD]"
+                              title={`Open in ${getExplorerName(transaction.blockchain)}`}
+                            >
+                              {formatTransactionId(transaction.transactionId)}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-n-4">N/A</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="px-6 py-4 border-t border-n-6 bg-n-8/90">
+          <div className="border-t border-n-6/80 bg-gradient-to-r from-n-8 via-n-7/70 to-n-8 px-5 py-4 sm:px-6">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-n-4">
+              <div className={`text-xs ${error ? "text-red-300" : "text-n-4"}`}>
                 {error ? error : `Last sync: ${lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString() : "N/A"}`}
               </div>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
                   disabled={pagination.page <= 1 || loading}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-n-7 text-n-2 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-n-6 transition-colors"
+                  className="rounded-lg border border-n-6 bg-n-7 px-3 py-1.5 text-sm font-semibold text-n-2 transition-colors hover:border-[#10B981]/40 hover:bg-n-6 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Prev
                 </button>
-                <span className="text-sm text-n-3 min-w-[4rem] text-center">{pageLabel}</span>
+                <span className="min-w-[4rem] text-center text-sm text-n-3">{pageLabel}</span>
                 <button
                   onClick={() => setPage((prev) => Math.min(prev + 1, pagination.totalPages))}
                   disabled={pagination.page >= pagination.totalPages || loading}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-n-7 text-n-2 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-n-6 transition-colors"
+                  className="rounded-lg border border-n-6 bg-n-7 px-3 py-1.5 text-sm font-semibold text-n-2 transition-colors hover:border-[#10B981]/40 hover:bg-n-6 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>

@@ -145,7 +145,7 @@ const DocsTermsPage = () => (
 const AllTransactionsPage = () => (
   <PageLayout>
     <Header />
-    <main className="flex-1 overflow-hidden">
+    <main className="flex-1 overflow-hidden pt-4 sm:pt-5 md:pt-6">
       <AllTransactions />
     </main>
   </PageLayout>
@@ -169,8 +169,8 @@ const App = () => {
 
   return (
     <AuthProvider>
-      <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-hidden transition-all duration-300 ${
-        isChatOpen ? 'ml-80' : 'ml-0'
+      <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-x-hidden transition-[margin] duration-300 ${
+        isChatOpen ? 'ml-0 lg:ml-80' : 'ml-0'
       }`}>
         <Routes>
           <Route path="/" element={<HomePage />} />

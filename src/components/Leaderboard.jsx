@@ -136,19 +136,19 @@ const Leaderboard = () => {
     <Section className="overflow-hidden" id="leaderboard">
       <div className="container md:pb-10">
         {/* Leaderboard Header */}
-        <div className="text-center mb-16">
-          <h2 className="h2 mb-4">Top RUBY Rich</h2>
+        <div className="mb-10 text-center md:mb-16">
+          <h2 className="h2 mb-4">Top Whale</h2>
           <p className="body-2 text-n-4 max-w-3xl mx-auto">
             Our top 3 highest USD value exchangers with the largest trade volumes
           </p>
         </div>
 
         {/* Podium Section */}
-        <div className="relative max-w-4xl mx-auto mb-32">
-          <div className="flex items-end justify-center gap-6">
+        <div className="relative mx-auto mb-16 max-w-4xl md:mb-32">
+          <div className="flex flex-col items-stretch justify-center gap-4 md:flex-row md:items-end md:gap-6">
             {/* 2nd Place */}
-            <div className="flex-1 max-w-[240px]">
-              <div className="relative bg-[#2B2D31] rounded-2xl p-6 transform translate-y-10 border-2 border-[#C0C0C0]/40 shadow-[0_0_30px_rgba(192,192,192,0.15)]">
+            <div className="order-2 w-full max-w-md md:order-1 md:max-w-[240px] md:flex-1">
+              <div className="relative rounded-2xl border-2 border-[#C0C0C0]/40 bg-[#2B2D31] p-6 shadow-[0_0_30px_rgba(192,192,192,0.15)] md:translate-y-10">
                 <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-gradient-to-br from-gray-300 to-gray-500 rounded-full flex items-center justify-center text-lg font-bold shadow-lg">
                   2
                 </div>
@@ -180,8 +180,8 @@ const Leaderboard = () => {
             </div>
 
             {/* 1st Place */}
-            <div className="flex-1 max-w-[260px]">
-              <div className="relative bg-[#2B2D31] rounded-2xl p-7 border-2 border-[#FFD700]/40 shadow-[0_0_40px_rgba(255,215,0,0.2)]">
+            <div className="order-1 w-full max-w-md md:order-2 md:max-w-[260px] md:flex-1">
+              <div className="relative rounded-2xl border-2 border-[#FFD700]/40 bg-[#2B2D31] p-6 shadow-[0_0_40px_rgba(255,215,0,0.2)] md:p-7">
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-4xl">
                   🐋
                 </div>
@@ -216,8 +216,8 @@ const Leaderboard = () => {
             </div>
 
             {/* 3rd Place */}
-            <div className="flex-1 max-w-[240px]">
-              <div className="relative bg-[#2B2D31] rounded-2xl p-6 transform translate-y-16 border-2 border-[#CD7F32]/40 shadow-[0_0_30px_rgba(205,127,50,0.15)]">
+            <div className="order-3 w-full max-w-md md:max-w-[240px] md:flex-1">
+              <div className="relative rounded-2xl border-2 border-[#CD7F32]/40 bg-[#2B2D31] p-6 shadow-[0_0_30px_rgba(205,127,50,0.15)] md:translate-y-16">
                 <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-gradient-to-br from-orange-300 to-orange-500 rounded-full flex items-center justify-center text-lg font-bold shadow-lg">
                   3
                 </div>

@@ -395,7 +395,7 @@ const LiveChat = ({ isOpen, onClose }) => {
       <button
         onClick={onClose}
         className={`fixed left-0 top-24 z-40 transition-all duration-300 ${
-          isOpen ? 'translate-x-80' : 'translate-x-0'
+          isOpen ? 'translate-x-[min(20rem,calc(100vw-3.5rem))] sm:translate-x-80' : 'translate-x-0'
         }`}
       >
         <div className="relative">
@@ -429,7 +429,7 @@ const LiveChat = ({ isOpen, onClose }) => {
 
       {/* Chat Panel */}
       <div
-        className={`fixed left-0 top-[4.75rem] lg:top-[5.25rem] bottom-0 w-80 bg-n-8 border-r border-n-6 z-30 transition-transform duration-300 flex flex-col ${
+        className={`fixed left-0 top-[4.75rem] lg:top-[5.25rem] bottom-0 w-[min(20rem,calc(100vw-3.5rem))] max-w-full sm:w-80 bg-n-8 border-r border-n-6 z-30 transition-transform duration-300 flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -543,7 +543,7 @@ const LiveChat = ({ isOpen, onClose }) => {
         <div 
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar relative"
+          className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 custom-scrollbar relative"
         >
           {/* Spacer for scrolled-out messages (performance optimization) */}
           {visibleRange.start > 0 && (
@@ -741,7 +741,7 @@ const LiveChat = ({ isOpen, onClose }) => {
         )}
 
         {/* Message Input */}
-        <div className="border-t border-n-6 p-4 relative">
+        <div className="border-t border-n-6 p-3 sm:p-4 relative">
           {/* Emoji Picker */}
           {showEmojiPicker && (
             <EmojiPicker

@@ -39,6 +39,17 @@ const Header = () => {
   const handleNavClick = (e, url) => {
     e.preventDefault();
     
+    if (url === '#login' || url === '#signup') {
+      const modalMode = url === '#signup' ? 'register' : 'login';
+      setAuthMode(modalMode);
+      setAuthModalOpen(true);
+      if (openNavigation) {
+        setOpenNavigation(false);
+        enablePageScroll();
+      }
+      return;
+    }
+
     // Close mobile nav if open
     if (openNavigation) {
       enablePageScroll();
@@ -91,25 +102,25 @@ const Header = () => {
         openNavigation ? "bg-n-8" : "bg-n-8/90 backdrop-blur-sm"
       }`}
     >
-      <div className="flex items-center px-5 lg:px-7.5 xl:px-10 max-lg:py-4">
-        <a className="block w-[12rem] xl:mr-8" href="/" onClick={(e) => handleNavClick(e, '#hero')}>
-          <img src={handshake} width={190} height={40} alt="Handshake" />
+      <div className="flex min-h-[4.75rem] items-center px-4 py-3 sm:px-5 lg:px-7.5 lg:py-0 xl:px-10">
+        <a className="block w-[9.5rem] shrink-0 sm:w-[11rem] md:w-[12rem] xl:mr-8" href="/" onClick={(e) => handleNavClick(e, '#hero')}>
+          <img src={handshake} width={190} height={40} alt="Handshake" className="h-auto w-full" />
         </a>
 
         <nav
           className={`${
             openNavigation ? "flex" : "hidden"
-          } fixed top-[5rem] left-0 right-0 bottom-0 bg-n-8 lg:static lg:flex lg:mx-auto lg:bg-transparent`}
+          } fixed bottom-0 left-0 right-0 top-[4.75rem] overflow-y-auto bg-n-8 lg:static lg:flex lg:mx-auto lg:overflow-visible lg:bg-transparent`}
         >
-          <div className="relative z-2 flex flex-col items-center justify-center m-auto lg:flex-row">
+          <div className="relative z-2 m-auto flex min-h-full w-full flex-col items-center justify-start pt-6 pb-10 lg:min-h-0 lg:w-auto lg:flex-row lg:items-center lg:justify-center lg:pt-0 lg:pb-0">
             {navigation.map((item) => (
               <a
                 key={item.id}
                 href={item.url}
                 onClick={(e) => handleNavClick(e, item.url)}
-                className={`block relative font-code text-2xl uppercase text-n-1 transition-colors hover:text-color-1 ${
+                className={`block relative font-code text-xl uppercase text-n-1 transition-colors hover:text-color-1 sm:text-2xl ${
                   item.onlyMobile ? "lg:hidden" : ""
-                } px-6 py-6 md:py-8 lg:-mr-0.25 lg:text-xs lg:font-semibold ${
+                } px-6 py-4 sm:py-5 md:py-6 lg:-mr-0.25 lg:py-8 lg:text-xs lg:font-semibold ${
                   item.url === pathname.hash
                     ? "z-2 lg:text-n-1"
                     : "lg:text-n-1/50"
@@ -120,7 +131,7 @@ const Header = () => {
             ))}
 
             {/* Mobile Auth Buttons */}
-            <div className="lg:hidden mt-8 flex flex-col gap-4 w-full px-6">
+            <div className="mt-6 mb-8 flex w-full max-w-sm flex-col gap-4 px-6 sm:px-8 lg:hidden">
               {!isAuthenticated ? (
                 <>
                   <Button onClick={() => openAuthModal('login')} className="w-full">
@@ -128,7 +139,7 @@ const Header = () => {
                   </Button>
                   <button
                     onClick={() => openAuthModal('register')}
-                    className="w-full py-3 text-color-1 border border-color-1 rounded-lg hover:bg-color-1 hover:text-n-8 transition-all duration-300"
+                    className="w-full rounded-lg border border-n-1 bg-n-1 py-3 font-semibold text-n-8 transition-all duration-300 hover:border-[#10B981] hover:bg-[#10B981] hover:text-n-1"
                   >
                     New Account
                   </button>
@@ -160,7 +171,7 @@ const Header = () => {
           <>
             <button
               onClick={() => openAuthModal('register')}
-              className="button hidden mr-8 text-n-1/50 transition-colors hover:text-[#10B981] lg:block"
+              className="button hidden mr-8 text-n-1 transition-colors hover:text-[#10B981] lg:block"
             >
               New account
             </button>
