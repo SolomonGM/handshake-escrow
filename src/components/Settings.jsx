@@ -8,8 +8,20 @@ import ModeratorPanel from './ModeratorPanel';
 import { passAPI } from '../services/api';
 import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 20;
+const USERNAME_REGEX = /^[A-Za-z0-9]+$/;
+const SECURITY_CODE_LENGTH = 5;
+
 const Settings = () => {
-  const { user, logout, updateProfile } = useAuth();
+  const {
+    user,
+    logout,
+    updateProfile,
+    requestTwoFactorCode,
+    verifyTwoFactorCode,
+    disableTwoFactor
+  } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('profile');
@@ -26,6 +38,12 @@ const Settings = () => {
   const [transactionHistory, setTransactionHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [securityMessage, setSecurityMessage] = useState('');
+  const [securityError, setSecurityError] = useState('');
+  const [isSecuritySubmitting, setIsSecuritySubmitting] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorCooldown, setTwoFactorCooldown] = useState(0);
+  const [disableTwoFactorPassword, setDisableTwoFactorPassword] = useState('');
   const fileInputRef = useRef(null);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
   const MAX_AVATAR_SIZE_MB = 5;
@@ -114,21 +132,56 @@ const Settings = () => {
     };
   }, [activeTab, user]);
 
+  useEffect(() => {
+    if (twoFactorCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setTwoFactorCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [twoFactorCooldown]);
+
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
+    let nextValue = value;
+
+    if (name === 'username') {
+      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH).toLowerCase();
+    }
+
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: nextValue
     });
   };
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    const result = await updateProfile(formData);
+    const normalizedUsername = formData.username.trim().toLowerCase();
+    if (!normalizedUsername) {
+      setMessage('Username is required.');
+      return;
+    }
+
+    if (
+      normalizedUsername.length < USERNAME_MIN_LENGTH ||
+      normalizedUsername.length > USERNAME_MAX_LENGTH ||
+      !USERNAME_REGEX.test(normalizedUsername)
+    ) {
+      setMessage(`Username must be ${USERNAME_MIN_LENGTH}-${USERNAME_MAX_LENGTH} characters and contain letters and numbers only.`);
+      return;
+    }
+
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    const result = await updateProfile({
+      ...formData,
+      username: normalizedUsername,
+      email: normalizedEmail
+    });
     if (result.success) {
       setMessage('Profile updated successfully!');
       setIsEditing(false);
@@ -136,6 +189,86 @@ const Settings = () => {
     } else {
       setMessage(getFriendlyProfileError(result.error));
     }
+  };
+
+  const resetSecurityFeedback = () => {
+    setSecurityError('');
+    setSecurityMessage('');
+  };
+
+  const handleRequestTwoFactorCode = async () => {
+    if (isSecuritySubmitting) {
+      return;
+    }
+
+    setIsSecuritySubmitting(true);
+    resetSecurityFeedback();
+
+    const result = await requestTwoFactorCode();
+    if (result.success) {
+      setSecurityMessage(result.message || 'Verification code sent.');
+      setTwoFactorCooldown(result.cooldownSeconds || 30);
+    } else {
+      setSecurityError(result.error || 'Failed to send verification code.');
+      if (result.cooldownSeconds) {
+        setTwoFactorCooldown(result.cooldownSeconds);
+      }
+    }
+
+    setIsSecuritySubmitting(false);
+  };
+
+  const handleVerifyTwoFactorCode = async () => {
+    if (isSecuritySubmitting) {
+      return;
+    }
+
+    const code = twoFactorCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH);
+    if (code.length !== SECURITY_CODE_LENGTH) {
+      setSecurityError(`Please enter the ${SECURITY_CODE_LENGTH}-digit code.`);
+      setSecurityMessage('');
+      return;
+    }
+
+    setIsSecuritySubmitting(true);
+    resetSecurityFeedback();
+
+    const result = await verifyTwoFactorCode(code);
+    if (result.success) {
+      setSecurityMessage(result.message || 'Two-factor code verified.');
+      setTwoFactorCode('');
+    } else {
+      setSecurityError(result.error || 'Failed to verify code.');
+    }
+
+    setIsSecuritySubmitting(false);
+  };
+
+  const handleDisableTwoFactor = async () => {
+    if (isSecuritySubmitting) {
+      return;
+    }
+
+    if (!disableTwoFactorPassword) {
+      setSecurityError('Enter your current password to disable two-factor authentication.');
+      setSecurityMessage('');
+      return;
+    }
+
+    setIsSecuritySubmitting(true);
+    resetSecurityFeedback();
+
+    const result = await disableTwoFactor(disableTwoFactorPassword);
+    if (result.success) {
+      setSecurityMessage(result.message || 'Two-factor authentication disabled.');
+      setDisableTwoFactorPassword('');
+      setTwoFactorCode('');
+      setTwoFactorCooldown(0);
+    } else {
+      setSecurityError(result.error || 'Failed to disable two-factor authentication.');
+    }
+
+    setIsSecuritySubmitting(false);
   };
 
   // Handle file upload
@@ -362,7 +495,14 @@ const Settings = () => {
                           value={formData.username}
                           onChange={handleChange}
                           className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                          maxLength={USERNAME_MAX_LENGTH}
+                          pattern="[A-Za-z0-9]+"
+                          autoCapitalize="none"
+                          autoCorrect="off"
                         />
+                        <p className="text-xs text-n-4 mt-2">
+                          {USERNAME_MIN_LENGTH}-{USERNAME_MAX_LENGTH} characters, letters and numbers only.
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
@@ -698,15 +838,103 @@ const Settings = () => {
                 <div>
                   <h2 className="h3 text-n-1 mb-6">Security Settings</h2>
                   <div className="space-y-6">
+                    {(securityMessage || securityError) && (
+                      <div
+                        className={`p-4 rounded-lg ${
+                          securityError
+                            ? 'bg-color-3/10 border border-color-3/50 text-color-3'
+                            : 'bg-color-4/10 border border-color-4/50 text-color-4'
+                        }`}
+                      >
+                        {securityError || securityMessage}
+                      </div>
+                    )}
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Change Password</h3>
-                      <p className="text-n-3 text-sm mb-4">Update your password to keep your account secure</p>
-                      <Button>Change Password</Button>
+                      <p className="text-n-3 text-sm">Use the &quot;Forgot Password?&quot; flow on sign-in to securely reset your password.</p>
                     </div>
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Two-Factor Authentication</h3>
-                      <p className="text-n-3 text-sm mb-4">Add an extra layer of security to your account</p>
-                      <Button white>Enable 2FA</Button>
+                      <div className="flex flex-wrap items-center gap-3 mb-4">
+                        <p className="text-n-3 text-sm">Protect your account with email verification codes at login.</p>
+                        <span className={`px-3 py-1 text-xs rounded-full font-semibold ${
+                          user?.twoFactorEnabled
+                            ? 'bg-color-4/20 text-color-4'
+                            : 'bg-color-3/20 text-color-3'
+                        }`}>
+                          {user?.twoFactorEnabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-xs text-n-4 mb-2">Step 1: Request a verification code</p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Button
+                              onClick={handleRequestTwoFactorCode}
+                              disabled={isSecuritySubmitting || twoFactorCooldown > 0}
+                              className="min-w-[180px]"
+                            >
+                              {twoFactorCooldown > 0 ? `Resend in ${twoFactorCooldown}s` : 'Send code'}
+                            </Button>
+                            <span className="text-xs text-n-4">Code expires in 10 minutes.</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-n-4 mb-2">Step 2: Enter and verify the code</p>
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <input
+                              type="text"
+                              value={twoFactorCode}
+                              onChange={(event) => {
+                                setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH));
+                                setSecurityError('');
+                                setSecurityMessage('');
+                              }}
+                              placeholder="12345"
+                              inputMode="numeric"
+                              maxLength={SECURITY_CODE_LENGTH}
+                              className="w-full sm:max-w-[220px] px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all tracking-[0.3em] text-center"
+                            />
+                            <Button
+                              onClick={handleVerifyTwoFactorCode}
+                              disabled={isSecuritySubmitting}
+                              className="min-w-[180px]"
+                            >
+                              {user?.twoFactorEnabled ? 'Verify code' : 'Enable 2FA'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {user?.twoFactorEnabled && (
+                          <div className="pt-2 border-t border-n-5">
+                            <p className="text-xs text-n-4 mb-2">Disable 2FA (password required)</p>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <input
+                                type="password"
+                                value={disableTwoFactorPassword}
+                                onChange={(event) => {
+                                  setDisableTwoFactorPassword(event.target.value);
+                                  setSecurityError('');
+                                  setSecurityMessage('');
+                                }}
+                                placeholder="Current password"
+                                autoComplete="current-password"
+                                className="w-full sm:max-w-[320px] px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                              />
+                              <Button
+                                onClick={handleDisableTwoFactor}
+                                disabled={isSecuritySubmitting}
+                                white
+                                className="min-w-[180px]"
+                              >
+                                Disable 2FA
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Active Sessions</h3>

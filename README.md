@@ -56,7 +56,9 @@ Backend (`backend/.env`)
 - `MONGODB_URI`
 - `JWT_SECRET`
 - `CLIENT_URL` or `CLIENT_URLS` (comma-separated)
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+- `EMAIL_PROVIDER`, `EMAIL_FROM`
+- `RESEND_API_KEY` (if `EMAIL_PROVIDER=resend`)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (if `EMAIL_PROVIDER=smtp`)
 - `BLOCKCYPHER_TOKEN`
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
@@ -77,3 +79,4 @@ Backend
 - The frontend expects the API base URL in `VITE_API_URL`.
 - Configure CORS via `CLIENT_URL` or `CLIENT_URLS` to match your deployed frontend.
 - Ensure the backend binds to `process.env.PORT`.
+- For Render free instances, use API-based email delivery (`EMAIL_PROVIDER=resend` + `RESEND_API_KEY`) instead of SMTP.

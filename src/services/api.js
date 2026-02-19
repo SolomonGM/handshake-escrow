@@ -54,6 +54,16 @@ export const authAPI = {
     return response.data;
   },
 
+  verifyLoginTwoFactorCode: async ({ email, code, loginSessionToken }) => {
+    const response = await api.post('/auth/login/2fa/verify', { email, code, loginSessionToken });
+    return response.data;
+  },
+
+  resendLoginTwoFactorCode: async ({ email, loginSessionToken }) => {
+    const response = await api.post('/auth/login/2fa/resend', { email, loginSessionToken });
+    return response.data;
+  },
+
   requestPasswordReset: async (email) => {
     const response = await api.post('/auth/forgot-password/request', { email });
     return response.data;
@@ -66,6 +76,21 @@ export const authAPI = {
 
   resetPassword: async ({ email, resetToken, password }) => {
     const response = await api.post('/auth/forgot-password/reset', { email, resetToken, password });
+    return response.data;
+  },
+
+  requestTwoFactorCode: async () => {
+    const response = await api.post('/auth/2fa/request');
+    return response.data;
+  },
+
+  verifyTwoFactorCode: async (code) => {
+    const response = await api.post('/auth/2fa/verify', { code });
+    return response.data;
+  },
+
+  disableTwoFactor: async (password) => {
+    const response = await api.post('/auth/2fa/disable', { password });
     return response.data;
   },
 

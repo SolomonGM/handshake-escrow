@@ -29,6 +29,7 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 const httpServer = createServer(app);
+app.set('trust proxy', 1);
 
 const defaultDevOrigins = ['http://localhost:5173', 'http://localhost:5174'];
 const envOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')

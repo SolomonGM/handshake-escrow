@@ -1,14 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import ButtonSvg from '../assets/svg/ButtonSvg';
 import { handshakeSymbol } from '../assets';
 
+const USERNAME_MIN_LENGTH = 3;
+const USERNAME_MAX_LENGTH = 20;
+const USERNAME_REGEX = /^[A-Za-z0-9]+$/;
+
 const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
+  const navigate = useNavigate();
   const [mode, setMode] = useState(initialMode || 'login'); // 'login' | 'register' | 'forgot'
-  const { login, register, error, loading } = useAuth();
+  const { login, register, verifyLoginTwoFactorCode, error, loading } = useAuth();
+  const [loginStep, setLoginStep] = useState('credentials'); // 'credentials' | 'twoFactor'
+  const [loginTwoFactorData, setLoginTwoFactorData] = useState({
+    email: '',
+    code: '',
+    loginSessionToken: ''
+  });
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -30,6 +42,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const [showShootingStar, setShowShootingStar] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [loginTwoFactorCooldown, setLoginTwoFactorCooldown] = useState(0);
   const prefillEmailRef = useRef('');
   const prefillResetEmailRef = useRef('');
   const [stars] = useState(() => 
@@ -58,6 +71,13 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
   // Reset form when mode changes
   useEffect(() => {
+    setLoginStep('credentials');
+    setLoginTwoFactorData({
+      email: '',
+      code: '',
+      loginSessionToken: ''
+    });
+    setLoginTwoFactorCooldown(0);
     setFormData({
       username: '',
       email: prefillEmailRef.current || '',
@@ -96,7 +116,19 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
+  useEffect(() => {
+    if (loginTwoFactorCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setLoginTwoFactorCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [loginTwoFactorCooldown]);
+
   const handleClose = () => {
+    if (isSubmitting) {
+      return;
+    }
+
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
@@ -106,12 +138,23 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    let nextValue = value;
+
+    if (name === 'username') {
+      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH).toLowerCase();
+    }
+
     setFormData({
       ...formData,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: type === 'checkbox' ? checked : nextValue,
     });
     setLocalError('');
     setLocalSuccess('');
+  };
+
+  const openTermsAndConditions = (event) => {
+    event.preventDefault();
+    navigate('/docs/terms#user-responsibility');
   };
 
   const handleResetChange = (e) => {
@@ -128,6 +171,55 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     }));
     setLocalError('');
     setLocalSuccess('');
+  };
+
+  const handleLoginTwoFactorCodeChange = (event) => {
+    const code = event.target.value.replace(/\D/g, '').slice(0, 5);
+    setLoginTwoFactorData((prev) => ({
+      ...prev,
+      code
+    }));
+    setLocalError('');
+    setLocalSuccess('');
+  };
+
+  const handleResendLoginTwoFactorCode = async () => {
+    if (isSubmitting || loginTwoFactorCooldown > 0) {
+      return;
+    }
+
+    if (!loginTwoFactorData.email || !loginTwoFactorData.loginSessionToken) {
+      setLocalError('Your verification session expired. Please sign in again.');
+      setLoginStep('credentials');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLocalError('');
+    setLocalSuccess('');
+
+    try {
+      const response = await authAPI.resendLoginTwoFactorCode({
+        email: loginTwoFactorData.email,
+        loginSessionToken: loginTwoFactorData.loginSessionToken
+      });
+
+      setLoginTwoFactorCooldown(response.cooldownSeconds || 30);
+      setLocalSuccess('A new verification code has been sent to your email.');
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to resend verification code';
+      const cooldownSeconds = error.response?.data?.cooldownSeconds;
+      if (cooldownSeconds) {
+        setLoginTwoFactorCooldown(cooldownSeconds);
+      }
+      setLocalError(errorMessage);
+
+      if (error.response?.status === 410) {
+        setLoginStep('credentials');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const startForgotPassword = () => {
@@ -270,8 +362,19 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           return;
         }
 
-        if (formData.username.length < 3) {
-          setLocalError('Username must be at least 3 characters');
+        const normalizedUsername = formData.username.trim().toLowerCase();
+        if (normalizedUsername.length < USERNAME_MIN_LENGTH) {
+          setLocalError(`Username must be at least ${USERNAME_MIN_LENGTH} characters`);
+          return;
+        }
+
+        if (normalizedUsername.length > USERNAME_MAX_LENGTH) {
+          setLocalError(`Username cannot exceed ${USERNAME_MAX_LENGTH} characters`);
+          return;
+        }
+
+        if (!USERNAME_REGEX.test(normalizedUsername)) {
+          setLocalError(`Username must be ${USERNAME_MIN_LENGTH}-${USERNAME_MAX_LENGTH} characters and contain letters and numbers only`);
           return;
         }
 
@@ -286,8 +389,8 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
         }
 
         const result = await register({
-          username: formData.username,
-          email: formData.email,
+          username: normalizedUsername,
+          email: formData.email.trim().toLowerCase(),
           password: formData.password,
         });
 
@@ -305,33 +408,63 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           // Keep modal open so user can try again
         }
       } else {
-        // Login validation
-        if (!formData.email || !formData.password) {
-          setLocalError('Please fill in all fields');
-          return;
-        }
+        if (loginStep === 'twoFactor') {
+          if (!loginTwoFactorData.code || loginTwoFactorData.code.length !== 5) {
+            setLocalError('Please enter the 5-digit verification code');
+            return;
+          }
 
-        console.log('Attempting login...');
-        const result = await login({
-          email: formData.email,
-          password: formData.password,
-        });
+          const verifyResult = await verifyLoginTwoFactorCode({
+            email: loginTwoFactorData.email,
+            code: loginTwoFactorData.code,
+            loginSessionToken: loginTwoFactorData.loginSessionToken
+          });
 
-        console.log('Login result:', result);
-
-        if (result.success) {
-          console.log('Login successful, closing modal...');
-          handleClose();
-          // Don't navigate, just close modal and stay on current page
+          if (verifyResult.success) {
+            handleClose();
+          } else {
+            setLocalError(verifyResult.error || 'Verification failed. Please try again.');
+            setLoginTwoFactorData((prev) => ({
+              ...prev,
+              code: ''
+            }));
+          }
         } else {
-          console.log('Login failed:', result.error);
-          // Clear password on error and show error message
-          setFormData(prev => ({
-            ...prev,
-            password: ''
-          }));
-          setLocalError(result.error || 'Invalid password. Please try again.');
-          // Keep modal open so user can try again
+          // Login validation
+          if (!formData.email || !formData.password) {
+            setLocalError('Please fill in all fields');
+            return;
+          }
+
+          const normalizedEmail = formData.email.trim().toLowerCase();
+          const result = await login({
+            email: normalizedEmail,
+            password: formData.password,
+          });
+
+          if (result.success && result.requiresTwoFactor) {
+            setLoginStep('twoFactor');
+            setLoginTwoFactorData({
+              email: result.email || normalizedEmail,
+              code: '',
+              loginSessionToken: result.loginSessionToken || ''
+            });
+            setLoginTwoFactorCooldown(result.cooldownSeconds || 30);
+            setLocalSuccess(result.message || 'We sent a 5-digit verification code to your email.');
+            return;
+          }
+
+          if (result.success) {
+            handleClose();
+          } else {
+            // Clear password on error and show error message
+            setFormData(prev => ({
+              ...prev,
+              password: ''
+            }));
+            setLocalError(result.error || 'Invalid password. Please try again.');
+            // Keep modal open so user can try again
+          }
         }
       }
     } catch (error) {
@@ -359,7 +492,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   };
 
   const headerTitle = mode === 'login'
-    ? 'Welcome back'
+    ? loginStep === 'twoFactor'
+      ? 'Two-factor verification'
+      : 'Welcome back'
     : mode === 'register'
       ? 'Create account'
       : resetStep === 'password'
@@ -367,7 +502,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
         : 'Forgot password';
 
   const headerSubtitle = mode === 'login'
-    ? 'Enter your credentials to continue'
+    ? loginStep === 'twoFactor'
+      ? 'Enter the 5-digit code sent to your email'
+      : 'Enter your credentials to continue'
     : mode === 'register'
       ? 'Join Handshake today'
       : resetStep === 'email'
@@ -381,7 +518,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
   const isBusy = mode === 'forgot' ? isSubmitting : (loading || isSubmitting);
   const submitLabel = mode === 'login'
-    ? 'Sign in'
+    ? loginStep === 'twoFactor'
+      ? 'Verify code'
+      : 'Sign in'
     : mode === 'register'
       ? 'Create account'
       : resetStep === 'email'
@@ -396,7 +535,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
         ? 'Verifying code...'
         : 'Updating password...'
     : mode === 'login'
-      ? 'Signing in...'
+      ? loginStep === 'twoFactor'
+        ? 'Verifying code...'
+        : 'Signing in...'
       : 'Creating account...';
 
   if (!isOpen && !isClosing) return null;
@@ -406,7 +547,11 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
       className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 transition-all duration-300 overflow-y-auto ${
         isClosing ? 'opacity-0' : 'opacity-100'
       }`}
-      onClick={handleClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !isBusy) {
+          handleClose();
+        }
+      }}
     >
       {/* Transparent backdrop with blur - homepage shows through */}
       <div className="absolute inset-0 bg-n-8/40 backdrop-blur-md" />
@@ -417,6 +562,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           isClosing ? 'translate-y-8 opacity-0' : 'translate-y-0 opacity-100'
         }`}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="relative bg-n-7/80 backdrop-blur-xl border border-n-6 rounded-2xl shadow-2xl overflow-hidden">
           {/* Subtle gradient overlay */}
@@ -619,11 +767,18 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                     className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
                     placeholder="Choose a username"
                     autoComplete="username"
+                    maxLength={USERNAME_MAX_LENGTH}
+                    pattern="[A-Za-z0-9]+"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                   />
+                  <p className="text-xs text-n-4 mt-2">
+                    {USERNAME_MIN_LENGTH}-{USERNAME_MAX_LENGTH} characters, letters and numbers only.
+                  </p>
                 </div>
               )}
 
-              {mode !== 'forgot' && (
+              {mode !== 'forgot' && !(mode === 'login' && loginStep === 'twoFactor') && (
                 <div>
                   <label htmlFor="email" className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
                     Email
@@ -639,6 +794,70 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                     autoComplete="email"
                   />
                 </div>
+              )}
+
+              {mode === 'login' && loginStep === 'twoFactor' && (
+                <>
+                  <div>
+                    <label htmlFor="login-twofactor-email" className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      id="login-twofactor-email"
+                      value={loginTwoFactorData.email}
+                      disabled
+                      className="w-full px-4 py-3 bg-n-6/70 border border-n-6 rounded-lg text-n-3 placeholder-n-4 focus:outline-none transition-all cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="login-twofactor-code" className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                      5-digit code
+                    </label>
+                    <input
+                      type="text"
+                      id="login-twofactor-code"
+                      name="loginTwoFactorCode"
+                      value={loginTwoFactorData.code}
+                      onChange={handleLoginTwoFactorCodeChange}
+                      className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all tracking-[0.3em] text-center"
+                      placeholder="12345"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={5}
+                    />
+                    <div className="flex items-center justify-between mt-2 text-xs text-n-4">
+                      <span>
+                        {loginTwoFactorCooldown > 0 ? `Resend available in ${loginTwoFactorCooldown}s` : 'Did not receive a code?'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleResendLoginTwoFactorCode}
+                        disabled={loginTwoFactorCooldown > 0 || isSubmitting}
+                        className="text-[#10B981] hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Resend code
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginStep('credentials');
+                        setLoginTwoFactorData((prev) => ({
+                          ...prev,
+                          code: '',
+                          loginSessionToken: ''
+                        }));
+                        setLoginTwoFactorCooldown(0);
+                        setLocalError('');
+                        setLocalSuccess('');
+                      }}
+                      className="mt-3 text-xs text-n-4 hover:text-n-2 transition-colors"
+                    >
+                      Back to email and password
+                    </button>
+                  </div>
+                </>
               )}
 
               {mode === 'forgot' && resetStep === 'email' && (
@@ -743,7 +962,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                 </>
               )}
 
-              {mode !== 'forgot' && (
+              {mode !== 'forgot' && !(mode === 'login' && loginStep === 'twoFactor') && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label htmlFor="password" className="block text-sm font-code text-n-3 uppercase tracking-wider">
@@ -784,7 +1003,11 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                   />
                   <label htmlFor="acceptedTerms" className="text-sm text-n-3 cursor-pointer">
                     I agree to the{' '}
-                    <a href="/terms" target="_blank" className="text-[#10B981] hover:text-[#059669] underline">
+                    <a
+                      href="/docs/terms#user-responsibility"
+                      onClick={openTermsAndConditions}
+                      className="text-[#10B981] hover:text-[#059669] underline"
+                    >
                       Terms and Conditions
                     </a>
                   </label>

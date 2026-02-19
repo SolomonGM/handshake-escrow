@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { USERNAME_RULES } from '../utils/authValidation.js';
 
 const userSchema = new mongoose.Schema({
   userId: {
@@ -11,9 +12,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Username is required'],
     unique: true,
+    lowercase: true,
     trim: true,
-    minlength: [3, 'Username must be at least 3 characters long'],
-    maxlength: [30, 'Username cannot exceed 30 characters']
+    minlength: [USERNAME_RULES.minLength, `Username must be at least ${USERNAME_RULES.minLength} characters long`],
+    maxlength: [USERNAME_RULES.maxLength, `Username cannot exceed ${USERNAME_RULES.maxLength} characters`],
+    match: [USERNAME_RULES.regex, USERNAME_RULES.invalidMessage]
   },
   email: {
     type: String,
@@ -22,7 +25,7 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
     match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
       'Please enter a valid email address'
     ]
   },
@@ -131,6 +134,34 @@ const userSchema = new mongoose.Schema({
       type: String
     },
     resetTokenExpiresAt: {
+      type: Date
+    }
+  },
+  twoFactor: {
+    enabled: {
+      type: Boolean,
+      default: false
+    },
+    codeHash: {
+      type: String
+    },
+    expiresAt: {
+      type: Date
+    },
+    attempts: {
+      type: Number,
+      default: 0
+    },
+    lastSentAt: {
+      type: Date
+    },
+    verifiedAt: {
+      type: Date
+    },
+    loginSessionTokenHash: {
+      type: String
+    },
+    loginSessionTokenExpiresAt: {
       type: Date
     }
   },

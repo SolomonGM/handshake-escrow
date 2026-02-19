@@ -17,6 +17,24 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const persistAuthSession = (token, nextUser) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    setUser(nextUser);
+  };
+
+  const updateStoredUser = (updater) => {
+    setUser((prevUser) => {
+      if (!prevUser) {
+        return prevUser;
+      }
+
+      const nextUser = typeof updater === 'function' ? updater(prevUser) : updater;
+      localStorage.setItem('user', JSON.stringify(nextUser));
+      return nextUser;
+    });
+  };
+
   // Check if user is logged in on mount
   useEffect(() => {
     const initializeAuth = async () => {
@@ -27,6 +45,7 @@ export const AuthProvider = ({ children }) => {
         try {
           // Verify token is still valid
           const response = await authAPI.getMe();
+          localStorage.setItem('user', JSON.stringify(response.user));
           setUser(response.user);
         } catch (error) {
           console.error('Token validation failed:', error);
@@ -45,10 +64,7 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setLoading(true);
       const response = await authAPI.register(userData);
-      
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
+      persistAuthSession(response.token, response.user);
       
       return { success: true, user: response.user };
     } catch (error) {
@@ -65,14 +81,41 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setLoading(true);
       const response = await authAPI.login(credentials);
-      
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
+
+      if (response.requiresTwoFactor) {
+        return {
+          success: true,
+          requiresTwoFactor: true,
+          email: response.email,
+          loginSessionToken: response.loginSessionToken,
+          cooldownSeconds: response.cooldownSeconds,
+          expiresInSeconds: response.expiresInSeconds,
+          message: response.message
+        };
+      }
+
+      persistAuthSession(response.token, response.user);
       
       return { success: true, user: response.user };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Login failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyLoginTwoFactorCode = async ({ email, code, loginSessionToken }) => {
+    try {
+      setError(null);
+      setLoading(true);
+      const response = await authAPI.verifyLoginTwoFactorCode({ email, code, loginSessionToken });
+      persistAuthSession(response.token, response.user);
+
+      return { success: true, user: response.user };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Two-factor verification failed';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -91,13 +134,63 @@ export const AuthProvider = ({ children }) => {
     try {
       setError(null);
       const response = await authAPI.updateProfile(userData);
-      
-      localStorage.setItem('user', JSON.stringify(response.user));
-      setUser(response.user);
+      updateStoredUser(response.user);
       
       return { success: true, user: response.user };
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Profile update failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const requestTwoFactorCode = async () => {
+    try {
+      setError(null);
+      const response = await authAPI.requestTwoFactorCode();
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to send verification code';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const verifyTwoFactorCode = async (code) => {
+    try {
+      setError(null);
+      const response = await authAPI.verifyTwoFactorCode(code);
+      if (response.twoFactorEnabled) {
+        updateStoredUser((currentUser) => ({
+          ...currentUser,
+          twoFactorEnabled: true
+        }));
+      }
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Two-factor verification failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const disableTwoFactor = async (password) => {
+    try {
+      setError(null);
+      const response = await authAPI.disableTwoFactor(password);
+      if (response.twoFactorEnabled === false) {
+        updateStoredUser((currentUser) => ({
+          ...currentUser,
+          twoFactorEnabled: false
+        }));
+      }
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to disable two-factor authentication';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     }
@@ -110,8 +203,12 @@ export const AuthProvider = ({ children }) => {
     error,
     register,
     login,
+    verifyLoginTwoFactorCode,
     logout,
     updateProfile,
+    requestTwoFactorCode,
+    verifyTwoFactorCode,
+    disableTwoFactor,
     isAuthenticated: !!user,
   };
 
