@@ -175,3 +175,23 @@ export const sendTwoFactorCode = async ({ to, code }) => {
 
   return sendEmail({ to, subject, text, html });
 };
+
+export const sendEmailChangeCode = async ({ to, code, stage = 'current' }) => {
+  const isCurrentStage = stage === 'current';
+  const subject = isCurrentStage
+    ? 'Verify your current Handshake email'
+    : 'Verify your new Handshake email';
+  const text = isCurrentStage
+    ? `Your Handshake verification code is ${code}. This confirms access to your current email before changing it. The code expires in 10 minutes.`
+    : `Your Handshake verification code is ${code}. This confirms your new email address for your account. The code expires in 10 minutes.`;
+  const html = buildCodeEmailHtml({
+    heading: isCurrentStage ? 'Verify your current email' : 'Verify your new email',
+    intro: isCurrentStage
+      ? 'Use this code to confirm you still control your current account email before changing it.'
+      : 'Use this code to confirm your new email address and complete the email change.',
+    code,
+    footer: 'If you did not request this change, secure your account immediately.'
+  });
+
+  return sendEmail({ to, subject, text, html });
+};

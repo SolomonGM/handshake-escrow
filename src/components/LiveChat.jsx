@@ -28,6 +28,7 @@ const LiveChat = ({ isOpen, onClose }) => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpData, setHelpData] = useState(null);
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
+  const [chatCooldownSeconds, setChatCooldownSeconds] = useState(0);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -154,12 +155,16 @@ const LiveChat = ({ isOpen, onClose }) => {
     // Listen for errors
     socketService.onError((err) => {
       const nextError = typeof err === 'string'
-        ? { message: err, showToUser: false }
+        ? { message: err, showToUser: false, cooldownSeconds: 0 }
         : {
           message: err?.message || 'An error occurred',
-          showToUser: Boolean(err?.showToUser)
+          showToUser: Boolean(err?.showToUser),
+          cooldownSeconds: Number(err?.cooldownSeconds || 0)
         };
       setError(nextError);
+      if (nextError.cooldownSeconds > 0) {
+        setChatCooldownSeconds(nextError.cooldownSeconds);
+      }
       setTimeout(() => setError(null), 5000);
     });
 
@@ -202,6 +207,18 @@ const LiveChat = ({ isOpen, onClose }) => {
       }
     }
   }, [isOpen, user]);
+
+  useEffect(() => {
+    if (chatCooldownSeconds <= 0) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setChatCooldownSeconds((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [chatCooldownSeconds]);
 
   // Auto scroll to bottom (only if user is not scrolling)
   const scrollToBottom = (smooth = true) => {
@@ -320,6 +337,15 @@ const LiveChat = ({ isOpen, onClose }) => {
   // Send message via WebSocket
   const handleSendMessage = (e, stickerUrl = null) => {
     if (e) e.preventDefault();
+
+    if (chatCooldownSeconds > 0) {
+      setError({
+        message: `Slow down. You can send another message in ${chatCooldownSeconds}s.`,
+        showToUser: true,
+        cooldownSeconds: chatCooldownSeconds
+      });
+      return;
+    }
     
     // If sending sticker without text
     if (stickerUrl) {
@@ -789,14 +815,22 @@ const LiveChat = ({ isOpen, onClose }) => {
 
           {user ? (
             <form onSubmit={handleSendMessage} className="space-y-2">
+              {chatCooldownSeconds > 0 && (
+                <p className="text-xs text-yellow-300">
+                  Slow down. You can send messages again in {chatCooldownSeconds}s.
+                </p>
+              )}
               <div className="relative">
                 <input
                   ref={inputRef}
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type a message..."
-                  className="w-full px-3 py-2 bg-n-7 border border-n-6 rounded-lg text-n-1 text-sm placeholder-n-5 focus:outline-none focus:border-n-5 pr-20"
+                  placeholder={chatCooldownSeconds > 0 ? 'Slow down...' : 'Type a message...'}
+                  disabled={chatCooldownSeconds > 0}
+                  className={`w-full px-3 py-2 bg-n-7 border border-n-6 rounded-lg text-n-1 text-sm placeholder-n-5 focus:outline-none focus:border-n-5 pr-20 ${
+                    chatCooldownSeconds > 0 ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
                   maxLength={500}
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
@@ -807,9 +841,10 @@ const LiveChat = ({ isOpen, onClose }) => {
                       setShowEmojiPicker(!showEmojiPicker);
                       setShowStickerPicker(false);
                     }}
+                    disabled={chatCooldownSeconds > 0}
                     className={`p-1 transition-colors ${
                       showEmojiPicker ? 'text-color-4' : 'text-n-4 hover:text-n-1'
-                    }`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
                     title="Emoji"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -823,9 +858,10 @@ const LiveChat = ({ isOpen, onClose }) => {
                       setShowStickerPicker(!showStickerPicker);
                       setShowEmojiPicker(false);
                     }}
+                    disabled={chatCooldownSeconds > 0}
                     className={`p-1 transition-colors ${
                       showStickerPicker ? 'text-color-4' : 'text-n-4 hover:text-n-1'
-                    }`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
                     title="Sticker"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -836,9 +872,12 @@ const LiveChat = ({ isOpen, onClose }) => {
               </div>
               <button
                 type="submit"
-                className="button relative w-full h-11 bg-n-8 border border-n-6 text-n-1 hover:text-[#10B981] hover:border-[#10B981]/50 transition-colors"
+                disabled={chatCooldownSeconds > 0}
+                className="button relative w-full h-11 bg-n-8 border border-n-6 text-n-1 hover:text-[#10B981] hover:border-[#10B981]/50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span className="relative z-10">Send Message</span>
+                <span className="relative z-10">
+                  {chatCooldownSeconds > 0 ? `Slow down (${chatCooldownSeconds}s)` : 'Send Message'}
+                </span>
               </button>
             </form>
           ) : (

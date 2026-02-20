@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import Announcement from '../models/Announcement.js';
 import jwt from 'jsonwebtoken';
 import { isDeveloperUser, isStaffUser } from '../utils/staffUtils.js';
+import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
 
 // Store active users
 const activeUsers = new Map();
@@ -472,6 +473,16 @@ export const setupChatSocket = (io) => {
 
         if (message && message.length > 500) {
           socket.emit('error', { message: 'Message is too long (max 500 characters)' });
+          return;
+        }
+
+        const spamCheck = checkRapidMessageSpam(socket.user._id);
+        if (spamCheck.blocked) {
+          socket.emit('error', {
+            message: spamCheck.message,
+            showToUser: true,
+            cooldownSeconds: spamCheck.cooldownSeconds
+          });
           return;
         }
 

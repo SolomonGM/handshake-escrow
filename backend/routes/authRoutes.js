@@ -11,6 +11,11 @@ import {
   requestTwoFactorCode,
   verifyTwoFactorCode,
   disableTwoFactor,
+  requestEmailChangeCurrentCode,
+  resendEmailChangeCurrentCode,
+  verifyEmailChangeCurrentCode,
+  resendEmailChangeNewCode,
+  verifyEmailChangeNewCode,
   requestPasswordReset,
   verifyPasswordResetCode,
   resetPassword
@@ -78,6 +83,18 @@ const twoFactorVerifyLimiter = createLimiter(
   'Too many two-factor verification attempts. Please try again in 10 minutes.'
 );
 
+const emailChangeRequestLimiter = createLimiter(
+  10 * 60 * 1000,
+  12,
+  'Too many email verification requests. Please try again in 10 minutes.'
+);
+
+const emailChangeVerifyLimiter = createLimiter(
+  10 * 60 * 1000,
+  25,
+  'Too many email verification attempts. Please try again in 10 minutes.'
+);
+
 // Public routes
 router.post('/register', registerLimiter, register);
 router.post('/login', loginLimiter, login);
@@ -94,5 +111,10 @@ router.get('/profile/:userId', protect, getUserProfile);
 router.post('/2fa/request', twoFactorRequestLimiter, protect, requestTwoFactorCode);
 router.post('/2fa/verify', twoFactorVerifyLimiter, protect, verifyTwoFactorCode);
 router.post('/2fa/disable', twoFactorRequestLimiter, protect, disableTwoFactor);
+router.post('/email-change/request-current', emailChangeRequestLimiter, protect, requestEmailChangeCurrentCode);
+router.post('/email-change/resend-current', emailChangeRequestLimiter, protect, resendEmailChangeCurrentCode);
+router.post('/email-change/verify-current', emailChangeVerifyLimiter, protect, verifyEmailChangeCurrentCode);
+router.post('/email-change/resend-new', emailChangeRequestLimiter, protect, resendEmailChangeNewCode);
+router.post('/email-change/verify-new', emailChangeVerifyLimiter, protect, verifyEmailChangeNewCode);
 
 export default router;

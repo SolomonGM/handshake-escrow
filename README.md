@@ -80,3 +80,48 @@ Backend
 - Configure CORS via `CLIENT_URL` or `CLIENT_URLS` to match your deployed frontend.
 - Ensure the backend binds to `process.env.PORT`.
 - For Render free instances, use API-based email delivery (`EMAIL_PROVIDER=resend` + `RESEND_API_KEY`) instead of SMTP.
+
+## Production Email Setup (Render-Friendly)
+
+The backend supports two providers: `resend` and `smtp`. For Render free instances, use `resend` (HTTP API) to avoid SMTP egress/reputation issues.
+
+1. Create a Resend account and verify your sending domain.
+- Add DNS records in your DNS provider exactly as Resend requests (SPF/DKIM).
+- Wait for domain verification to become `verified` in Resend.
+
+2. Create an API key in Resend.
+- Use restricted permissions if possible (send-only).
+- Copy the key securely.
+
+3. Choose a sender address from your verified domain.
+- Example: `no-reply@yourdomain.com`.
+- Avoid unverified sender domains.
+
+4. Configure backend environment variables in Render (your backend service).
+- `EMAIL_PROVIDER=resend`
+- `RESEND_API_KEY=<your_resend_api_key>`
+- `EMAIL_FROM=Handshake <no-reply@yourdomain.com>`
+- Keep existing required backend vars (`JWT_SECRET`, `MONGODB_URI`, etc.) intact.
+
+5. Redeploy the backend service on Render.
+- Render applies new env vars only after deploy/restart.
+
+6. Verify from the app flows.
+- Trigger `Forgot Password` to send a reset code.
+- Trigger login 2FA (if enabled).
+- Trigger email-change verification flow.
+
+7. Verify sender quality and deliverability.
+- Add DMARC record on your domain (`_dmarc`) with a monitoring policy first.
+- Check spam folder placement in Gmail/Outlook.
+- If messages are delayed/rejected, review Resend logs and DNS alignment.
+
+8. Local/dev fallback behavior.
+- In `NODE_ENV=development`, if provider delivery fails, the backend logs the code to server logs so you can continue testing.
+- In production, delivery failures return a user-facing error and no code is accepted.
+
+9. Do not use SMTP on free Render unless you explicitly validate it.
+- SMTP can be blocked/throttled depending on provider/network path.
+- If you must use SMTP, set:
+  - `EMAIL_PROVIDER=smtp`
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`

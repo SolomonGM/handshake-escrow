@@ -5,12 +5,14 @@ import Header from './Header';
 import Button from './Button';
 import AdminPanel from './AdminPanel';
 import ModeratorPanel from './ModeratorPanel';
+import VerificationCodeInput from './VerificationCodeInput';
 import { passAPI } from '../services/api';
 import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
 
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 20;
 const USERNAME_REGEX = /^[A-Za-z0-9]+$/;
+const EMAIL_REGEX = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/;
 const SECURITY_CODE_LENGTH = 5;
 
 const Settings = () => {
@@ -20,7 +22,12 @@ const Settings = () => {
     updateProfile,
     requestTwoFactorCode,
     verifyTwoFactorCode,
-    disableTwoFactor
+    disableTwoFactor,
+    requestEmailChangeCurrentCode,
+    resendEmailChangeCurrentCode,
+    verifyEmailChangeCurrentCode,
+    resendEmailChangeNewCode,
+    verifyEmailChangeNewCode
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -41,9 +48,20 @@ const Settings = () => {
   const [securityMessage, setSecurityMessage] = useState('');
   const [securityError, setSecurityError] = useState('');
   const [isSecuritySubmitting, setIsSecuritySubmitting] = useState(false);
+  const [isTwoFactorModalOpen, setIsTwoFactorModalOpen] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [twoFactorCooldown, setTwoFactorCooldown] = useState(0);
   const [disableTwoFactorPassword, setDisableTwoFactorPassword] = useState('');
+  const [isEmailChangeModalOpen, setIsEmailChangeModalOpen] = useState(false);
+  const [isEmailChangeSubmitting, setIsEmailChangeSubmitting] = useState(false);
+  const [emailChangeStep, setEmailChangeStep] = useState('current');
+  const [emailChangeSessionToken, setEmailChangeSessionToken] = useState('');
+  const [emailChangeTargetEmail, setEmailChangeTargetEmail] = useState('');
+  const [emailChangeCode, setEmailChangeCode] = useState('');
+  const [emailChangeCurrentCooldown, setEmailChangeCurrentCooldown] = useState(0);
+  const [emailChangeNewCooldown, setEmailChangeNewCooldown] = useState(0);
+  const [emailChangeMessage, setEmailChangeMessage] = useState('');
+  const [emailChangeError, setEmailChangeError] = useState('');
   const fileInputRef = useRef(null);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
   const MAX_AVATAR_SIZE_MB = 5;
@@ -133,12 +151,41 @@ const Settings = () => {
   }, [activeTab, user]);
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      username: user.username || '',
+      email: user.email || '',
+      avatar: user.avatar || ''
+    }));
+  }, [user?.username, user?.email, user?.avatar]);
+
+  useEffect(() => {
     if (twoFactorCooldown <= 0) return;
     const timer = setInterval(() => {
       setTwoFactorCooldown((prev) => Math.max(prev - 1, 0));
     }, 1000);
     return () => clearInterval(timer);
   }, [twoFactorCooldown]);
+
+  useEffect(() => {
+    if (emailChangeCurrentCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setEmailChangeCurrentCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [emailChangeCurrentCooldown]);
+
+  useEffect(() => {
+    if (emailChangeNewCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setEmailChangeNewCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [emailChangeNewCooldown]);
 
   const handleLogout = () => {
     logout();
@@ -177,23 +224,77 @@ const Settings = () => {
     }
 
     const normalizedEmail = formData.email.trim().toLowerCase();
-    const result = await updateProfile({
-      ...formData,
-      username: normalizedUsername,
-      email: normalizedEmail
-    });
-    if (result.success) {
-      setMessage('Profile updated successfully!');
-      setIsEditing(false);
-      setTimeout(() => setMessage(''), 3000);
-    } else {
-      setMessage(getFriendlyProfileError(result.error));
+    if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+      setMessage('Please enter a valid email address.');
+      return;
     }
+
+    const currentEmail = String(user?.email || '').trim().toLowerCase();
+    const currentUsername = String(user?.username || '').trim().toLowerCase();
+    const currentAvatar = String(user?.avatar || '');
+    const emailChanged = normalizedEmail !== currentEmail;
+    const profileChanged =
+      normalizedUsername !== currentUsername ||
+      String(formData.avatar || '') !== currentAvatar;
+
+    if (!profileChanged && !emailChanged) {
+      setMessage('No profile changes to save.');
+      return;
+    }
+
+    if (profileChanged) {
+      const profileResult = await updateProfile({
+        ...formData,
+        username: normalizedUsername,
+        email: currentEmail
+      });
+
+      if (!profileResult.success) {
+        setMessage(getFriendlyProfileError(profileResult.error));
+        return;
+      }
+    }
+
+    if (emailChanged) {
+      const emailFlow = await startEmailChangeFlow(normalizedEmail);
+      if (!emailFlow.success) {
+        setMessage(
+          profileChanged
+            ? `Profile updated successfully, but email change could not start: ${emailFlow.error || 'Please try again.'}`
+            : (emailFlow.error || 'Failed to start secure email change.')
+        );
+        return;
+      }
+
+      setMessage(
+        profileChanged
+          ? 'Profile updated successfully. Complete email verification to finish your email change.'
+          : 'Verification started successfully. Complete email verification to finish your email change.'
+      );
+      setIsEditing(false);
+      return;
+    }
+
+    setMessage('Profile updated successfully!');
+    setIsEditing(false);
+    setTimeout(() => setMessage(''), 3000);
   };
 
   const resetSecurityFeedback = () => {
     setSecurityError('');
     setSecurityMessage('');
+  };
+
+  const openTwoFactorModal = () => {
+    resetSecurityFeedback();
+    setIsTwoFactorModalOpen(true);
+  };
+
+  const closeTwoFactorModal = () => {
+    if (isSecuritySubmitting) {
+      return;
+    }
+    setIsTwoFactorModalOpen(false);
   };
 
   const handleRequestTwoFactorCode = async () => {
@@ -269,6 +370,174 @@ const Settings = () => {
     }
 
     setIsSecuritySubmitting(false);
+  };
+
+  const resetEmailChangeFeedback = () => {
+    setEmailChangeError('');
+    setEmailChangeMessage('');
+  };
+
+  const resetEmailChangeFlow = () => {
+    setEmailChangeStep('current');
+    setEmailChangeSessionToken('');
+    setEmailChangeTargetEmail('');
+    setEmailChangeCode('');
+    setEmailChangeCurrentCooldown(0);
+    setEmailChangeNewCooldown(0);
+    setEmailChangeError('');
+    setEmailChangeMessage('');
+    setIsEmailChangeSubmitting(false);
+  };
+
+  const closeEmailChangeModal = () => {
+    if (isEmailChangeSubmitting) {
+      return;
+    }
+
+    setIsEmailChangeModalOpen(false);
+    resetEmailChangeFlow();
+  };
+
+  const startEmailChangeFlow = async (nextEmail) => {
+    if (isEmailChangeSubmitting) {
+      return { success: false };
+    }
+
+    setIsEmailChangeSubmitting(true);
+    resetEmailChangeFeedback();
+
+    const result = await requestEmailChangeCurrentCode(nextEmail);
+    if (!result.success) {
+      const nextError = result.error || 'Failed to start email verification.';
+      setEmailChangeError(nextError);
+      if (result.cooldownSeconds) {
+        setEmailChangeCurrentCooldown(result.cooldownSeconds);
+      }
+      setIsEmailChangeSubmitting(false);
+      return { success: false, error: nextError };
+    }
+
+    setEmailChangeStep('current');
+    setEmailChangeSessionToken(result.verificationSessionToken || '');
+    setEmailChangeTargetEmail(nextEmail);
+    setEmailChangeCode('');
+    setEmailChangeCurrentCooldown(result.cooldownSeconds || 30);
+    setEmailChangeNewCooldown(0);
+    setEmailChangeMessage(result.message || 'Verification code sent to your current email.');
+    setEmailChangeError('');
+    setIsEmailChangeModalOpen(true);
+    setIsEmailChangeSubmitting(false);
+    return { success: true };
+  };
+
+  const handleResendEmailChangeCode = async () => {
+    if (isEmailChangeSubmitting || !emailChangeSessionToken) {
+      return;
+    }
+
+    const isCurrentStep = emailChangeStep === 'current';
+    if (isCurrentStep && emailChangeCurrentCooldown > 0) {
+      return;
+    }
+    if (!isCurrentStep && emailChangeNewCooldown > 0) {
+      return;
+    }
+
+    setIsEmailChangeSubmitting(true);
+    resetEmailChangeFeedback();
+
+    const result = isCurrentStep
+      ? await resendEmailChangeCurrentCode(emailChangeSessionToken)
+      : await resendEmailChangeNewCode(emailChangeSessionToken);
+
+    if (!result.success) {
+      setEmailChangeError(result.error || 'Failed to resend verification code.');
+      if (result.cooldownSeconds) {
+        if (isCurrentStep) {
+          setEmailChangeCurrentCooldown(result.cooldownSeconds);
+        } else {
+          setEmailChangeNewCooldown(result.cooldownSeconds);
+        }
+      }
+      setIsEmailChangeSubmitting(false);
+      return;
+    }
+
+    setEmailChangeMessage(result.message || 'Verification code resent.');
+    if (isCurrentStep) {
+      setEmailChangeCurrentCooldown(result.cooldownSeconds || 30);
+    } else {
+      setEmailChangeNewCooldown(result.cooldownSeconds || 30);
+    }
+    setIsEmailChangeSubmitting(false);
+  };
+
+  const handleSubmitEmailChangeCode = async () => {
+    if (isEmailChangeSubmitting) {
+      return;
+    }
+
+    const code = emailChangeCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH);
+    if (code.length !== SECURITY_CODE_LENGTH) {
+      setEmailChangeError(`Please enter the ${SECURITY_CODE_LENGTH}-digit code.`);
+      setEmailChangeMessage('');
+      return;
+    }
+
+    if (!emailChangeSessionToken) {
+      setEmailChangeError('Email verification session expired. Start again.');
+      setEmailChangeMessage('');
+      return;
+    }
+
+    setIsEmailChangeSubmitting(true);
+    resetEmailChangeFeedback();
+
+    if (emailChangeStep === 'current') {
+      const result = await verifyEmailChangeCurrentCode({
+        verificationSessionToken: emailChangeSessionToken,
+        code
+      });
+
+      if (!result.success) {
+        setEmailChangeError(result.error || 'Failed to verify current email code.');
+        setIsEmailChangeSubmitting(false);
+        return;
+      }
+
+      setEmailChangeStep('new');
+      setEmailChangeCode('');
+      setEmailChangeMessage(result.message || 'Current email verified. Check your new email for the next code.');
+      setEmailChangeNewCooldown(result.cooldownSeconds || 30);
+      setIsEmailChangeSubmitting(false);
+      return;
+    }
+
+    const result = await verifyEmailChangeNewCode({
+      verificationSessionToken: emailChangeSessionToken,
+      code
+    });
+
+    if (!result.success) {
+      setEmailChangeError(result.error || 'Failed to verify new email code.');
+      setIsEmailChangeSubmitting(false);
+      return;
+    }
+
+    setEmailChangeMessage(result.message || 'Email updated successfully.');
+    setMessage('Email updated successfully!');
+    setFormData((prev) => ({
+      ...prev,
+      email: emailChangeTargetEmail
+    }));
+    setIsEditing(false);
+
+    setTimeout(() => {
+      setIsEmailChangeModalOpen(false);
+      resetEmailChangeFlow();
+    }, 900);
+
+    setIsEmailChangeSubmitting(false);
   };
 
   // Handle file upload
@@ -520,6 +789,11 @@ const Settings = () => {
                         />
                         {user?.rank === 'developer' && (
                           <p className="text-xs text-n-4 mt-1">Email cannot be changed for developer accounts</p>
+                        )}
+                        {user?.rank !== 'developer' && (
+                          <p className="text-xs text-n-4 mt-1">
+                            Changing email requires two verification codes: one to your current email, then one to the new email.
+                          </p>
                         )}
                       </div>
                       <div className="flex gap-4 pt-4">
@@ -856,7 +1130,7 @@ const Settings = () => {
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Two-Factor Authentication</h3>
                       <div className="flex flex-wrap items-center gap-3 mb-4">
-                        <p className="text-n-3 text-sm">Protect your account with email verification codes at login.</p>
+                        <p className="text-n-3 text-sm">Protect your account with a verification code sent to your email at login.</p>
                         <span className={`px-3 py-1 text-xs rounded-full font-semibold ${
                           user?.twoFactorEnabled
                             ? 'bg-color-4/20 text-color-4'
@@ -865,76 +1139,9 @@ const Settings = () => {
                           {user?.twoFactorEnabled ? 'Enabled' : 'Disabled'}
                         </span>
                       </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-xs text-n-4 mb-2">Step 1: Request a verification code</p>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <Button
-                              onClick={handleRequestTwoFactorCode}
-                              disabled={isSecuritySubmitting || twoFactorCooldown > 0}
-                              className="min-w-[180px]"
-                            >
-                              {twoFactorCooldown > 0 ? `Resend in ${twoFactorCooldown}s` : 'Send code'}
-                            </Button>
-                            <span className="text-xs text-n-4">Code expires in 10 minutes.</span>
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-n-4 mb-2">Step 2: Enter and verify the code</p>
-                          <div className="flex flex-col sm:flex-row gap-3">
-                            <input
-                              type="text"
-                              value={twoFactorCode}
-                              onChange={(event) => {
-                                setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH));
-                                setSecurityError('');
-                                setSecurityMessage('');
-                              }}
-                              placeholder="12345"
-                              inputMode="numeric"
-                              maxLength={SECURITY_CODE_LENGTH}
-                              className="w-full sm:max-w-[220px] px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all tracking-[0.3em] text-center"
-                            />
-                            <Button
-                              onClick={handleVerifyTwoFactorCode}
-                              disabled={isSecuritySubmitting}
-                              className="min-w-[180px]"
-                            >
-                              {user?.twoFactorEnabled ? 'Verify code' : 'Enable 2FA'}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {user?.twoFactorEnabled && (
-                          <div className="pt-2 border-t border-n-5">
-                            <p className="text-xs text-n-4 mb-2">Disable 2FA (password required)</p>
-                            <div className="flex flex-col sm:flex-row gap-3">
-                              <input
-                                type="password"
-                                value={disableTwoFactorPassword}
-                                onChange={(event) => {
-                                  setDisableTwoFactorPassword(event.target.value);
-                                  setSecurityError('');
-                                  setSecurityMessage('');
-                                }}
-                                placeholder="Current password"
-                                autoComplete="current-password"
-                                className="w-full sm:max-w-[320px] px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
-                              />
-                              <Button
-                                onClick={handleDisableTwoFactor}
-                                disabled={isSecuritySubmitting}
-                                white
-                                className="min-w-[180px]"
-                              >
-                                Disable 2FA
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <Button onClick={openTwoFactorModal} className="min-w-[220px]">
+                        Manage 2FA
+                      </Button>
                     </div>
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Active Sessions</h3>
@@ -959,6 +1166,217 @@ const Settings = () => {
           </div>
         </div>
       </div>
+
+      {isTwoFactorModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-n-8 border border-n-6 rounded-2xl shadow-2xl">
+            <div className="px-5 sm:px-6 py-4 border-b border-n-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-n-1 text-lg font-semibold">Two-Factor Authentication</h3>
+                <p className="text-xs text-n-4 mt-1">Secure login with a 5-digit email verification code.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeTwoFactorModal}
+                disabled={isSecuritySubmitting}
+                className="text-n-4 hover:text-n-1 transition-colors disabled:opacity-50"
+                aria-label="Close two-factor modal"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-5 sm:px-6 py-5 space-y-5">
+              {(securityMessage || securityError) && (
+                <div
+                  className={`p-3 rounded-lg text-sm ${
+                    securityError
+                      ? 'bg-color-3/10 border border-color-3/50 text-color-3'
+                      : 'bg-color-4/10 border border-color-4/50 text-color-4'
+                  }`}
+                >
+                  {securityError || securityMessage}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm text-n-3">Status</span>
+                <span className={`px-3 py-1 text-xs rounded-full font-semibold ${
+                  user?.twoFactorEnabled
+                    ? 'bg-color-4/20 text-color-4'
+                    : 'bg-color-3/20 text-color-3'
+                }`}>
+                  {user?.twoFactorEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-n-4">Step 1: Send code</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    onClick={handleRequestTwoFactorCode}
+                    disabled={isSecuritySubmitting || twoFactorCooldown > 0}
+                    className="min-w-[180px]"
+                  >
+                    {twoFactorCooldown > 0 ? `Resend in ${twoFactorCooldown}s` : 'Send code'}
+                  </Button>
+                  <span className="text-xs text-n-4">Code expires in 10 minutes.</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-n-4">Step 2: Verify code</p>
+                <VerificationCodeInput
+                  value={twoFactorCode}
+                  onChange={(nextCode) => {
+                    setTwoFactorCode(nextCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH));
+                    setSecurityError('');
+                    setSecurityMessage('');
+                  }}
+                  length={SECURITY_CODE_LENGTH}
+                  disabled={isSecuritySubmitting}
+                  autoFocus
+                />
+                <div className="flex justify-center">
+                  <Button
+                    onClick={handleVerifyTwoFactorCode}
+                    disabled={isSecuritySubmitting}
+                    className="min-w-[200px]"
+                  >
+                    {user?.twoFactorEnabled ? 'Verify code' : 'Enable 2FA'}
+                  </Button>
+                </div>
+              </div>
+
+              {user?.twoFactorEnabled && (
+                <div className="pt-4 border-t border-n-6 space-y-2">
+                  <p className="text-xs uppercase tracking-wider text-n-4">Disable 2FA (password required)</p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="password"
+                      value={disableTwoFactorPassword}
+                      onChange={(event) => {
+                        setDisableTwoFactorPassword(event.target.value);
+                        setSecurityError('');
+                        setSecurityMessage('');
+                      }}
+                      placeholder="Current password"
+                      autoComplete="current-password"
+                      className="w-full px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                    />
+                    <Button
+                      onClick={handleDisableTwoFactor}
+                      disabled={isSecuritySubmitting}
+                      white
+                      className="min-w-[170px]"
+                    >
+                      Disable 2FA
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEmailChangeModalOpen && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-n-8 border border-n-6 rounded-2xl shadow-2xl">
+            <div className="px-5 sm:px-6 py-4 border-b border-n-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-n-1 text-lg font-semibold">Verify Email Change</h3>
+                <p className="text-xs text-n-4 mt-1">Step 1 verifies your current email. Step 2 verifies your new email.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEmailChangeModal}
+                disabled={isEmailChangeSubmitting}
+                className="text-n-4 hover:text-n-1 transition-colors disabled:opacity-50"
+                aria-label="Close email verification modal"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-5 sm:px-6 py-5 space-y-5">
+              {(emailChangeMessage || emailChangeError) && (
+                <div
+                  className={`p-3 rounded-lg text-sm ${
+                    emailChangeError
+                      ? 'bg-color-3/10 border border-color-3/50 text-color-3'
+                      : 'bg-color-4/10 border border-color-4/50 text-color-4'
+                  }`}
+                >
+                  {emailChangeError || emailChangeMessage}
+                </div>
+              )}
+
+              <div className="p-3 bg-n-7/80 border border-n-6 rounded-lg space-y-2 text-sm">
+                <p className="text-n-3">
+                  <span className="text-n-1 font-semibold">Current email:</span> {user?.email}
+                </p>
+                <p className="text-n-3 break-all">
+                  <span className="text-n-1 font-semibold">New email:</span> {emailChangeTargetEmail}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider text-n-4">
+                  {emailChangeStep === 'current'
+                    ? 'Step 1: Code sent to current email'
+                    : 'Step 2: Code sent to new email'}
+                </p>
+                <VerificationCodeInput
+                  value={emailChangeCode}
+                  onChange={(nextCode) => {
+                    setEmailChangeCode(nextCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH));
+                    setEmailChangeError('');
+                    setEmailChangeMessage('');
+                  }}
+                  length={SECURITY_CODE_LENGTH}
+                  disabled={isEmailChangeSubmitting}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleResendEmailChangeCode}
+                  disabled={
+                    isEmailChangeSubmitting ||
+                    (emailChangeStep === 'current'
+                      ? emailChangeCurrentCooldown > 0
+                      : emailChangeNewCooldown > 0)
+                  }
+                  className="text-sm text-[#10B981] hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                >
+                  {emailChangeStep === 'current'
+                    ? emailChangeCurrentCooldown > 0
+                      ? `Resend in ${emailChangeCurrentCooldown}s`
+                      : 'Resend current-email code'
+                    : emailChangeNewCooldown > 0
+                      ? `Resend in ${emailChangeNewCooldown}s`
+                      : 'Resend new-email code'}
+                </button>
+
+                <Button
+                  onClick={handleSubmitEmailChangeCode}
+                  disabled={isEmailChangeSubmitting}
+                  className="min-w-[220px]"
+                >
+                  {emailChangeStep === 'current' ? 'Verify current email' : 'Verify new email'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

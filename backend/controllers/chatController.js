@@ -1,6 +1,7 @@
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import { isStaffUser } from '../utils/staffUtils.js';
+import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
 
 const resolveChatModerationBlock = async (user) => {
   const moderation = user?.chatModeration || {};
@@ -112,6 +113,16 @@ export const sendMessage = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Message is too long (max 500 characters)'
+      });
+    }
+
+    const spamCheck = checkRapidMessageSpam(user._id);
+    if (spamCheck.blocked) {
+      return res.status(429).json({
+        success: false,
+        message: spamCheck.message,
+        showToUser: true,
+        cooldownSeconds: spamCheck.cooldownSeconds
       });
     }
 

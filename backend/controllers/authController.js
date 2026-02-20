@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import User from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
-import { sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
+import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
 import {
   USERNAME_RULES,
   buildUsernameExistsQuery,
@@ -21,11 +21,62 @@ const TWO_FACTOR_CODE_TTL_MS = 10 * 60 * 1000;
 const TWO_FACTOR_RESEND_COOLDOWN_MS = 30 * 1000;
 const MAX_TWO_FACTOR_ATTEMPTS = 5;
 const LOGIN_TWO_FACTOR_SESSION_TTL_MS = 10 * 60 * 1000;
+const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
+const EMAIL_CHANGE_RESEND_COOLDOWN_MS = 30 * 1000;
+const EMAIL_CHANGE_SESSION_TTL_MS = 20 * 60 * 1000;
+const MAX_EMAIL_CHANGE_ATTEMPTS = 5;
 
 const hashValue = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const isProduction = process.env.NODE_ENV === 'production';
 const buildSecurityCode = () => String(Math.floor(10000 + Math.random() * 90000));
 const buildSessionToken = () => crypto.randomBytes(32).toString('hex');
+
+const clearEmailChangeState = (user) => {
+  user.emailChange = {
+    pendingEmail: undefined,
+    currentCodeHash: undefined,
+    currentCodeExpiresAt: undefined,
+    currentCodeAttempts: 0,
+    currentCodeLastSentAt: undefined,
+    currentVerifiedAt: undefined,
+    newCodeHash: undefined,
+    newCodeExpiresAt: undefined,
+    newCodeAttempts: 0,
+    newCodeLastSentAt: undefined,
+    sessionTokenHash: undefined,
+    sessionTokenExpiresAt: undefined
+  };
+};
+
+const hasValidEmailChangeSession = (emailChange, sessionToken) => {
+  if (!emailChange?.sessionTokenHash || !emailChange?.sessionTokenExpiresAt) {
+    return false;
+  }
+
+  const sessionExpiresAt = new Date(emailChange.sessionTokenExpiresAt).getTime();
+  if (sessionExpiresAt < Date.now()) {
+    return false;
+  }
+
+  return hashValue(sessionToken) === emailChange.sessionTokenHash;
+};
+
+const getMaskedEmail = (email) => {
+  const value = String(email || '').trim();
+  const atIndex = value.indexOf('@');
+  if (atIndex <= 1) {
+    return value;
+  }
+
+  const local = value.slice(0, atIndex);
+  const domain = value.slice(atIndex + 1);
+  if (!domain) {
+    return value;
+  }
+
+  const maskedLocal = `${local[0]}${'*'.repeat(Math.max(local.length - 2, 1))}${local.slice(-1)}`;
+  return `${maskedLocal}@${domain}`;
+};
 
 const buildAuthUserPayload = (user) => ({
   id: user._id,
@@ -585,7 +636,7 @@ export const updateProfile = async (req, res, next) => {
       }
     }
 
-    // Prevent email changes for developer rank
+    // Email changes are handled via dedicated two-step verification endpoints.
     if (typeof incomingEmail === 'string' && incomingEmail.trim()) {
       const normalizedEmail = normalizeEmail(incomingEmail);
 
@@ -597,25 +648,10 @@ export const updateProfile = async (req, res, next) => {
       }
 
       if (normalizedEmail !== user.email) {
-        if (user.rank === 'developer') {
-          return res.status(403).json({ 
-            success: false,
-            message: 'Email cannot be changed for developer accounts. Contact system administrator.' 
-          });
-        }
-        
-        const existingUser = await User.findOne({
-          _id: { $ne: user._id },
-          email: normalizedEmail
-        }).select('_id');
-
-        if (existingUser) {
-          return res.status(409).json({ 
-            success: false,
-            message: 'Email already exists' 
-          });
-        }
-        user.email = normalizedEmail;
+        return res.status(400).json({
+          success: false,
+          message: 'Email changes require verification in Settings. Use Change Email to continue.'
+        });
       }
     }
 
@@ -928,6 +964,749 @@ export const disableTwoFactor = async (req, res, next) => {
     });
   } catch (error) {
     console.error('Disable two-factor error:', error);
+    next(error);
+  }
+};
+
+// @desc    Request code to verify current email before changing account email
+// @route   POST /api/auth/email-change/request-current
+// @access  Private
+export const requestEmailChangeCurrentCode = async (req, res, next) => {
+  try {
+    const newEmail = normalizeEmail(req.body.newEmail);
+    if (!newEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'New email is required'
+      });
+    }
+
+    if (!isValidEmail(newEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid email address'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.rank === 'developer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Email cannot be changed for developer accounts. Contact system administrator.'
+      });
+    }
+
+    if (newEmail === user.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'New email must be different from your current email'
+      });
+    }
+
+    const existingUser = await User.findOne({
+      _id: { $ne: user._id },
+      email: newEmail
+    }).select('_id');
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    const now = Date.now();
+    const currentCodeLastSentAt = user.emailChange?.currentCodeLastSentAt
+      ? new Date(user.emailChange.currentCodeLastSentAt).getTime()
+      : null;
+    const isSamePendingEmail = user.emailChange?.pendingEmail === newEmail;
+    const hasPendingCurrentStep = Boolean(
+      user.emailChange?.currentCodeHash &&
+      !user.emailChange?.currentVerifiedAt &&
+      user.emailChange?.sessionTokenHash &&
+      user.emailChange?.sessionTokenExpiresAt
+    );
+
+    if (
+      isSamePendingEmail &&
+      hasPendingCurrentStep &&
+      currentCodeLastSentAt &&
+      now - currentCodeLastSentAt < EMAIL_CHANGE_RESEND_COOLDOWN_MS
+    ) {
+      const remainingSeconds = Math.ceil(
+        (EMAIL_CHANGE_RESEND_COOLDOWN_MS - (now - currentCodeLastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSeconds}s before requesting another code.`,
+        cooldownSeconds: remainingSeconds
+      });
+    }
+
+    const code = buildSecurityCode();
+    const verificationSessionToken = buildSessionToken();
+    user.emailChange = {
+      pendingEmail: newEmail,
+      currentCodeHash: hashValue(code),
+      currentCodeExpiresAt: new Date(now + EMAIL_CHANGE_CODE_TTL_MS),
+      currentCodeAttempts: 0,
+      currentCodeLastSentAt: new Date(now),
+      currentVerifiedAt: undefined,
+      newCodeHash: undefined,
+      newCodeExpiresAt: undefined,
+      newCodeAttempts: 0,
+      newCodeLastSentAt: undefined,
+      sessionTokenHash: hashValue(verificationSessionToken),
+      sessionTokenExpiresAt: new Date(now + EMAIL_CHANGE_SESSION_TTL_MS)
+    };
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendEmailChangeCode({
+        to: user.email,
+        code,
+        stage: 'current'
+      });
+    } catch (emailError) {
+      console.error('Email change current verification email failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'email_change_current_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code,
+      emailAddress: user.email,
+      contextLabel: 'email-change-current',
+      cleanup: async () => {
+        clearEmailChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `We sent a verification code to ${getMaskedEmail(user.email)}.`,
+      stage: 'verify-current',
+      verificationSessionToken,
+      cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Request email change current code error:', error);
+    next(error);
+  }
+};
+
+// @desc    Resend current-email verification code for email change
+// @route   POST /api/auth/email-change/resend-current
+// @access  Private
+export const resendEmailChangeCurrentCode = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    if (!verificationSessionToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.emailChange?.pendingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active email change request. Start again.'
+      });
+    }
+
+    const sessionExpiresAt = user.emailChange.sessionTokenExpiresAt
+      ? new Date(user.emailChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Email verification session expired. Start again.'
+      });
+    }
+
+    if (!hasValidEmailChangeSession(user.emailChange, verificationSessionToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email verification session'
+      });
+    }
+
+    if (user.emailChange.currentVerifiedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current email already verified. Verify the code sent to your new email.'
+      });
+    }
+
+    const now = Date.now();
+    const lastSentAt = user.emailChange.currentCodeLastSentAt
+      ? new Date(user.emailChange.currentCodeLastSentAt).getTime()
+      : null;
+    if (lastSentAt && now - lastSentAt < EMAIL_CHANGE_RESEND_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (EMAIL_CHANGE_RESEND_COOLDOWN_MS - (now - lastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSeconds}s before requesting another code.`,
+        cooldownSeconds: remainingSeconds
+      });
+    }
+
+    const code = buildSecurityCode();
+    user.emailChange.currentCodeHash = hashValue(code);
+    user.emailChange.currentCodeExpiresAt = new Date(now + EMAIL_CHANGE_CODE_TTL_MS);
+    user.emailChange.currentCodeAttempts = 0;
+    user.emailChange.currentCodeLastSentAt = new Date(now);
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendEmailChangeCode({
+        to: user.email,
+        code,
+        stage: 'current'
+      });
+    } catch (emailError) {
+      console.error('Resend email change current code failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'email_change_resend_current_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code,
+      emailAddress: user.email,
+      contextLabel: 'email-change-resend-current',
+      cleanup: async () => {
+        clearEmailChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `A new code was sent to ${getMaskedEmail(user.email)}.`,
+      cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Resend email change current code error:', error);
+    next(error);
+  }
+};
+
+// @desc    Verify current-email code and send new-email verification code
+// @route   POST /api/auth/email-change/verify-current
+// @access  Private
+export const verifyEmailChangeCurrentCode = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    const code = String(req.body.code || '').trim();
+
+    if (!verificationSessionToken || !code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token and code are required'
+      });
+    }
+
+    if (!/^\d{5}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide the 5-digit code'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.emailChange?.pendingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active email change request. Start again.'
+      });
+    }
+
+    const sessionExpiresAt = user.emailChange.sessionTokenExpiresAt
+      ? new Date(user.emailChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Email verification session expired. Start again.'
+      });
+    }
+
+    if (!hasValidEmailChangeSession(user.emailChange, verificationSessionToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email verification session'
+      });
+    }
+
+    if (user.emailChange.currentVerifiedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current email already verified. Verify your new email code.',
+        stage: 'verify-new'
+      });
+    }
+
+    if (!user.emailChange.currentCodeHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active current-email code. Request a new code.'
+      });
+    }
+
+    const now = Date.now();
+    const currentCodeExpiresAt = user.emailChange.currentCodeExpiresAt
+      ? new Date(user.emailChange.currentCodeExpiresAt).getTime()
+      : null;
+    if (currentCodeExpiresAt && currentCodeExpiresAt < now) {
+      user.emailChange.currentCodeHash = undefined;
+      user.emailChange.currentCodeExpiresAt = undefined;
+      user.emailChange.currentCodeAttempts = 0;
+      await user.save();
+
+      return res.status(410).json({
+        success: false,
+        message: 'Current email code expired. Request a new code.'
+      });
+    }
+
+    if ((user.emailChange.currentCodeAttempts || 0) >= MAX_EMAIL_CHANGE_ATTEMPTS) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(429).json({
+        success: false,
+        message: 'Too many attempts. Start the email change process again.'
+      });
+    }
+
+    const incomingHash = hashValue(code);
+    if (incomingHash !== user.emailChange.currentCodeHash) {
+      user.emailChange.currentCodeAttempts = (user.emailChange.currentCodeAttempts || 0) + 1;
+      await user.save();
+
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid code. Please try again.',
+        remainingAttempts: Math.max(MAX_EMAIL_CHANGE_ATTEMPTS - user.emailChange.currentCodeAttempts, 0)
+      });
+    }
+
+    const pendingEmail = normalizeEmail(user.emailChange.pendingEmail);
+    if (!pendingEmail || !isValidEmail(pendingEmail)) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pending email. Start again.'
+      });
+    }
+
+    const existingUser = await User.findOne({
+      _id: { $ne: user._id },
+      email: pendingEmail
+    }).select('_id');
+    if (existingUser) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    const newCode = buildSecurityCode();
+    user.emailChange.currentVerifiedAt = new Date(now);
+    user.emailChange.currentCodeHash = undefined;
+    user.emailChange.currentCodeExpiresAt = undefined;
+    user.emailChange.currentCodeAttempts = 0;
+    user.emailChange.currentCodeLastSentAt = undefined;
+    user.emailChange.newCodeHash = hashValue(newCode);
+    user.emailChange.newCodeExpiresAt = new Date(now + EMAIL_CHANGE_CODE_TTL_MS);
+    user.emailChange.newCodeAttempts = 0;
+    user.emailChange.newCodeLastSentAt = new Date(now);
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendEmailChangeCode({
+        to: pendingEmail,
+        code: newCode,
+        stage: 'new'
+      });
+    } catch (emailError) {
+      console.error('Email change new-email verification send failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'email_change_new_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code: newCode,
+      emailAddress: pendingEmail,
+      contextLabel: 'email-change-new',
+      cleanup: async () => {
+        clearEmailChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Current email verified. We sent a code to ${getMaskedEmail(pendingEmail)}.`,
+      stage: 'verify-new',
+      cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Verify email change current code error:', error);
+    next(error);
+  }
+};
+
+// @desc    Resend new-email verification code
+// @route   POST /api/auth/email-change/resend-new
+// @access  Private
+export const resendEmailChangeNewCode = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    if (!verificationSessionToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.emailChange?.pendingEmail || !user.emailChange?.currentVerifiedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current email is not verified. Start the email change process again.'
+      });
+    }
+
+    const sessionExpiresAt = user.emailChange.sessionTokenExpiresAt
+      ? new Date(user.emailChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Email verification session expired. Start again.'
+      });
+    }
+
+    if (!hasValidEmailChangeSession(user.emailChange, verificationSessionToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email verification session'
+      });
+    }
+
+    const now = Date.now();
+    const lastSentAt = user.emailChange.newCodeLastSentAt
+      ? new Date(user.emailChange.newCodeLastSentAt).getTime()
+      : null;
+    if (lastSentAt && now - lastSentAt < EMAIL_CHANGE_RESEND_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (EMAIL_CHANGE_RESEND_COOLDOWN_MS - (now - lastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSeconds}s before requesting another code.`,
+        cooldownSeconds: remainingSeconds
+      });
+    }
+
+    const pendingEmail = normalizeEmail(user.emailChange.pendingEmail);
+    if (!pendingEmail || !isValidEmail(pendingEmail)) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pending email. Start again.'
+      });
+    }
+
+    const existingUser = await User.findOne({
+      _id: { $ne: user._id },
+      email: pendingEmail
+    }).select('_id');
+    if (existingUser) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    const newCode = buildSecurityCode();
+    user.emailChange.newCodeHash = hashValue(newCode);
+    user.emailChange.newCodeExpiresAt = new Date(now + EMAIL_CHANGE_CODE_TTL_MS);
+    user.emailChange.newCodeAttempts = 0;
+    user.emailChange.newCodeLastSentAt = new Date(now);
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendEmailChangeCode({
+        to: pendingEmail,
+        code: newCode,
+        stage: 'new'
+      });
+    } catch (emailError) {
+      console.error('Resend email change new code failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'email_change_resend_new_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code: newCode,
+      emailAddress: pendingEmail,
+      contextLabel: 'email-change-resend-new',
+      cleanup: async () => {
+        clearEmailChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `A new code was sent to ${getMaskedEmail(pendingEmail)}.`,
+      cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Resend email change new code error:', error);
+    next(error);
+  }
+};
+
+// @desc    Verify new-email code and finalize email change
+// @route   POST /api/auth/email-change/verify-new
+// @access  Private
+export const verifyEmailChangeNewCode = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    const code = String(req.body.code || '').trim();
+
+    if (!verificationSessionToken || !code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token and code are required'
+      });
+    }
+
+    if (!/^\d{5}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide the 5-digit code'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.emailChange?.pendingEmail || !user.emailChange?.currentVerifiedAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current email is not verified. Start the email change process again.'
+      });
+    }
+
+    const sessionExpiresAt = user.emailChange.sessionTokenExpiresAt
+      ? new Date(user.emailChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Email verification session expired. Start again.'
+      });
+    }
+
+    if (!hasValidEmailChangeSession(user.emailChange, verificationSessionToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email verification session'
+      });
+    }
+
+    if (!user.emailChange.newCodeHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active new-email code. Request a new code.'
+      });
+    }
+
+    const now = Date.now();
+    const newCodeExpiresAt = user.emailChange.newCodeExpiresAt
+      ? new Date(user.emailChange.newCodeExpiresAt).getTime()
+      : null;
+    if (newCodeExpiresAt && newCodeExpiresAt < now) {
+      user.emailChange.newCodeHash = undefined;
+      user.emailChange.newCodeExpiresAt = undefined;
+      user.emailChange.newCodeAttempts = 0;
+      await user.save();
+
+      return res.status(410).json({
+        success: false,
+        message: 'New email code expired. Request a new code.'
+      });
+    }
+
+    if ((user.emailChange.newCodeAttempts || 0) >= MAX_EMAIL_CHANGE_ATTEMPTS) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(429).json({
+        success: false,
+        message: 'Too many attempts. Start the email change process again.'
+      });
+    }
+
+    const incomingHash = hashValue(code);
+    if (incomingHash !== user.emailChange.newCodeHash) {
+      user.emailChange.newCodeAttempts = (user.emailChange.newCodeAttempts || 0) + 1;
+      await user.save();
+
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid code. Please try again.',
+        remainingAttempts: Math.max(MAX_EMAIL_CHANGE_ATTEMPTS - user.emailChange.newCodeAttempts, 0)
+      });
+    }
+
+    const nextEmail = normalizeEmail(user.emailChange.pendingEmail);
+    if (!nextEmail || !isValidEmail(nextEmail)) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pending email. Start again.'
+      });
+    }
+
+    const existingUser = await User.findOne({
+      _id: { $ne: user._id },
+      email: nextEmail
+    }).select('_id');
+    if (existingUser) {
+      clearEmailChangeState(user);
+      await user.save();
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    user.email = nextEmail;
+    clearEmailChangeState(user);
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email updated successfully',
+      user: buildAuthUserPayload(user)
+    });
+  } catch (error) {
+    if (isMongoDuplicateKeyError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists'
+      });
+    }
+
+    console.error('Verify email change new code error:', error);
     next(error);
   }
 };

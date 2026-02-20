@@ -165,6 +165,48 @@ const userSchema = new mongoose.Schema({
       type: Date
     }
   },
+  emailChange: {
+    pendingEmail: {
+      type: String,
+      lowercase: true,
+      trim: true
+    },
+    currentCodeHash: {
+      type: String
+    },
+    currentCodeExpiresAt: {
+      type: Date
+    },
+    currentCodeAttempts: {
+      type: Number,
+      default: 0
+    },
+    currentCodeLastSentAt: {
+      type: Date
+    },
+    currentVerifiedAt: {
+      type: Date
+    },
+    newCodeHash: {
+      type: String
+    },
+    newCodeExpiresAt: {
+      type: Date
+    },
+    newCodeAttempts: {
+      type: Number,
+      default: 0
+    },
+    newCodeLastSentAt: {
+      type: Date
+    },
+    sessionTokenHash: {
+      type: String
+    },
+    sessionTokenExpiresAt: {
+      type: Date
+    }
+  },
   customStickers: [{
     id: String,
     name: String,

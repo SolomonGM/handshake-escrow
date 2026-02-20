@@ -196,6 +196,81 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const requestEmailChangeCurrentCode = async (newEmail) => {
+    try {
+      setError(null);
+      const response = await authAPI.requestEmailChangeCurrentCode(newEmail);
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to send verification code';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const resendEmailChangeCurrentCode = async (verificationSessionToken) => {
+    try {
+      setError(null);
+      const response = await authAPI.resendEmailChangeCurrentCode(verificationSessionToken);
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to resend verification code';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const verifyEmailChangeCurrentCode = async ({ verificationSessionToken, code }) => {
+    try {
+      setError(null);
+      const response = await authAPI.verifyEmailChangeCurrentCode({ verificationSessionToken, code });
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to verify current email code';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  const resendEmailChangeNewCode = async (verificationSessionToken) => {
+    try {
+      setError(null);
+      const response = await authAPI.resendEmailChangeNewCode(verificationSessionToken);
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to resend verification code';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const verifyEmailChangeNewCode = async ({ verificationSessionToken, code }) => {
+    try {
+      setError(null);
+      const response = await authAPI.verifyEmailChangeNewCode({ verificationSessionToken, code });
+      if (response.user) {
+        updateStoredUser(response.user);
+      }
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to verify new email code';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
   const value = {
     user,
     token: localStorage.getItem('token'),
@@ -209,6 +284,11 @@ export const AuthProvider = ({ children }) => {
     requestTwoFactorCode,
     verifyTwoFactorCode,
     disableTwoFactor,
+    requestEmailChangeCurrentCode,
+    resendEmailChangeCurrentCode,
+    verifyEmailChangeCurrentCode,
+    resendEmailChangeNewCode,
+    verifyEmailChangeNewCode,
     isAuthenticated: !!user,
   };
 

@@ -94,6 +94,31 @@ export const authAPI = {
     return response.data;
   },
 
+  requestEmailChangeCurrentCode: async (newEmail) => {
+    const response = await api.post('/auth/email-change/request-current', { newEmail });
+    return response.data;
+  },
+
+  resendEmailChangeCurrentCode: async (verificationSessionToken) => {
+    const response = await api.post('/auth/email-change/resend-current', { verificationSessionToken });
+    return response.data;
+  },
+
+  verifyEmailChangeCurrentCode: async ({ verificationSessionToken, code }) => {
+    const response = await api.post('/auth/email-change/verify-current', { verificationSessionToken, code });
+    return response.data;
+  },
+
+  resendEmailChangeNewCode: async (verificationSessionToken) => {
+    const response = await api.post('/auth/email-change/resend-new', { verificationSessionToken });
+    return response.data;
+  },
+
+  verifyEmailChangeNewCode: async ({ verificationSessionToken, code }) => {
+    const response = await api.post('/auth/email-change/verify-new', { verificationSessionToken, code });
+    return response.data;
+  },
+
   getMe: async () => {
     const response = await api.get('/auth/me');
     return response.data;
