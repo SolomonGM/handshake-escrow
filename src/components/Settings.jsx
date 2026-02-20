@@ -63,6 +63,7 @@ const Settings = () => {
   const [emailChangeMessage, setEmailChangeMessage] = useState('');
   const [emailChangeError, setEmailChangeError] = useState('');
   const fileInputRef = useRef(null);
+  const hasAutoOpenedTwoFactorRef = useRef(false);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
   const MAX_AVATAR_SIZE_MB = 5;
   const normalizedRank = normalizeRank(user?.rank);
@@ -112,12 +113,28 @@ const Settings = () => {
     const tab = searchParams.get('tab');
     if (tab === 'transactions') {
       setActiveTab('transactions');
+    } else if (tab === 'security') {
+      setActiveTab('security');
     } else if (tab === 'admin' && user?.rank === 'developer') {
       setActiveTab('admin');
     } else if (tab === 'moderator' && user?.role === 'moderator') {
       setActiveTab('moderator');
     }
   }, [searchParams, user]);
+
+  useEffect(() => {
+    const shouldOpenTwoFactorOnboarding = searchParams.get('setup2fa') === '1';
+    if (!shouldOpenTwoFactorOnboarding || !user || hasAutoOpenedTwoFactorRef.current) {
+      return;
+    }
+
+    hasAutoOpenedTwoFactorRef.current = true;
+    setActiveTab('security');
+    setSecurityError('');
+    setSecurityMessage('');
+    setIsTwoFactorModalOpen(true);
+    navigate('/settings?tab=security', { replace: true });
+  }, [searchParams, user, navigate]);
 
   useEffect(() => {
     if (activeTab !== 'transactions' || !user) return;
@@ -197,7 +214,7 @@ const Settings = () => {
     let nextValue = value;
 
     if (name === 'username') {
-      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH).toLowerCase();
+      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH);
     }
 
     setFormData({
@@ -208,18 +225,9 @@ const Settings = () => {
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    const normalizedUsername = formData.username.trim().toLowerCase();
+    const normalizedUsername = formData.username.trim();
     if (!normalizedUsername) {
       setMessage('Username is required.');
-      return;
-    }
-
-    if (
-      normalizedUsername.length < USERNAME_MIN_LENGTH ||
-      normalizedUsername.length > USERNAME_MAX_LENGTH ||
-      !USERNAME_REGEX.test(normalizedUsername)
-    ) {
-      setMessage(`Username must be ${USERNAME_MIN_LENGTH}-${USERNAME_MAX_LENGTH} characters and contain letters and numbers only.`);
       return;
     }
 
@@ -230,12 +238,25 @@ const Settings = () => {
     }
 
     const currentEmail = String(user?.email || '').trim().toLowerCase();
-    const currentUsername = String(user?.username || '').trim().toLowerCase();
+    const currentUsername = String(user?.username || '').trim();
     const currentAvatar = String(user?.avatar || '');
+    const usernameChanged = normalizedUsername !== currentUsername;
     const emailChanged = normalizedEmail !== currentEmail;
     const profileChanged =
-      normalizedUsername !== currentUsername ||
+      usernameChanged ||
       String(formData.avatar || '') !== currentAvatar;
+
+    if (
+      usernameChanged &&
+      (
+        normalizedUsername.length < USERNAME_MIN_LENGTH ||
+        normalizedUsername.length > USERNAME_MAX_LENGTH ||
+        !USERNAME_REGEX.test(normalizedUsername)
+      )
+    ) {
+      setMessage(`Username must be ${USERNAME_MIN_LENGTH}-${USERNAME_MAX_LENGTH} characters and contain letters and numbers only.`);
+      return;
+    }
 
     if (!profileChanged && !emailChanged) {
       setMessage('No profile changes to save.');

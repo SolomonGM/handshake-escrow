@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import User from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
 import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
+import { verifyTurnstileToken } from '../utils/turnstile.js';
 import {
   USERNAME_RULES,
   buildUsernameExistsQuery,
@@ -130,12 +131,51 @@ export const register = async (req, res, next) => {
     const username = normalizeUsername(req.body.username);
     const email = normalizeEmail(req.body.email);
     const password = String(req.body.password || '');
+    const captchaToken = String(req.body.captchaToken || '');
 
     // Validation
     if (!username || !email || !password) {
       return res.status(400).json({ 
         success: false,
         message: 'Please provide all required fields' 
+      });
+    }
+
+    const captchaVerification = await verifyTurnstileToken({
+      token: captchaToken,
+      remoteIp: req.ip
+    });
+
+    if (captchaVerification.enabled && !captchaVerification.success) {
+      const errorCodes = Array.isArray(captchaVerification.errorCodes)
+        ? captchaVerification.errorCodes
+        : [];
+      const isExpiredOrDuplicate = errorCodes.includes('timeout-or-duplicate');
+      const isServerSideIssue = (
+        captchaVerification.reason === 'turnstile_secret_missing' ||
+        captchaVerification.reason === 'turnstile_verify_request_failed'
+      );
+
+      if (isServerSideIssue) {
+        if (captchaVerification.error) {
+          console.error('Register captcha verification error:', captchaVerification.error);
+        }
+
+        return res.status(503).json({
+          success: false,
+          message: 'Security verification service is temporarily unavailable. Please try again.'
+        });
+      }
+
+      if (errorCodes.length > 0) {
+        console.warn('Register captcha verification rejected:', errorCodes.join(', '));
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: isExpiredOrDuplicate
+          ? 'Security check expired. Please complete it again.'
+          : 'Please complete the security check before creating an account.'
       });
     }
 
@@ -612,14 +652,14 @@ export const updateProfile = async (req, res, next) => {
     if (typeof incomingUsername === 'string' && incomingUsername.trim()) {
       const normalizedUsername = normalizeUsername(incomingUsername);
 
-      if (!isValidUsername(normalizedUsername)) {
-        return res.status(400).json({ 
-          success: false,
-          message: USERNAME_RULES.invalidMessage
-        });
-      }
-
       if (normalizedUsername !== user.username) {
+        if (!isValidUsername(normalizedUsername)) {
+          return res.status(400).json({ 
+            success: false,
+            message: USERNAME_RULES.invalidMessage
+          });
+        }
+
         const existingUser = await User.findOne({
           _id: { $ne: user._id },
           ...buildUsernameExistsQuery(normalizedUsername)

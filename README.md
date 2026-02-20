@@ -48,6 +48,7 @@ Backend
 Frontend (`.env`)
 
 - `VITE_API_URL` base URL for the backend API
+- `VITE_TURNSTILE_SITE_KEY` Cloudflare Turnstile site key (enables signup captcha widget)
 
 Backend (`backend/.env`)
 
@@ -56,9 +57,12 @@ Backend (`backend/.env`)
 - `MONGODB_URI`
 - `JWT_SECRET`
 - `CLIENT_URL` or `CLIENT_URLS` (comma-separated)
+- `TRUST_PROXY` optional Express trust-proxy setting (default `1`, suitable for Render)
 - `EMAIL_PROVIDER`, `EMAIL_FROM`
 - `RESEND_API_KEY` (if `EMAIL_PROVIDER=resend`)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (if `EMAIL_PROVIDER=smtp`)
+- `TURNSTILE_SECRET_KEY`, `TURNSTILE_ENABLED` (signup captcha verification)
+- `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` (global per-IP API throttling)
 - `BLOCKCYPHER_TOKEN`
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
@@ -80,6 +84,24 @@ Backend
 - Configure CORS via `CLIENT_URL` or `CLIENT_URLS` to match your deployed frontend.
 - Ensure the backend binds to `process.env.PORT`.
 - For Render free instances, use API-based email delivery (`EMAIL_PROVIDER=resend` + `RESEND_API_KEY`) instead of SMTP.
+- The backend now includes CSP headers, global per-IP API rate limiting, and optional Turnstile captcha enforcement on signup.
+
+## Security Hardening (Render + Cloudflare)
+
+1. App-level protections already in code:
+- Global API per-IP throttling (`API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`).
+- Auth endpoint-specific throttling for register/login/2FA/reset flows.
+- Explicit CSP via `helmet`.
+- Signup captcha verification (Turnstile) when secret/site keys are configured.
+
+2. Turnstile setup:
+- Frontend env: set `VITE_TURNSTILE_SITE_KEY`.
+- Backend env: set `TURNSTILE_SECRET_KEY`.
+- Optional: set `TURNSTILE_ENABLED=true` to force-enable explicitly.
+
+3. DDoS note:
+- Render protects infrastructure-level traffic, but dedicated L3/L4 + WAF-style DDoS mitigation is best handled by Cloudflare in front of your custom domain.
+- Keep the in-app rate limits and captcha enabled even when using Cloudflare.
 
 ## Production Email Setup (Render-Friendly)
 

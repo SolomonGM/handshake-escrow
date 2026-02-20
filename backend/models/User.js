@@ -12,11 +12,22 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Username is required'],
     unique: true,
-    lowercase: true,
     trim: true,
-    minlength: [USERNAME_RULES.minLength, `Username must be at least ${USERNAME_RULES.minLength} characters long`],
-    maxlength: [USERNAME_RULES.maxLength, `Username cannot exceed ${USERNAME_RULES.maxLength} characters`],
-    match: [USERNAME_RULES.regex, USERNAME_RULES.invalidMessage]
+    validate: {
+      validator(value) {
+        const username = String(value || '').trim();
+        if (!this.isNew && !this.isModified('username')) {
+          return true;
+        }
+
+        return (
+          username.length >= USERNAME_RULES.minLength &&
+          username.length <= USERNAME_RULES.maxLength &&
+          USERNAME_RULES.regex.test(username)
+        );
+      },
+      message: USERNAME_RULES.invalidMessage
+    }
   },
   email: {
     type: String,

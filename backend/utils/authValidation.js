@@ -13,7 +13,7 @@ export const USERNAME_RULES = {
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-export const normalizeUsername = (value) => String(value || '').trim().toLowerCase();
+export const normalizeUsername = (value) => String(value || '').trim();
 export const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 export const isValidUsername = (value) => {

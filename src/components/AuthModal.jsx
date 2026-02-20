@@ -5,11 +5,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import ButtonSvg from '../assets/svg/ButtonSvg';
+import TurnstileWidget from './TurnstileWidget';
 import { handshakeSymbol } from '../assets';
 
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 20;
 const USERNAME_REGEX = /^[A-Za-z0-9]+$/;
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
 const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const navigate = useNavigate();
@@ -43,6 +45,8 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [loginTwoFactorCooldown, setLoginTwoFactorCooldown] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const prefillEmailRef = useRef('');
   const prefillResetEmailRef = useRef('');
   const [stars] = useState(() => 
@@ -98,6 +102,8 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     });
     prefillResetEmailRef.current = '';
     setResendCooldown(0);
+    setCaptchaToken('');
+    setCaptchaResetKey((prev) => prev + 1);
     setIsSubmitting(false);
   }, [mode]);
 
@@ -141,7 +147,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     let nextValue = value;
 
     if (name === 'username') {
-      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH).toLowerCase();
+      nextValue = value.replace(/[^a-zA-Z0-9]/g, '').slice(0, USERNAME_MAX_LENGTH);
     }
 
     setFormData({
@@ -353,6 +359,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     
     setLocalError('');
     setIsSubmitting(true);
+    const requiresCaptcha = mode === 'register' && Boolean(TURNSTILE_SITE_KEY);
 
     try {
       if (mode === 'register') {
@@ -362,7 +369,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           return;
         }
 
-        const normalizedUsername = formData.username.trim().toLowerCase();
+        const normalizedUsername = formData.username.trim();
         if (normalizedUsername.length < USERNAME_MIN_LENGTH) {
           setLocalError(`Username must be at least ${USERNAME_MIN_LENGTH} characters`);
           return;
@@ -388,15 +395,21 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           return;
         }
 
+        if (requiresCaptcha && !captchaToken) {
+          setLocalError('Please complete the security check before creating an account.');
+          return;
+        }
+
         const result = await register({
           username: normalizedUsername,
           email: formData.email.trim().toLowerCase(),
           password: formData.password,
+          ...(requiresCaptcha ? { captchaToken } : {})
         });
 
         if (result.success) {
           handleClose();
-          // Don't navigate, just close modal and stay on current page
+          navigate('/settings?tab=security&setup2fa=1');
         } else {
           // Clear password on error
           setFormData(prev => ({
@@ -404,6 +417,10 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
             password: '',
             confirmPassword: ''
           }));
+          if (requiresCaptcha) {
+            setCaptchaToken('');
+            setCaptchaResetKey((prev) => prev + 1);
+          }
           setLocalError(result.error || 'Registration failed. Please try again.');
           // Keep modal open so user can try again
         }
@@ -474,6 +491,10 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
         ...prev,
         password: ''
       }));
+      if (requiresCaptcha) {
+        setCaptchaToken('');
+        setCaptchaResetKey((prev) => prev + 1);
+      }
       setLocalError('An error occurred. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -515,8 +536,10 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
   const displayError = localError || (mode !== 'forgot' ? error : '');
   const displaySuccess = localSuccess;
+  const requiresCaptcha = mode === 'register' && Boolean(TURNSTILE_SITE_KEY);
 
   const isBusy = mode === 'forgot' ? isSubmitting : (loading || isSubmitting);
+  const isSubmitDisabled = isBusy || (requiresCaptcha && !captchaToken);
   const submitLabel = mode === 'login'
     ? loginStep === 'twoFactor'
       ? 'Verify code'
@@ -992,6 +1015,30 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
               )}
 
               {mode === 'register' && (
+                <div>
+                  <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                    Security check
+                  </label>
+                  <TurnstileWidget
+                    key={captchaResetKey}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onTokenChange={(token) => {
+                      setCaptchaToken(token);
+                      if (token) {
+                        setLocalError('');
+                      }
+                    }}
+                    onError={(message) => {
+                      setLocalError(message || 'Security check failed to load. Please refresh and try again.');
+                    }}
+                  />
+                  <p className="text-xs text-n-4 mt-2">
+                    Complete the security check to continue.
+                  </p>
+                </div>
+              )}
+
+              {mode === 'register' && (
                 <div className="flex items-center gap-3 pt-2">
                   <input
                     type="checkbox"
@@ -1018,7 +1065,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
               {/* Submit Button with Handshake ButtonSvg */}
               <button
                 type="submit"
-                disabled={isBusy}
+                disabled={isSubmitDisabled}
                 className="button relative inline-flex items-center justify-center h-11 w-full transition-colors hover:text-[#10B981] text-n-1 disabled:opacity-50 disabled:cursor-not-allowed mt-10"
               >
                 <span className="relative z-10">

@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import connectDB from './config/database.js';
 import authRoutes from './routes/authRoutes.js';
@@ -29,7 +30,41 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 const httpServer = createServer(app);
-app.set('trust proxy', 1);
+
+const isProduction = process.env.NODE_ENV === 'production';
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+};
+
+const resolveTrustProxySetting = () => {
+  const configuredValue = process.env.TRUST_PROXY;
+
+  if (configuredValue === undefined || configuredValue === '') {
+    return 1;
+  }
+
+  if (configuredValue === 'true') {
+    return true;
+  }
+
+  if (configuredValue === 'false') {
+    return false;
+  }
+
+  const parsedNumber = Number(configuredValue);
+  if (Number.isFinite(parsedNumber)) {
+    return parsedNumber;
+  }
+
+  return configuredValue;
+};
+
+app.set('trust proxy', resolveTrustProxySetting());
 
 const defaultDevOrigins = ['http://localhost:5173', 'http://localhost:5174'];
 const envOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
@@ -51,6 +86,31 @@ const corsOptions = {
   credentials: true
 };
 
+const globalApiLimiter = rateLimit({
+  windowMs: parsePositiveInt(process.env.API_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  max: parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 300),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/health',
+  message: {
+    success: false,
+    message: 'Too many requests from this IP. Please try again shortly.'
+  }
+});
+
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  baseUri: ["'self'"],
+  objectSrc: ["'none'"],
+  frameAncestors: ["'none'"],
+  scriptSrc: ["'self'"],
+  connectSrc: ["'self'", 'https:'],
+  imgSrc: ["'self'", 'data:', 'https:'],
+  styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+  formAction: ["'self'"],
+  ...(isProduction ? { upgradeInsecureRequests: [] } : {})
+};
+
 // Initialize Socket.io
 const io = new Server(httpServer, {
   cors: {
@@ -65,10 +125,16 @@ setIo(io);
 connectDB();
 
 // Middleware
-app.use(helmet()); // Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: cspDirectives
+  }
+}));
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '20mb' })); // Parse JSON bodies
 app.use(express.urlencoded({ extended: true, limit: '20mb' })); // Parse URL-encoded bodies
+app.use('/api', globalApiLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
