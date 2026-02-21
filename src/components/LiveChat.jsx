@@ -35,6 +35,7 @@ const LiveChat = ({ isOpen, onClose }) => {
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
   const scrollTimeoutRef = useRef(null);
+  const commandFeedbackTimersRef = useRef(new Map());
   const MESSAGE_HEIGHT = 120; // Approximate height of each message
   const RENDER_THRESHOLD = 100; // Number of messages before we start optimizing
 
@@ -168,7 +169,22 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     // Listen for command feedback messages (private bot responses)
     socketService.onCommandFeedback((botMessage) => {
-      setMessages((prev) => [...prev, toChatMessage(botMessage)]);
+      const commandMessage = toChatMessage(botMessage);
+      const ttlMs = Number(botMessage?.ttlMs || 30000);
+
+      setMessages((prev) => [...prev, commandMessage]);
+
+      const existingTimer = commandFeedbackTimersRef.current.get(commandMessage.id);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const timerId = setTimeout(() => {
+        setMessages((prev) => prev.filter((entry) => entry.id !== commandMessage.id));
+        commandFeedbackTimersRef.current.delete(commandMessage.id);
+      }, Math.max(0, ttlMs));
+
+      commandFeedbackTimersRef.current.set(commandMessage.id, timerId);
     });
 
     // Listen for high-priority alerts
@@ -187,6 +203,8 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     // Cleanup on unmount or user change
     return () => {
+      commandFeedbackTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      commandFeedbackTimersRef.current.clear();
       socketService.removeAllListeners();
     };
   }, [user]); // Re-run when user changes
@@ -713,7 +731,7 @@ const LiveChat = ({ isOpen, onClose }) => {
               <div className="flex gap-2">
                 {/* Avatar - Clickable */}
                 <div 
-                  className={`flex-shrink-0 w-8 h-8 rounded-full overflow-hidden ${msg.userId && !msg.isBot ? 'cursor-pointer hover:ring-2 hover:ring-[#10B981]' : 'cursor-not-allowed opacity-70'} transition-[box-shadow,transform,opacity]`}
+                  className={`flex-shrink-0 w-8 h-8 rounded-full overflow-hidden ${msg.userId && !msg.isBot ? 'cursor-pointer hover:ring-2 hover:ring-[#10B981]' : (msg.isBot ? 'cursor-default' : 'cursor-not-allowed opacity-70')} transition-[box-shadow,transform,opacity]`}
                   onClick={() => {
                     console.log('Avatar clicked, userId:', msg.userId);
                     if (msg.userId && !msg.isBot) {
@@ -742,7 +760,7 @@ const LiveChat = ({ isOpen, onClose }) => {
                     />
                   ) : null}
                   <div 
-                    className="w-full h-full rounded-full bg-n-6 flex items-center justify-center text-n-1 text-sm font-semibold"
+                    className={`w-full h-full rounded-full flex items-center justify-center text-sm font-semibold ${msg.isBot ? 'bg-[#10B981] text-white shadow-md' : 'bg-n-6 text-n-1'}`}
                     style={{ display: msg.avatar ? 'none' : 'flex' }}
                   >
                     {msg.username.charAt(0).toUpperCase()}

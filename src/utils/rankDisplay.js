@@ -68,7 +68,7 @@ const RANK_DISPLAY = {
     color: '#10b981',
     textClass: 'text-[#10b981]',
     bgClass: 'bg-[#10b981]/20 border-[#10b981]/50',
-    badge: '/badges/bot.png'
+    badge: null
   }
 };
 

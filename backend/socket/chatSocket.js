@@ -12,14 +12,15 @@ let automationInFlight = false;
 
 const BOT_PROFILE = {
   userId: 'N/A',
-  username: 'Handshake Bot',
+  username: 'Handshake BOT',
   avatar: null,
   role: 'BOT',
   rank: 'bot',
-  badge: '/badges/bot.png'
+  badge: null
 };
 
 const GIVEAWAY_DEFAULT_DURATION_MS = 5 * 60 * 1000;
+const PRIVATE_BOT_MESSAGE_TTL_MS = 30 * 1000;
 const GIVEAWAY_MIN_DURATION_MS = 30 * 1000;
 const GIVEAWAY_MAX_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const SCHEDULE_MIN_DELAY_MS = 10 * 1000;
@@ -234,11 +235,18 @@ const buildBotMessagePayload = (message, meta = {}) => ({
 });
 
 const emitPrivateBotMessage = (socket, message, meta = {}) => {
-  socket.emit('command_feedback', buildBotMessagePayload(message, meta));
+  socket.emit('command_feedback', buildBotMessagePayload(message, {
+    isGlobal: false,
+    ttlMs: PRIVATE_BOT_MESSAGE_TTL_MS,
+    ...meta
+  }));
 };
 
 const emitPublicBotMessage = (io, message, meta = {}) => {
-  io.emit('new_message', buildBotMessagePayload(message, meta));
+  io.emit('new_message', buildBotMessagePayload(message, {
+    isGlobal: true,
+    ...meta
+  }));
 };
 
 const resolveChatModerationBlock = async (user) => {
