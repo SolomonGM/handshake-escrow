@@ -15,7 +15,6 @@ const LiveChat = ({ isOpen, onClose }) => {
   const [replyTo, setReplyTo] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
-  const [activeUsers, setActiveUsers] = useState({ count: 0, users: [] });
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -24,11 +23,14 @@ const LiveChat = ({ isOpen, onClose }) => {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
-  const [announcement, setAnnouncement] = useState(null);
+  const [announcements, setAnnouncements] = useState([]);
+  const [activeAnnouncementIndex, setActiveAnnouncementIndex] = useState(0);
+  const [activeAlert, setActiveAlert] = useState(null);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [helpData, setHelpData] = useState(null);
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
   const [chatCooldownSeconds, setChatCooldownSeconds] = useState(0);
+  const [announcementNow, setAnnouncementNow] = useState(Date.now());
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -40,26 +42,35 @@ const LiveChat = ({ isOpen, onClose }) => {
   const languages = [
     { code: 'en', name: 'ENGLISH', flag: '🇬🇧' }
   ];
-
-  // Admin commands list
-  const adminCommands = [
-    {
-      command: '/announce [Title] | [Message] | [ImageURL]',
-      description: 'Create an announcement with optional custom image',
-      example: '/announce 🎉 Giveaway! | Win free passes! | https://example.com/image.png'
-    },
-    {
-      command: '/clearannounce',
-      description: 'Remove the current announcement',
-      example: '/clearannounce'
-    },
+  // Fallback command list used when help payload is unavailable
+  const fallbackCommands = [
     {
       command: '/help',
-      description: 'Show this help menu',
+      description: 'Show staff command help',
       example: '/help'
+    },
+    {
+      command: '/pin <message>',
+      description: 'Pin a message (staff only)',
+      example: '/pin Stay civil in chat.'
     }
   ];
 
+  const toChatMessage = (msg = {}) => ({
+    id: msg.id || msg._id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    userId: msg.userId || null,
+    username: msg.username || 'Unknown',
+    avatar: msg.avatar || null,
+    rank: msg.rank || 'client',
+    badge: msg.badge || null,
+    message: msg.message || '',
+    sticker: msg.sticker || null,
+    timestamp: new Date(msg.timestamp || msg.createdAt || Date.now()),
+    mentions: msg.mentions || [],
+    replyTo: msg.replyTo || null,
+    replies: [],
+    isBot: Boolean(msg.isBot)
+  });
 
   // Connect to WebSocket and load message history
   useEffect(() => {
@@ -70,7 +81,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     const token = localStorage.getItem('token');
     
     // Connect to socket with token
-    const socket = socketService.connect(token);
+    socketService.connect(token);
     setIsConnected(socketService.isConnected());
 
     // Load message history from API
@@ -79,19 +90,19 @@ const LiveChat = ({ isOpen, onClose }) => {
         const response = await chatAPI.getMessages(50);
         if (response.success && response.messages) {
           console.log('Loaded messages:', response.messages); // Debug log
-          const loadedMessages = response.messages.map(msg => ({
+          const loadedMessages = response.messages.map((msg) => toChatMessage({
             id: msg._id,
-            userId: msg.userId, // Add userId for profile modal
+            userId: msg.userId,
             username: msg.username,
             avatar: msg.avatar,
             rank: msg.rank,
             badge: msg.badge,
             message: msg.message,
             sticker: msg.sticker,
-            timestamp: new Date(msg.createdAt),
+            createdAt: msg.createdAt,
             mentions: msg.mentions || [],
             replyTo: msg.replyTo,
-            replies: []
+            isBot: msg.isBot
           }));
           
           setMessages(loadedMessages);
@@ -124,32 +135,12 @@ const LiveChat = ({ isOpen, onClose }) => {
     socketService.onNewMessage((newMsg) => {
       console.log('Received new message:', newMsg); // Debug log
       
-      const newMessage = {
-        id: newMsg.id,
-        userId: newMsg.userId, // Add userId for profile modal
-        username: newMsg.username,
-        avatar: newMsg.avatar,
-        rank: newMsg.rank,
-        badge: newMsg.badge,
-        message: newMsg.message,
-        sticker: newMsg.sticker,
-        timestamp: new Date(newMsg.timestamp),
-        mentions: newMsg.mentions || [],
-        replyTo: newMsg.replyTo,
-        replies: []
-      };
-      
-      setMessages(prev => [...prev, newMessage]);
+      setMessages((prev) => [...prev, toChatMessage(newMsg)]);
     });
 
     // Listen for message deletions
     socketService.onMessageDeleted(({ messageId }) => {
       setMessages(prev => prev.filter(msg => msg.id !== messageId));
-    });
-
-    // Listen for active users
-    socketService.onActiveUsers((data) => {
-      setActiveUsers(data);
     });
 
     // Listen for errors
@@ -168,13 +159,21 @@ const LiveChat = ({ isOpen, onClose }) => {
       setTimeout(() => setError(null), 5000);
     });
 
-    // Listen for announcements
-    socketService.onAnnouncement((data) => {
-      console.log('Received announcement:', data);
-      if (data === null) {
-        setAnnouncement(null);
-      } else {
-        setAnnouncement(data);
+    // Listen for announcement list
+    socketService.onAnnouncements((data) => {
+      const nextAnnouncements = Array.isArray(data) ? data : [];
+      setAnnouncements(nextAnnouncements);
+    });
+
+    // Listen for command feedback messages (private bot responses)
+    socketService.onCommandFeedback((botMessage) => {
+      setMessages((prev) => [...prev, toChatMessage(botMessage)]);
+    });
+
+    // Listen for high-priority alerts
+    socketService.onAlert((alertPayload) => {
+      if (alertPayload?.message) {
+        setActiveAlert(alertPayload);
       }
     });
 
@@ -219,6 +218,30 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     return () => clearInterval(timer);
   }, [chatCooldownSeconds]);
+
+  useEffect(() => {
+    if (announcements.length === 0) {
+      setActiveAnnouncementIndex(0);
+      return;
+    }
+
+    if (activeAnnouncementIndex > announcements.length - 1) {
+      setActiveAnnouncementIndex(0);
+    }
+  }, [announcements, activeAnnouncementIndex]);
+
+  useEffect(() => {
+    const hasCountdown = announcements.some((item) => item?.type === 'giveaway' && item?.giveaway?.endsAt);
+    if (!hasCountdown) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setAnnouncementNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [announcements]);
 
   // Auto scroll to bottom (only if user is not scrolling)
   const scrollToBottom = (smooth = true) => {
@@ -408,9 +431,37 @@ const LiveChat = ({ isOpen, onClose }) => {
     return date.toLocaleDateString();
   };
 
+  const formatCountdown = (targetDate) => {
+    if (!targetDate) return null;
+    const diffMs = new Date(targetDate).getTime() - announcementNow;
+    if (!Number.isFinite(diffMs) || diffMs <= 0) return 'Ending now';
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  };
+
+  const activeAnnouncement = announcements.length > 0
+    ? announcements[activeAnnouncementIndex]
+    : null;
+  const hasMultipleAnnouncements = announcements.length > 1;
+  const activeGiveaway = activeAnnouncement?.type === 'giveaway'
+    ? activeAnnouncement.giveaway
+    : null;
+  const giveawayCountdown = activeGiveaway?.endsAt
+    ? formatCountdown(activeGiveaway.endsAt)
+    : null;
+
   const helpSections = helpData?.sections?.length
     ? helpData.sections
-    : [{ title: 'Commands', commands: adminCommands }];
+    : [{ title: 'Commands', commands: fallbackCommands }];
   const helpTitle = helpData?.title || 'Commands';
   const helpSubtitle = helpData?.subtitle || 'Available chat commands';
   const helpFooter = helpData?.footer || null;
@@ -527,38 +578,82 @@ const LiveChat = ({ isOpen, onClose }) => {
         </div>
 
         {/* Announcement Section */}
-        {announcement && (
+        {activeAnnouncement && (
           <div className="mx-3 my-3 bg-gradient-to-br from-n-7 to-n-8 border border-n-6 rounded-xl overflow-hidden shadow-lg">
-            <div className="flex items-center gap-4 p-4">
-              {/* Icon */}
+            <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3 border-b border-n-6/60">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full border border-green-500/30 bg-green-500/15 text-green-300 text-[10px] font-semibold uppercase tracking-wider">
+                  {activeAnnouncement.type || 'announcement'}
+                </span>
+                <span className="text-n-4 text-[11px]">
+                  {activeAnnouncement.commandId ? `ID ${activeAnnouncement.commandId}` : 'Live'}
+                </span>
+              </div>
+              {hasMultipleAnnouncements && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAnnouncementIndex((prev) => (
+                      prev === 0 ? announcements.length - 1 : prev - 1
+                    ))}
+                    className="w-6 h-6 rounded bg-n-6 hover:bg-n-5 text-n-2 text-xs"
+                    title="Previous announcement"
+                  >
+                    {'<'}
+                  </button>
+                  <span className="text-n-4 text-[11px]">
+                    {activeAnnouncementIndex + 1}/{announcements.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAnnouncementIndex((prev) => (
+                      prev === announcements.length - 1 ? 0 : prev + 1
+                    ))}
+                    className="w-6 h-6 rounded bg-n-6 hover:bg-n-5 text-n-2 text-xs"
+                    title="Next announcement"
+                  >
+                    {'>'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="flex items-start gap-4 p-4">
               <div className="flex-shrink-0">
                 <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
-                  <img 
-                    src={announcement.imageUrl || "/icons/gift.png"} 
-                    alt="Announcement" 
+                  <img
+                    src={activeAnnouncement.imageUrl || '/icons/gift.png'}
+                    alt="Announcement"
                     className="w-8 h-8 object-contain brightness-0 invert"
                     onError={(e) => {
                       e.target.onerror = null;
-                      e.target.src = "/icons/gift.png";
+                      e.target.src = '/icons/gift.png';
                     }}
                   />
                 </div>
               </div>
-              
-              {/* Text Content */}
               <div className="flex-1 min-w-0">
-                <h3 className="text-n-1 font-bold text-sm mb-1">
-                  {announcement.title}
-                </h3>
-                <p className="text-n-3 text-xs leading-relaxed">
-                  {announcement.message}
-                </p>
+                <h3 className="text-n-1 font-bold text-sm mb-1">{activeAnnouncement.title}</h3>
+                <p className="text-n-3 text-xs leading-relaxed">{activeAnnouncement.message}</p>
+                {activeGiveaway && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-[11px] text-n-4">
+                      {activeGiveaway.participantCount || 0} entered
+                      {giveawayCountdown ? ` · Ends in ${giveawayCountdown}` : ''}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => socketService.enterGiveaway(activeAnnouncement.id)}
+                      disabled={!user}
+                      className="w-full h-9 rounded-lg border border-[#10B981]/40 bg-[#10B981]/20 text-[#10B981] text-xs font-semibold hover:bg-[#10B981]/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {user ? 'Enter Giveaway' : 'Sign In To Enter'}
+                    </button>
+                  </div>
+                )}
               </div>
-
-              {/* Badge */}
               <div className="flex-shrink-0">
                 <div className="px-2.5 py-1 bg-green-500/20 border border-green-500/30 rounded-full">
-                  <span className="text-green-400 text-xs font-semibold">NEW</span>
+                  <span className="text-green-400 text-xs font-semibold">LIVE</span>
                 </div>
               </div>
             </div>
@@ -617,10 +712,10 @@ const LiveChat = ({ isOpen, onClose }) => {
               <div className="flex gap-2">
                 {/* Avatar - Clickable */}
                 <div 
-                  className={`flex-shrink-0 w-8 h-8 rounded-full overflow-hidden ${msg.userId ? 'cursor-pointer hover:ring-2 hover:ring-[#10B981]' : 'cursor-not-allowed opacity-70'} transition-[box-shadow,transform,opacity]`}
+                  className={`flex-shrink-0 w-8 h-8 rounded-full overflow-hidden ${msg.userId && !msg.isBot ? 'cursor-pointer hover:ring-2 hover:ring-[#10B981]' : 'cursor-not-allowed opacity-70'} transition-[box-shadow,transform,opacity]`}
                   onClick={() => {
                     console.log('Avatar clicked, userId:', msg.userId);
-                    if (msg.userId) {
+                    if (msg.userId && !msg.isBot) {
                       setSelectedUserProfile(msg.userId);
                     } else {
                       console.warn('No userId available for this user');
@@ -657,7 +752,11 @@ const LiveChat = ({ isOpen, onClose }) => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {/* Username with rank color */}
-                    {normalizedRank === 'developer' ? (
+                    {msg.isBot ? (
+                      <span className="font-semibold text-sm text-[#10B981]">
+                        {msg.username}
+                      </span>
+                    ) : normalizedRank === 'developer' ? (
                       <span className="font-semibold text-sm gradient-text">
                         {msg.username}
                       </span>
@@ -719,7 +818,7 @@ const LiveChat = ({ isOpen, onClose }) => {
                 </div>
 
                 {/* Reply Button (on hover) */}
-                {user && hoveredMessageId === msg.id && (
+                {user && !msg.isBot && hoveredMessageId === msg.id && (
                   <button
                     onClick={() => handleReply(msg)}
                     className="absolute right-0 top-0 p-1.5 bg-n-6 rounded hover:bg-n-5 transition-colors opacity-0 group-hover:opacity-100"
@@ -889,6 +988,37 @@ const LiveChat = ({ isOpen, onClose }) => {
         </div>
       </div>
 
+      {/* High-priority alert modal */}
+      {activeAlert && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[110] p-4"
+          onClick={() => setActiveAlert(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-n-8 border border-red-500/40 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-red-500/30 flex items-center justify-between">
+              <div>
+                <h3 className="text-red-300 font-bold text-base">{activeAlert.title || 'Alert'}</h3>
+                <p className="text-n-4 text-xs">High priority notification</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveAlert(null)}
+                className="w-8 h-8 rounded-lg bg-n-7 hover:bg-n-6 text-n-2"
+                title="Close"
+              >
+                x
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-n-1 text-sm leading-relaxed">{activeAlert.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* User Profile Modal */}
       {selectedUserProfile && (
         <UserProfileModal
@@ -959,3 +1089,4 @@ const LiveChat = ({ isOpen, onClose }) => {
 };
 
 export default LiveChat;
+

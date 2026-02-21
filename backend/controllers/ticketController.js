@@ -5,6 +5,9 @@ import { BOT_WALLETS, calculateTotalAmount, EXCHANGE_RATES, ETH_RPC_CONFIG, ETH_
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
+const ACTIVE_TICKET_LIMIT = 12;
+const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
+
 const getEthProvider = () => {
   const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
   if (!config?.rpcUrl) {
@@ -85,6 +88,25 @@ const addStaffActionMessage = (ticket, { title, description, color = 'blue' }) =
     timestamp: new Date()
   });
 };
+
+const buildActiveTicketLimitQuery = (userId) => ({
+  status: { $in: ACTIVE_TICKET_STATUSES },
+  $or: [
+    { creator: userId },
+    {
+      participants: {
+        $elemMatch: {
+          user: userId,
+          status: 'accepted'
+        }
+      }
+    }
+  ]
+});
+
+const countUserActiveTickets = async (userId) => (
+  TradeTicket.countDocuments(buildActiveTicketLimitQuery(userId))
+);
 
 const applyRescanTransaction = (ticket) => {
   ticket.rescanAttempts += 1;
@@ -353,6 +375,16 @@ export const createTicket = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Cryptocurrency is required'
+      });
+    }
+
+    const activeTicketCount = await countUserActiveTickets(userId);
+    if (activeTicketCount >= ACTIVE_TICKET_LIMIT) {
+      return res.status(400).json({
+        success: false,
+        message: `Too many active tickets. You can only have ${ACTIVE_TICKET_LIMIT} active tickets at a time.`,
+        code: 'ACTIVE_TICKET_LIMIT_REACHED',
+        activeTicketLimit: ACTIVE_TICKET_LIMIT
       });
     }
 
@@ -919,6 +951,16 @@ export const respondToInvitation = async (req, res) => {
 
     // Add embed notification to ticket
     if (action === 'accept') {
+      const activeTicketCount = await countUserActiveTickets(userId);
+      if (activeTicketCount >= ACTIVE_TICKET_LIMIT) {
+        return res.status(400).json({
+          success: false,
+          message: `Too many active tickets. You can only have ${ACTIVE_TICKET_LIMIT} active tickets at a time.`,
+          code: 'ACTIVE_TICKET_LIMIT_REACHED',
+          activeTicketLimit: ACTIVE_TICKET_LIMIT
+        });
+      }
+
       participant.status = 'accepted';
       
       // Only add acceptance message if none exists (check for any user added message)

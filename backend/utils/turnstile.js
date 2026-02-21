@@ -18,6 +18,16 @@ export const isTurnstileEnabled = () => {
   return Boolean(process.env.TURNSTILE_SECRET_KEY);
 };
 
+export const getTurnstileClientConfig = () => {
+  const enabled = isTurnstileEnabled();
+  const siteKey = String(process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+
+  return {
+    enabled,
+    siteKey: siteKey || null
+  };
+};
+
 export const verifyTurnstileToken = async ({ token, remoteIp }) => {
   const enabled = isTurnstileEnabled();
   if (!enabled) {

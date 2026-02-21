@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import User from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
 import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
-import { verifyTurnstileToken } from '../utils/turnstile.js';
+import { getTurnstileClientConfig, verifyTurnstileToken } from '../utils/turnstile.js';
 import {
   USERNAME_RULES,
   buildUsernameExistsQuery,
@@ -121,6 +121,18 @@ const handleCodeDeliveryResult = async ({
 
   console.log(`[${contextLabel}][dev] Code for ${emailAddress}: ${code}`);
   return { ok: true };
+};
+
+// @desc    Get public auth security configuration
+// @route   GET /api/auth/security-config
+// @access  Public
+export const getSecurityConfig = async (req, res) => {
+  const captcha = getTurnstileClientConfig();
+
+  res.json({
+    success: true,
+    captcha
+  });
 };
 
 // @desc    Register a new user

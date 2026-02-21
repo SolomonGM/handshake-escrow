@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { getRankBgClass, getRankLabel, getRankTextClass, normalizeRank } from '../utils/rankDisplay';
@@ -182,6 +181,18 @@ const UserProfileDropdown = () => {
               </button>
             )}
 
+            {user?.role === 'moderator' && (
+              <button
+                onClick={() => handleNavigation('/settings?tab=moderator')}
+                className="w-full px-4 py-3 text-left text-[#10B981] hover:bg-n-7/50 transition-colors duration-200 flex items-center gap-3"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6l8 4v4c0 5-3.5 8.74-8 10-4.5-1.26-8-5-8-10v-4l8-4zm0 5v4m0 4h.01" />
+                </svg>
+                <span>Moderator Panel</span>
+              </button>
+            )}
+
             <button
               onClick={() => handleNavigation('/settings?tab=transactions')}
               className="w-full px-4 py-3 text-left text-n-1 hover:bg-n-7/50 transition-colors duration-200 flex items-center gap-3"
@@ -219,7 +230,5 @@ const UserProfileDropdown = () => {
     </div>
   );
 };
-
-UserProfileDropdown.propTypes = {};
 
 export default UserProfileDropdown;

@@ -1,6 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { 
+  getSecurityConfig,
   register, 
   login, 
   verifyLoginTwoFactorCode,
@@ -96,6 +97,7 @@ const emailChangeVerifyLimiter = createLimiter(
 );
 
 // Public routes
+router.get('/security-config', getSecurityConfig);
 router.post('/register', registerLimiter, register);
 router.post('/login', loginLimiter, login);
 router.post('/login/2fa/verify', loginTwoFactorVerifyLimiter, verifyLoginTwoFactorCode);

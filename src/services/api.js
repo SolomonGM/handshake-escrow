@@ -44,6 +44,11 @@ api.interceptors.response.use(
 
 // Auth API calls
 export const authAPI = {
+  getSecurityConfig: async () => {
+    const response = await api.get('/auth/security-config');
+    return response.data;
+  },
+
   register: async (userData) => {
     const response = await api.post('/auth/register', userData);
     return response.data;

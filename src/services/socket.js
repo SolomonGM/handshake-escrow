@@ -145,6 +145,34 @@ class SocketService {
     }
   }
 
+  // Listen for announcement list
+  onAnnouncements(callback) {
+    if (this.socket) {
+      this.socket.on('chat_announcements', callback);
+    }
+  }
+
+  // Listen for high-priority alerts
+  onAlert(callback) {
+    if (this.socket) {
+      this.socket.on('chat_alert', callback);
+    }
+  }
+
+  // Listen for private bot command feedback
+  onCommandFeedback(callback) {
+    if (this.socket) {
+      this.socket.on('command_feedback', callback);
+    }
+  }
+
+  // Enter a giveaway announcement
+  enterGiveaway(giveawayId) {
+    if (this.socket) {
+      this.socket.emit('enter_giveaway', { giveawayId });
+    }
+  }
+
   // Emit custom event
   emit(event, data) {
     if (this.socket) {

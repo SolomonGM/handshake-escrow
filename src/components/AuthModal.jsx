@@ -47,6 +47,9 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const [loginTwoFactorCooldown, setLoginTwoFactorCooldown] = useState(0);
   const [captchaToken, setCaptchaToken] = useState('');
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const [captchaRequired, setCaptchaRequired] = useState(Boolean(TURNSTILE_SITE_KEY));
+  const [captchaSiteKey, setCaptchaSiteKey] = useState(TURNSTILE_SITE_KEY);
+  const [captchaConfigLoaded, setCaptchaConfigLoaded] = useState(false);
   const prefillEmailRef = useRef('');
   const prefillResetEmailRef = useRef('');
   const [stars] = useState(() => 
@@ -113,6 +116,52 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
       setMode(initialMode);
     }
   }, [initialMode]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== 'register') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCaptchaConfig = async () => {
+      setCaptchaConfigLoaded(false);
+      try {
+        const response = await authAPI.getSecurityConfig();
+        if (cancelled) {
+          return;
+        }
+
+        const backendEnabled = Boolean(response?.captcha?.enabled);
+        const backendSiteKey = String(response?.captcha?.siteKey || '').trim();
+        const resolvedSiteKey = backendSiteKey || TURNSTILE_SITE_KEY;
+
+        setCaptchaRequired(backendEnabled || Boolean(resolvedSiteKey));
+        setCaptchaSiteKey(resolvedSiteKey);
+
+        if ((backendEnabled || Boolean(resolvedSiteKey)) && !resolvedSiteKey) {
+          setLocalError('Security check is enabled but unavailable. Please try again later.');
+        }
+      } catch (configError) {
+        if (cancelled) {
+          return;
+        }
+
+        setCaptchaRequired(Boolean(TURNSTILE_SITE_KEY));
+        setCaptchaSiteKey(TURNSTILE_SITE_KEY);
+      } finally {
+        if (!cancelled) {
+          setCaptchaConfigLoaded(true);
+        }
+      }
+    };
+
+    loadCaptchaConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, mode]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -359,7 +408,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     
     setLocalError('');
     setIsSubmitting(true);
-    const requiresCaptcha = mode === 'register' && Boolean(TURNSTILE_SITE_KEY);
+    const requiresCaptcha = mode === 'register' && captchaRequired;
 
     try {
       if (mode === 'register') {
@@ -392,6 +441,11 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
         if (!formData.acceptedTerms) {
           setLocalError('You must accept the Terms and Conditions');
+          return;
+        }
+
+        if (requiresCaptcha && !captchaSiteKey) {
+          setLocalError('Security check is unavailable right now. Please try again later.');
           return;
         }
 
@@ -536,10 +590,12 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
 
   const displayError = localError || (mode !== 'forgot' ? error : '');
   const displaySuccess = localSuccess;
-  const requiresCaptcha = mode === 'register' && Boolean(TURNSTILE_SITE_KEY);
+  const isRegisterMode = mode === 'register';
+  const requiresCaptcha = mode === 'register' && captchaRequired;
+  const isCaptchaReady = !requiresCaptcha || (captchaConfigLoaded && Boolean(captchaSiteKey));
 
   const isBusy = mode === 'forgot' ? isSubmitting : (loading || isSubmitting);
-  const isSubmitDisabled = isBusy || (requiresCaptcha && !captchaToken);
+  const isSubmitDisabled = isBusy || (isRegisterMode && !captchaConfigLoaded) || !isCaptchaReady || (requiresCaptcha && !captchaToken);
   const submitLabel = mode === 'login'
     ? loginStep === 'twoFactor'
       ? 'Verify code'
@@ -1019,22 +1075,38 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                   <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
                     Security check
                   </label>
-                  <TurnstileWidget
-                    key={captchaResetKey}
-                    siteKey={TURNSTILE_SITE_KEY}
-                    onTokenChange={(token) => {
-                      setCaptchaToken(token);
-                      if (token) {
-                        setLocalError('');
-                      }
-                    }}
-                    onError={(message) => {
-                      setLocalError(message || 'Security check failed to load. Please refresh and try again.');
-                    }}
-                  />
-                  <p className="text-xs text-n-4 mt-2">
-                    Complete the security check to continue.
-                  </p>
+                  {!requiresCaptcha ? (
+                    <p className="text-xs text-n-4">
+                      Security check is not required right now.
+                    </p>
+                  ) : !captchaConfigLoaded ? (
+                    <p className="text-xs text-n-4">
+                      Loading security check...
+                    </p>
+                  ) : !captchaSiteKey ? (
+                    <p className="text-xs text-color-3">
+                      Security check is currently unavailable. Please try again shortly.
+                    </p>
+                  ) : (
+                    <>
+                      <TurnstileWidget
+                        key={captchaResetKey}
+                        siteKey={captchaSiteKey}
+                        onTokenChange={(token) => {
+                          setCaptchaToken(token);
+                          if (token) {
+                            setLocalError('');
+                          }
+                        }}
+                        onError={(message) => {
+                          setLocalError(message || 'Security check failed to load. Please refresh and try again.');
+                        }}
+                      />
+                      <p className="text-xs text-n-4 mt-2">
+                        Complete the security check to continue.
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
