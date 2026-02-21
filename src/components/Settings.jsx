@@ -7,7 +7,7 @@ import AdminPanel from './AdminPanel';
 import ModeratorPanel from './ModeratorPanel';
 import VerificationCodeInput from './VerificationCodeInput';
 import { passAPI } from '../services/api';
-import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
+import { getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
 
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 20;
@@ -66,8 +66,8 @@ const Settings = () => {
   const hasAutoOpenedTwoFactorRef = useRef(false);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
   const MAX_AVATAR_SIZE_MB = 5;
-  const normalizedRank = normalizeRank(user?.rank);
   const rankLabel = getRankLabel(user?.rank);
+  const rankGradientClass = getRankGradientClass(user?.rank);
 
   const formatFileSize = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
 
@@ -837,8 +837,8 @@ const Settings = () => {
                       <div className="space-y-4">
                         <div>
                           <p className="text-sm text-n-4 mb-1">Rank</p>
-                          {normalizedRank === 'developer' ? (
-                            <p className="text-lg font-bold gradient-text">Developer</p>
+                          {rankGradientClass ? (
+                            <p className={`text-lg font-bold ${rankGradientClass}`}>{rankLabel}</p>
                           ) : (
                             <p className="text-n-1 text-lg">{rankLabel}</p>
                           )}

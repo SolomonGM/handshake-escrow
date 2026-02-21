@@ -8,7 +8,7 @@ export const RANK_THRESHOLDS = [
   { rank: 'client', minUSD: 0 }
 ];
 
-export const STAFF_RANKS = ['developer', 'moderator'];
+export const STAFF_RANKS = ['developer', 'owner', 'admin', 'manager', 'moderator'];
 
 const toNumber = (value) => {
   const numeric = Number(value);

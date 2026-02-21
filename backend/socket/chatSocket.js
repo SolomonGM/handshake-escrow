@@ -11,10 +11,12 @@ let automationInterval = null;
 let automationInFlight = false;
 
 const BOT_PROFILE = {
+  userId: 'N/A',
   username: 'Handshake Bot',
   avatar: null,
-  rank: 'client',
-  badge: null
+  role: 'BOT',
+  rank: 'bot',
+  badge: '/badges/bot.png'
 };
 
 const GIVEAWAY_DEFAULT_DURATION_MS = 5 * 60 * 1000;
@@ -218,16 +220,17 @@ const getModerationPower = (user) => {
 };
 
 const buildBotMessagePayload = (message, meta = {}) => ({
+  ...meta,
   id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  userId: null,
+  userId: BOT_PROFILE.userId,
   username: BOT_PROFILE.username,
   avatar: BOT_PROFILE.avatar,
+  role: BOT_PROFILE.role,
   rank: BOT_PROFILE.rank,
   badge: BOT_PROFILE.badge,
   message,
   timestamp: new Date().toISOString(),
-  isBot: true,
-  ...meta
+  isBot: true
 });
 
 const emitPrivateBotMessage = (socket, message, meta = {}) => {

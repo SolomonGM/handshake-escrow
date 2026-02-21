@@ -5,7 +5,7 @@ import StickerPicker from './StickerPicker';
 import UserProfileModal from './UserProfileModal';
 import socketService from '../services/socket';
 import { chatAPI } from '../services/api';
-import { getRankBadge, getRankColor, getRankLabel, normalizeRank } from '../utils/rankDisplay';
+import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
 
 const LiveChat = ({ isOpen, onClose }) => {
   const { user } = useAuth();
@@ -58,11 +58,12 @@ const LiveChat = ({ isOpen, onClose }) => {
 
   const toChatMessage = (msg = {}) => ({
     id: msg.id || msg._id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    userId: msg.userId || null,
+    userId: msg.userId ?? (msg.isBot ? 'N/A' : null),
     username: msg.username || 'Unknown',
     avatar: msg.avatar || null,
-    rank: msg.rank || 'client',
+    rank: msg.rank || (msg.isBot ? 'bot' : 'client'),
     badge: msg.badge || null,
+    role: msg.role || (msg.isBot ? 'BOT' : null),
     message: msg.message || '',
     sticker: msg.sticker || null,
     timestamp: new Date(msg.timestamp || msg.createdAt || Date.now()),
@@ -680,11 +681,11 @@ const LiveChat = ({ isOpen, onClose }) => {
 
           {/* Render only visible messages */}
           {messages.slice(visibleRange.start, visibleRange.end).map((msg) => {
-            const normalizedRank = normalizeRank(msg.rank);
             const rankBadge = getRankBadge(msg.rank);
             const fallbackBadge = rankBadge ? null : getRankBadge(msg.badge);
             const badgeSrc = rankBadge || fallbackBadge;
             const badgeLabel = rankBadge ? getRankLabel(msg.rank) : (fallbackBadge ? getRankLabel(msg.badge) : '');
+            const rankGradientClass = getRankGradientClass(msg.rank);
 
             return (
               <div
@@ -721,7 +722,7 @@ const LiveChat = ({ isOpen, onClose }) => {
                       console.warn('No userId available for this user');
                     }
                   }}
-                  title={msg.userId ? `Click to view ${msg.username}'s profile` : 'Profile not available'}
+                  title={msg.userId && !msg.isBot ? `Click to view ${msg.username}'s profile` : 'Profile not available'}
                 >
                   {msg.avatar ? (
                     <img
@@ -753,11 +754,16 @@ const LiveChat = ({ isOpen, onClose }) => {
                   <div className="flex items-center gap-2 mb-1">
                     {/* Username with rank color */}
                     {msg.isBot ? (
-                      <span className="font-semibold text-sm text-[#10B981]">
-                        {msg.username}
-                      </span>
-                    ) : normalizedRank === 'developer' ? (
-                      <span className="font-semibold text-sm gradient-text">
+                      <>
+                        <span className="font-semibold text-sm text-[#10B981]">
+                          {msg.username}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider border border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10">
+                          {msg.role || 'BOT'}
+                        </span>
+                      </>
+                    ) : rankGradientClass ? (
+                      <span className={`font-semibold text-sm ${rankGradientClass}`}>
                         {msg.username}
                       </span>
                     ) : (

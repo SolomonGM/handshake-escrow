@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { getRankBgClass, getRankLabel, getRankTextClass, normalizeRank } from '../utils/rankDisplay';
+import { getRankBgClass, getRankGradientClass, getRankLabel, getRankTextClass } from '../utils/rankDisplay';
 
 const UserProfileDropdown = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -26,10 +26,10 @@ const UserProfileDropdown = () => {
     };
   }, [isOpen]);
 
-  const normalizedRank = normalizeRank(user?.rank);
   const rankLabel = getRankLabel(user?.rank);
   const rankTextClass = getRankTextClass(user?.rank);
   const rankBgClass = getRankBgClass(user?.rank);
+  const rankGradientClass = getRankGradientClass(user?.rank);
 
   // Calculate XP progress (max 1000 XP per level)
   const maxXP = 1000;
@@ -63,9 +63,9 @@ const UserProfileDropdown = () => {
         {/* Rank Badge and Progress Bar Container */}
         <div className="flex flex-col gap-2 items-center min-w-[64px]">
           {/* Rank Badge */}
-          {normalizedRank === 'developer' ? (
+          {rankGradientClass ? (
             <div className="px-2 py-0.5 rounded-md border border-n-1/20 text-xs font-semibold tracking-wider text-center bg-n-8/50 whitespace-nowrap">
-              <span className="gradient-text">Developer</span>
+              <span className={rankGradientClass}>{rankLabel}</span>
             </div>
           ) : (
             <div className={`px-2 py-0.5 rounded-md border text-xs font-semibold tracking-wider text-center whitespace-nowrap ${rankBgClass} ${rankTextClass}`}>
@@ -139,9 +139,9 @@ const UserProfileDropdown = () => {
               </div>
               <div>
                 <p className="text-n-1 font-semibold">{user?.username}</p>
-                {normalizedRank === 'developer' ? (
+                {rankGradientClass ? (
                   <div className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-n-8/50 border border-n-1/20">
-                    <span className="gradient-text">Developer</span>
+                    <span className={rankGradientClass}>{rankLabel}</span>
                   </div>
                 ) : (
                   <div className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${rankBgClass} ${rankTextClass}`}>

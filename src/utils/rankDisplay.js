@@ -1,6 +1,6 @@
 const RANK_ALIASES = {
   whale: 'ruby rich',
-  admin: 'developer'
+  moderator: 'manager'
 };
 
 const RANK_DISPLAY = {
@@ -32,19 +32,43 @@ const RANK_DISPLAY = {
     bgClass: 'bg-[#ff4da6]/20 border-[#ff4da6]/50',
     badge: '/badges/RUBY.png'
   },
-  moderator: {
-    label: 'Moderator',
+  manager: {
+    label: 'Manager',
     color: '#6ee7b7',
     textClass: 'text-[#6ee7b7]',
     bgClass: 'bg-[#6ee7b7]/20 border-[#6ee7b7]/50',
     badge: '/badges/mod.png'
   },
-  developer: {
-    label: 'Developer',
+  admin: {
+    label: 'Admin',
     color: '#ef4444',
     textClass: 'text-[#ef4444]',
     bgClass: 'bg-[#ef4444]/20 border-[#ef4444]/50',
-    badge: '/badges/developer.png'
+    badge: '/badges/mod.png',
+    gradientClass: 'gradient-text-red-white'
+  },
+  owner: {
+    label: 'Owner',
+    color: '#ef4444',
+    textClass: 'text-[#ef4444]',
+    bgClass: 'bg-[#ef4444]/20 border-[#ef4444]/50',
+    badge: '/badges/owner.png',
+    gradientClass: 'gradient-text-red-white'
+  },
+  developer: {
+    label: 'Developer',
+    color: '#f5f5f5',
+    textClass: 'text-[#f5f5f5]',
+    bgClass: 'bg-white/20 border-white/50',
+    badge: '/badges/developer.png',
+    gradientClass: 'gradient-text'
+  },
+  bot: {
+    label: 'BOT',
+    color: '#10b981',
+    textClass: 'text-[#10b981]',
+    bgClass: 'bg-[#10b981]/20 border-[#10b981]/50',
+    badge: '/badges/bot.png'
   }
 };
 
@@ -64,3 +88,4 @@ export const getRankColor = (rank) => getRankMeta(rank).color;
 export const getRankTextClass = (rank) => getRankMeta(rank).textClass;
 export const getRankBgClass = (rank) => getRankMeta(rank).bgClass;
 export const getRankBadge = (rank) => getRankMeta(rank).badge;
+export const getRankGradientClass = (rank) => getRankMeta(rank).gradientClass || '';

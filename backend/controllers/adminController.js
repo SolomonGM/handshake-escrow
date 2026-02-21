@@ -42,8 +42,12 @@ export const updateUserRank = async (req, res) => {
 
     const { userId, rank } = req.body;
     const normalizedRank = typeof rank === 'string' ? rank.trim().toLowerCase() : rank;
-    const resolvedRank = normalizedRank === 'whale' ? 'ruby rich' : normalizedRank;
-    const validRanks = ['client', 'rich client', 'top client', 'ruby rich', 'moderator', 'developer'];
+    const rankAliases = {
+      whale: 'ruby rich',
+      moderator: 'manager'
+    };
+    const resolvedRank = rankAliases[normalizedRank] || normalizedRank;
+    const validRanks = ['client', 'rich client', 'top client', 'ruby rich', 'manager', 'admin', 'owner', 'developer'];
 
     if (!validRanks.includes(resolvedRank)) {
       return res.status(400).json({ message: 'Invalid rank' });

@@ -57,7 +57,7 @@ const userSchema = new mongoose.Schema({
   },
   rank: {
     type: String,
-    enum: ['client', 'rich client', 'top client', 'ruby rich', 'whale', 'moderator', 'developer'],
+    enum: ['client', 'rich client', 'top client', 'ruby rich', 'whale', 'moderator', 'manager', 'admin', 'owner', 'developer'],
     default: 'client'
   },
   xp: {

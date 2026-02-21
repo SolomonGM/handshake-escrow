@@ -287,9 +287,11 @@ const AdminPanel = () => {
       'ruby rich': 'text-[#ff4da6] bg-[#ff4da6]/20',
       'top client': 'text-[#2563eb] bg-[#2563eb]/20',
       'rich client': 'text-[#f97316] bg-[#f97316]/20',
-      'moderator': 'text-[#6ee7b7] bg-[#6ee7b7]/20',
+      'manager': 'text-[#6ee7b7] bg-[#6ee7b7]/20',
+      'admin': 'text-[#ef4444] bg-[#ef4444]/20',
+      'owner': 'text-[#ef4444] bg-[#ef4444]/20',
       'client': 'text-[#06b6d4] bg-[#06b6d4]/20',
-      'developer': 'text-[#ef4444] bg-[#ef4444]/20',
+      'developer': 'text-[#f5f5f5] bg-white/20',
     };
     return colors[normalizedRank] || colors['client'];
   };
@@ -481,7 +483,9 @@ const AdminPanel = () => {
                         <option value="rich client">Rich Client</option>
                         <option value="top client">Top Client</option>
                         <option value="ruby rich">RUBY Rich</option>
-                        <option value="moderator">Moderator</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Admin</option>
+                        <option value="owner">Owner</option>
                         <option value="developer">Developer</option>
                       </select>
                     ) : (

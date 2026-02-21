@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { getRankBadge, getRankColor, getRankLabel, normalizeRank } from '../utils/rankDisplay';
+import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
 import { grid } from '../assets';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -10,9 +10,9 @@ const UserProfileModal = ({ userId, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [copiedUserId, setCopiedUserId] = useState(false);
 
-  const normalizedRank = normalizeRank(profile?.rank);
   const rankLabel = getRankLabel(profile?.rank);
   const rankBadge = getRankBadge(profile?.rank);
+  const rankGradientClass = getRankGradientClass(profile?.rank);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -177,8 +177,8 @@ const UserProfileModal = ({ userId, onClose }) => {
 
               {/* Username and Rank */}
               <div className="text-center mb-6">
-                {normalizedRank === 'developer' ? (
-                  <h2 className="text-2xl font-bold gradient-text mb-1">
+                {rankGradientClass ? (
+                  <h2 className={`text-2xl font-bold mb-1 ${rankGradientClass}`}>
                     {profile.username}
                   </h2>
                 ) : (
