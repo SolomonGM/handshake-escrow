@@ -136,9 +136,43 @@ export const authAPI = {
 };
 
 // Admin API calls
+const buildAdminListParams = ({
+  page = 1,
+  pageSize = 25,
+  search = '',
+  sortBy = '',
+  sortOrder = '',
+  ...filters
+} = {}) => {
+  const params = { page, pageSize };
+
+  const normalizedSearch = String(search || '').trim();
+  if (normalizedSearch) {
+    params.search = normalizedSearch;
+  }
+
+  if (sortBy) params.sortBy = sortBy;
+  if (sortOrder) params.sortOrder = sortOrder;
+
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed || trimmed.toLowerCase() === 'all') return;
+      params[key] = trimmed;
+      return;
+    }
+    params[key] = value;
+  });
+
+  return params;
+};
+
 export const adminAPI = {
-  getAllUsers: async () => {
-    const response = await api.get('/admin/users');
+  getAllUsers: async (options = {}) => {
+    const response = await api.get('/admin/users', {
+      params: buildAdminListParams(options)
+    });
     return response.data;
   },
 
@@ -182,10 +216,10 @@ export const adminAPI = {
     return response.data;
   },
 
-  getTradeRequests: async (search = '', page = 1, pageSize = 25) => {
-    const params = { page, pageSize };
-    if (search) params.search = search;
-    const response = await api.get('/admin/trade-requests', { params });
+  getTradeRequests: async (options = {}) => {
+    const response = await api.get('/admin/trade-requests', {
+      params: buildAdminListParams(options)
+    });
     return response.data;
   },
 
@@ -199,10 +233,10 @@ export const adminAPI = {
     return response.data;
   },
 
-  getTradeTickets: async (search = '', page = 1, pageSize = 25) => {
-    const params = { page, pageSize };
-    if (search) params.search = search;
-    const response = await api.get('/admin/tickets', { params });
+  getTradeTickets: async (options = {}) => {
+    const response = await api.get('/admin/tickets', {
+      params: buildAdminListParams(options)
+    });
     return response.data;
   },
 };

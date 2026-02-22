@@ -73,7 +73,7 @@ const passOrderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'completed', 'expired', 'failed', 'timedout', 'awaiting-staff', 'refunded'],
+    enum: ['pending', 'confirmed', 'completed', 'expired', 'failed', 'timedout', 'awaiting-staff', 'refunded', 'returned'],
     default: 'pending'
   },
   confirmations: {
@@ -92,7 +92,56 @@ const passOrderSchema = new mongoose.Schema({
   },
   cancelReason: {
     type: String
-  }
+  },
+  returnedAt: {
+    type: Date
+  },
+  returnedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  returnReason: {
+    type: String
+  },
+  refundedAt: {
+    type: Date
+  },
+  refundedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  refundAddress: {
+    type: String
+  },
+  refundCoin: {
+    type: String
+  },
+  refundMessage: {
+    type: String
+  },
+  refundTransactionHash: {
+    type: String
+  },
+  adminActions: [{
+    action: {
+      type: String,
+      enum: ['return', 'force-complete', 'refund']
+    },
+    actor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    details: {
+      type: String
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

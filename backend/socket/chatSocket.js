@@ -2,6 +2,9 @@ import jwt from 'jsonwebtoken';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 import Announcement from '../models/Announcement.js';
+import PassOrder from '../models/PassOrder.js';
+import { completePassOrder } from '../controllers/passController.js';
+import { upsertPassTransactionHistory } from '../services/passTransactionHistory.js';
 import { isDeveloperUser, isStaffUser } from '../utils/staffUtils.js';
 import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
 
@@ -126,6 +129,48 @@ const giveawayCommands = [
     example: '/pass-giveaway 2 3 5m'
   }
 ];
+
+const passManagementCommands = [
+  {
+    command: '/pass-return <user> [orderId] [reason]',
+    description: 'Unlock a stuck pass purchase and return user to selection',
+    example: '/pass-return @client PASS-1234 amount mismatch resolved'
+  },
+  {
+    command: '/pass-complete <user> [orderId] [txHash] [note]',
+    description: 'Force-complete a pass order and credit passes',
+    example: '/pass-complete 12345678901234567 PASS-1234 0xabc123 manual fix'
+  },
+  {
+    command: '/refund <user> <address|prompt> <coin> <message>',
+    description: 'Mark a pass order refunded, optionally prompting for address first',
+    example: '/refund @client 0xabc... eth internal bot mismatch'
+  },
+  {
+    command: '/pass-order <user> [orderId]',
+    description: 'Inspect latest pass order context for a user',
+    example: '/pass-order @client'
+  }
+];
+
+const PASS_MONITORED_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired'];
+const PASS_RESOLVABLE_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired', 'returned'];
+const PASS_REFUNDABLE_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired', 'completed', 'returned'];
+
+const REFUND_COIN_ALIASES = {
+  btc: 'bitcoin',
+  bitcoin: 'bitcoin',
+  ltc: 'litecoin',
+  litecoin: 'litecoin',
+  eth: 'ethereum',
+  ethereum: 'ethereum',
+  sol: 'solana',
+  solana: 'solana',
+  usdt: 'usdt-erc20',
+  'usdt-erc20': 'usdt-erc20',
+  usdc: 'usdc-erc20',
+  'usdc-erc20': 'usdc-erc20'
+};
 
 const muteBroadcastTemplates = [
   'Take a breather {user} (Muted).',
@@ -305,6 +350,89 @@ const findUserByIdentifier = async (identifier) => {
   }
 
   return User.findOne({ username: new RegExp(`^${raw}$`, 'i') });
+};
+
+const normalizeRefundCoin = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return REFUND_COIN_ALIASES[normalized] || null;
+};
+
+const isValidRefundAddress = (address, coin) => {
+  const trimmed = String(address || '').trim();
+  if (!trimmed || !coin) return false;
+
+  if (coin === 'bitcoin') {
+    return /^(bc1|tb1|[13mn2])[a-zA-Z0-9]{20,}$/i.test(trimmed);
+  }
+
+  if (coin === 'litecoin') {
+    return /^(ltc1|tltc1|[LM3mn2Q])[a-zA-Z0-9]{20,}$/i.test(trimmed);
+  }
+
+  if (coin === 'ethereum' || coin === 'usdt-erc20' || coin === 'usdc-erc20') {
+    return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
+  }
+
+  if (coin === 'solana') {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
+  }
+
+  return trimmed.length >= 20;
+};
+
+const emitPrivateBotMessageToUser = (io, userId, message, meta = {}) => {
+  const active = activeUsers.get(String(userId || ''));
+  if (!active?.socketId) {
+    return false;
+  }
+
+  const targetSocket = io.sockets.sockets.get(active.socketId);
+  if (!targetSocket) {
+    return false;
+  }
+
+  emitPrivateBotMessage(targetSocket, message, meta);
+  return true;
+};
+
+const appendOrderAdminAction = (order, action, actor, details, metadata = {}) => {
+  if (!order) return;
+  if (!Array.isArray(order.adminActions)) {
+    order.adminActions = [];
+  }
+  order.adminActions.push({
+    action,
+    actor,
+    details,
+    metadata,
+    createdAt: new Date()
+  });
+};
+
+const resolvePassOrderForUser = async ({ targetUser, orderId = '', statuses = PASS_MONITORED_STATUSES }) => {
+  if (!targetUser?._id) return null;
+
+  const query = { user: targetUser._id };
+
+  const normalizedOrderId = String(orderId || '').trim();
+  if (normalizedOrderId) {
+    query.orderId = normalizedOrderId;
+  }
+
+  if (Array.isArray(statuses) && statuses.length > 0) {
+    query.status = { $in: statuses };
+  }
+
+  return PassOrder.findOne(query).sort({ createdAt: -1 });
+};
+
+const isLikelyOrderId = (value) => /^PASS-/i.test(String(value || '').trim());
+
+const isLikelyTxHash = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (raw.startsWith('0x') && raw.length >= 18) return true;
+  return /^[A-Fa-f0-9]{16,}$/.test(raw);
 };
 
 const toAnnouncementPayload = (announcement) => {
@@ -678,6 +806,302 @@ const handleScheduleCommand = async ({ socket, args }) => {
   return true;
 };
 
+const handlePassAdminCommand = async ({ io, socket, command, args }) => {
+  const targetArg = args[0];
+  const targetUser = await findUserByIdentifier(targetArg || '');
+  if (!targetArg || !targetUser) {
+    emitPrivateBotMessage(socket, 'User not found. Provide @username or 17-digit user ID.');
+    return true;
+  }
+
+  if (command === '/pass-order') {
+    const orderIdArg = isLikelyOrderId(args[1]) ? String(args[1]).trim() : '';
+    const order = await resolvePassOrderForUser({
+      targetUser,
+      orderId: orderIdArg,
+      statuses: []
+    });
+
+    if (!order) {
+      emitPrivateBotMessage(socket, `No pass order found for @${targetUser.username}.`);
+      return true;
+    }
+
+    const summaryLines = [
+      `Order: ${order.orderId}`,
+      `Status: ${order.status}`,
+      `Coin: ${order.cryptocurrency}`,
+      `Amount: ${order.cryptoAmount}`,
+      `Passes: ${order.passCount}`,
+      `Address: ${order.paymentAddress}`,
+      `TX: ${order.transactionHash || 'N/A'}`,
+      `Updated: ${new Date(order.updatedAt || order.createdAt).toLocaleString()}`
+    ];
+    emitPrivateBotMessage(socket, `Pass order for @${targetUser.username}:\n${summaryLines.join('\n')}`);
+    return true;
+  }
+
+  if (command === '/pass-return') {
+    const orderIdArg = isLikelyOrderId(args[1]) ? String(args[1]).trim() : '';
+    const reason = args.slice(orderIdArg ? 2 : 1).join(' ').trim() || 'Manual return by admin.';
+
+    const order = await resolvePassOrderForUser({
+      targetUser,
+      orderId: orderIdArg,
+      statuses: PASS_RESOLVABLE_STATUSES
+    });
+
+    if (!order) {
+      emitPrivateBotMessage(socket, `No resolvable pass order found for @${targetUser.username}.`);
+      return true;
+    }
+
+    if (order.status === 'completed' || order.status === 'refunded') {
+      emitPrivateBotMessage(socket, `Order ${order.orderId} is already ${order.status}.`);
+      return true;
+    }
+
+    order.status = 'returned';
+    order.returnedAt = new Date();
+    order.returnedBy = socket.user._id;
+    order.returnReason = reason;
+    order.timeoutDetails = {
+      ...(order.timeoutDetails || {}),
+      manualVerification: true,
+      staffContactRequested: false,
+      staffNotes: reason
+    };
+    order.transactionDetails = {
+      ...(order.transactionDetails || {}),
+      paymentNotes: `${order.transactionDetails?.paymentNotes || ''}\n[RETURN ${new Date().toISOString()}] ${reason}`.trim()
+    };
+    appendOrderAdminAction(order, 'return', socket.user._id, reason, {
+      orderId: order.orderId,
+      targetUserId: targetUser.userId
+    });
+    await order.save();
+
+    io.emit(`pass_order_update:${order.orderId}`, {
+      orderId: order.orderId,
+      status: 'returned',
+      message: `Staff returned this order to selection. ${reason}`,
+      resolvedBy: socket.user.username,
+      resolvedAt: order.returnedAt
+    });
+
+    const targetNotified = emitPrivateBotMessageToUser(
+      io,
+      targetUser._id,
+      `Your pass order ${order.orderId} was unlocked by staff. You can go back to pass selection now.`
+    );
+
+    emitPrivateBotMessage(
+      socket,
+      `Order ${order.orderId} returned for @${targetUser.username}.${targetNotified ? '' : ' User is offline.'}`
+    );
+    return true;
+  }
+
+  if (command === '/pass-complete') {
+    const orderIdArg = isLikelyOrderId(args[1]) ? String(args[1]).trim() : '';
+    const potentialTxArgIndex = orderIdArg ? 2 : 1;
+    const txArg = isLikelyTxHash(args[potentialTxArgIndex]) ? String(args[potentialTxArgIndex]).trim() : '';
+    const note = args
+      .slice(txArg ? potentialTxArgIndex + 1 : (orderIdArg ? 2 : 1))
+      .join(' ')
+      .trim();
+
+    const order = await resolvePassOrderForUser({
+      targetUser,
+      orderId: orderIdArg,
+      statuses: [...PASS_RESOLVABLE_STATUSES, 'completed']
+    });
+
+    if (!order) {
+      emitPrivateBotMessage(socket, `No completable pass order found for @${targetUser.username}.`);
+      return true;
+    }
+
+    if (order.status === 'refunded') {
+      emitPrivateBotMessage(socket, `Order ${order.orderId} is already refunded and cannot be force-completed.`);
+      return true;
+    }
+
+    const txHash = txArg || order.transactionHash || `manual-${Date.now()}-${String(order._id).slice(-6)}`;
+    const completed = await completePassOrder(order.orderId, txHash, io);
+    if (!completed) {
+      emitPrivateBotMessage(socket, `Failed to complete order ${order.orderId}.`);
+      return true;
+    }
+
+    const refreshedOrder = await PassOrder.findOne({ orderId: order.orderId }).populate('user', 'username passes');
+    if (!refreshedOrder) {
+      emitPrivateBotMessage(socket, `Order ${order.orderId} completed but could not be reloaded.`);
+      return true;
+    }
+
+    refreshedOrder.timeoutDetails = {
+      ...(refreshedOrder.timeoutDetails || {}),
+      manualVerification: true,
+      staffContactRequested: false,
+      staffNotes: note || 'Force completed by admin.'
+    };
+    refreshedOrder.transactionDetails = {
+      ...(refreshedOrder.transactionDetails || {}),
+      paymentNotes: `${refreshedOrder.transactionDetails?.paymentNotes || ''}\n[FORCE-COMPLETE ${new Date().toISOString()}] ${note || 'Force completed by admin.'}`.trim()
+    };
+    appendOrderAdminAction(refreshedOrder, 'force-complete', socket.user._id, note || 'Force completed by admin.', {
+      orderId: refreshedOrder.orderId,
+      transactionHash: txHash
+    });
+    await refreshedOrder.save();
+    await upsertPassTransactionHistory(refreshedOrder, 'completed');
+
+    const newBalance = refreshedOrder?.transactionDetails?.balanceAfter ?? refreshedOrder?.user?.passes;
+
+    const targetNotified = emitPrivateBotMessageToUser(
+      io,
+      targetUser._id,
+      `Your pass order ${refreshedOrder.orderId} was completed by staff. Passes credited: ${refreshedOrder.passCount}.`
+    );
+
+    emitPrivateBotMessage(
+      socket,
+      `Order ${refreshedOrder.orderId} force-completed for @${targetUser.username}. Balance: ${newBalance ?? 'N/A'}.${targetNotified ? '' : ' User is offline.'}`
+    );
+    return true;
+  }
+
+  if (command === '/refund') {
+    const addressOrPrompt = String(args[1] || '').trim();
+    const coinArg = String(args[2] || '').trim();
+    const refundMessage = args.slice(3).join(' ').trim() || 'Manual refund issued by admin.';
+
+    if (!addressOrPrompt || !coinArg) {
+      emitPrivateBotMessage(socket, 'Usage: /refund <user> <address|prompt> <coin> <message>');
+      return true;
+    }
+
+    const normalizedCoin = normalizeRefundCoin(coinArg);
+    if (!normalizedCoin) {
+      emitPrivateBotMessage(socket, 'Unsupported coin. Use one of: btc, ltc, eth, sol, usdt, usdc.');
+      return true;
+    }
+
+    const order = await resolvePassOrderForUser({
+      targetUser,
+      statuses: PASS_REFUNDABLE_STATUSES
+    });
+
+    if (!order) {
+      emitPrivateBotMessage(socket, `No refundable pass order found for @${targetUser.username}.`);
+      return true;
+    }
+
+    if (order.status === 'refunded') {
+      emitPrivateBotMessage(socket, `Order ${order.orderId} is already refunded.`);
+      return true;
+    }
+
+    if (addressOrPrompt.toLowerCase() === 'prompt') {
+      order.status = 'awaiting-staff';
+      order.timeoutDetails = {
+        ...(order.timeoutDetails || {}),
+        manualVerification: true,
+        staffContactRequested: true,
+        staffNotes: `Refund prompt issued by @${socket.user.username}: ${refundMessage}`
+      };
+      appendOrderAdminAction(order, 'refund', socket.user._id, 'Prompted user for refund address', {
+        orderId: order.orderId,
+        coin: normalizedCoin,
+        message: refundMessage
+      });
+      await order.save();
+
+      const promptText = `Staff is reviewing a ${normalizedCoin.toUpperCase()} refund for order ${order.orderId}. Please send your ${normalizedCoin.toUpperCase()} refund address in live chat.`;
+      const targetNotified = emitPrivateBotMessageToUser(io, targetUser._id, promptText);
+      io.emit(`pass_order_update:${order.orderId}`, {
+        orderId: order.orderId,
+        status: 'awaiting-staff',
+        message: 'Staff requested a refund address in live chat.'
+      });
+      emitPrivateBotMessage(
+        socket,
+        `Refund prompt sent for order ${order.orderId}.${targetNotified ? '' : ' User is offline.'}`
+      );
+      return true;
+    }
+
+    if (!isValidRefundAddress(addressOrPrompt, normalizedCoin)) {
+      emitPrivateBotMessage(socket, `Invalid ${normalizedCoin.toUpperCase()} refund address format.`);
+      return true;
+    }
+
+    const refundAddress = addressOrPrompt;
+    const targetUserRecord = await User.findById(targetUser._id).select('passes username');
+    const balanceBefore = Number(targetUserRecord?.passes || 0);
+    let balanceAfter = balanceBefore;
+
+    if (order.status === 'completed' && targetUserRecord) {
+      const passDebit = Math.min(order.passCount || 0, balanceBefore);
+      if (passDebit > 0) {
+        targetUserRecord.passes = balanceBefore - passDebit;
+        balanceAfter = targetUserRecord.passes;
+        await targetUserRecord.save();
+      }
+    }
+
+    order.status = 'refunded';
+    order.refundedAt = new Date();
+    order.refundedBy = socket.user._id;
+    order.refundAddress = refundAddress;
+    order.refundCoin = normalizedCoin;
+    order.refundMessage = refundMessage;
+    order.refundTransactionHash = order.refundTransactionHash || `manual-refund-${Date.now()}-${String(order._id).slice(-6)}`;
+    order.timeoutDetails = {
+      ...(order.timeoutDetails || {}),
+      manualVerification: true,
+      staffContactRequested: true,
+      staffNotes: `Refund by @${socket.user.username}: ${refundMessage}`
+    };
+    order.transactionDetails = {
+      ...(order.transactionDetails || {}),
+      balanceBefore,
+      balanceAfter,
+      paymentNotes: `${order.transactionDetails?.paymentNotes || ''}\n[REFUND ${new Date().toISOString()}] ${normalizedCoin.toUpperCase()} -> ${refundAddress}. ${refundMessage}`.trim()
+    };
+    appendOrderAdminAction(order, 'refund', socket.user._id, refundMessage, {
+      orderId: order.orderId,
+      coin: normalizedCoin,
+      address: refundAddress,
+      balanceBefore,
+      balanceAfter
+    });
+    await order.save();
+    await upsertPassTransactionHistory(order, 'refunded');
+
+    io.emit(`pass_order_update:${order.orderId}`, {
+      orderId: order.orderId,
+      status: 'refunded',
+      message: `Refund marked by staff. ${normalizedCoin.toUpperCase()} destination: ${refundAddress}`
+    });
+
+    const targetNotified = emitPrivateBotMessageToUser(
+      io,
+      targetUser._id,
+      `Your pass order ${order.orderId} was marked refunded by staff. Refund address: ${refundAddress}.`
+    );
+
+    emitPrivateBotMessage(
+      socket,
+      `Order ${order.orderId} marked refunded for @${targetUser.username}. Pass balance: ${balanceBefore} -> ${balanceAfter}.${targetNotified ? '' : ' User is offline.'}`
+    );
+    return true;
+  }
+
+  return false;
+};
+
 const handleModerationCommand = async ({ io, socket, command, args, roleFlags }) => {
   if (!roleFlags.isStaff) {
     emitPrivateBotMessage(socket, 'You do not have permission to use moderation commands.');
@@ -824,12 +1248,16 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
         title: 'Giveaways',
         commands: giveawayCommands
       });
+      sections.push({
+        title: 'Pass Operations',
+        commands: passManagementCommands
+      });
     }
 
     socket.emit('chat_help', {
       title: roleFlags.isAdmin ? 'Admin Command Center' : 'Moderator Command Center',
       subtitle: roleFlags.isAdmin
-        ? 'Moderation, admin, announcement, and giveaway tools'
+        ? 'Moderation, admin, announcement, giveaway, and pass recovery tools'
         : 'Moderation plus allowed announcement tools',
       sections,
       footer: 'Commands are restricted by role.'
@@ -1042,6 +1470,25 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
       `Pass giveaway ${commandId} started. Countdown: ${formatCountdown(endsAt)} (${endsAt.toLocaleString()}).`
     );
     return true;
+  }
+
+  if (
+    command === '/pass-return' ||
+    command === '/pass-complete' ||
+    command === '/refund' ||
+    command === '/pass-order'
+  ) {
+    if (!roleFlags.isAdmin) {
+      emitPrivateBotMessage(socket, 'Only admins can use pass recovery commands.');
+      return true;
+    }
+
+    return handlePassAdminCommand({
+      io,
+      socket,
+      command,
+      args
+    });
   }
 
   if (

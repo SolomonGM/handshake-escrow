@@ -8,23 +8,40 @@ const AdminPanel = () => {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [message, setMessage] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersTotalPages, setUsersTotalPages] = useState(1);
+  const [usersTotalCount, setUsersTotalCount] = useState(0);
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userTwoFactorFilter, setUserTwoFactorFilter] = useState('all');
+  const [userSortBy, setUserSortBy] = useState('createdAt');
+  const [userSortOrder, setUserSortOrder] = useState('desc');
   const [tradeRequests, setTradeRequests] = useState([]);
   const [tradeSearchTerm, setTradeSearchTerm] = useState('');
+  const [debouncedTradeSearch, setDebouncedTradeSearch] = useState('');
   const [tradeRequestsPage, setTradeRequestsPage] = useState(1);
   const [tradeRequestsTotalPages, setTradeRequestsTotalPages] = useState(1);
   const [tradeRequestsTotalCount, setTradeRequestsTotalCount] = useState(0);
   const [tradeRequestsRestricted, setTradeRequestsRestricted] = useState(false);
+  const [tradeStatusFilter, setTradeStatusFilter] = useState('all');
+  const [tradeSortBy, setTradeSortBy] = useState('createdAt');
+  const [tradeSortOrder, setTradeSortOrder] = useState('desc');
   const [editingTradeRequestId, setEditingTradeRequestId] = useState(null);
   const [tradeRequestDraft, setTradeRequestDraft] = useState(null);
   const [tradeTickets, setTradeTickets] = useState([]);
   const [ticketSearchTerm, setTicketSearchTerm] = useState('');
+  const [debouncedTicketSearch, setDebouncedTicketSearch] = useState('');
   const [ticketsPage, setTicketsPage] = useState(1);
   const [ticketsTotalPages, setTicketsTotalPages] = useState(1);
   const [ticketsTotalCount, setTicketsTotalCount] = useState(0);
   const [ticketsRestricted, setTicketsRestricted] = useState(false);
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
+  const [ticketSortBy, setTicketSortBy] = useState('updatedAt');
+  const [ticketSortOrder, setTicketSortOrder] = useState('desc');
 
   const PAGE_SIZE = 25;
   const navigate = useNavigate();
@@ -34,36 +51,113 @@ const AdminPanel = () => {
   }, []);
 
   useEffect(() => {
-    loadTradeRequests();
-  }, [tradeSearchTerm, tradeRequestsPage]);
+    const timer = setTimeout(() => {
+      setDebouncedUserSearch(userSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [userSearchTerm]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedTradeSearch(tradeSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [tradeSearchTerm]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedTicketSearch(ticketSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ticketSearchTerm]);
+
+  useEffect(() => {
+    if (!hasInitialized) return;
+    loadUsers();
+  }, [
+    hasInitialized,
+    debouncedUserSearch,
+    usersPage,
+    userRoleFilter,
+    userTwoFactorFilter,
+    userSortBy,
+    userSortOrder
+  ]);
+
+  useEffect(() => {
+    if (!hasInitialized) return;
+    loadTradeRequests();
+  }, [
+    hasInitialized,
+    debouncedTradeSearch,
+    tradeRequestsPage,
+    tradeStatusFilter,
+    tradeSortBy,
+    tradeSortOrder
+  ]);
+
+  useEffect(() => {
+    if (!hasInitialized) return;
     loadTradeTickets();
-  }, [ticketSearchTerm, ticketsPage]);
+  }, [
+    hasInitialized,
+    debouncedTicketSearch,
+    ticketsPage,
+    ticketStatusFilter,
+    ticketSortBy,
+    ticketSortOrder
+  ]);
 
   const loadUsersAndStats = async () => {
     try {
       setLoading(true);
-      const [usersData, statsData] = await Promise.all([
-        adminAPI.getAllUsers(),
-        adminAPI.getSiteStats()
-      ]);
-      setUsers(usersData.users);
-      setStats(statsData);
+      await Promise.all([loadUsers(), loadStats()]);
     } catch (error) {
       setMessage('Error loading data: ' + (error.response?.data?.message || error.message));
     } finally {
+      setHasInitialized(true);
       setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    const statsData = await adminAPI.getSiteStats();
+    setStats(statsData);
+  };
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await adminAPI.getAllUsers({
+        search: debouncedUserSearch,
+        page: usersPage,
+        pageSize: PAGE_SIZE,
+        role: userRoleFilter,
+        twoFactor: userTwoFactorFilter,
+        sortBy: userSortBy,
+        sortOrder: userSortOrder
+      });
+
+      setUsers(usersData.users || []);
+      setUsersTotalPages(usersData.totalPages || 1);
+      setUsersTotalCount(usersData.totalCount || 0);
+      if (usersData.page && usersData.page !== usersPage) {
+        setUsersPage(usersData.page);
+      }
+    } catch (error) {
+      setMessage('Error loading users: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const loadTradeRequests = async () => {
     try {
-      const tradeRequestsData = await adminAPI.getTradeRequests(
-        tradeSearchTerm,
-        tradeRequestsPage,
-        PAGE_SIZE
-      );
+      const tradeRequestsData = await adminAPI.getTradeRequests({
+        search: debouncedTradeSearch,
+        page: tradeRequestsPage,
+        pageSize: PAGE_SIZE,
+        status: tradeStatusFilter,
+        sortBy: tradeSortBy,
+        sortOrder: tradeSortOrder
+      });
       setTradeRequests(tradeRequestsData.tradeRequests || []);
       setTradeRequestsTotalPages(tradeRequestsData.totalPages || 1);
       setTradeRequestsTotalCount(tradeRequestsData.totalCount || 0);
@@ -78,11 +172,14 @@ const AdminPanel = () => {
 
   const loadTradeTickets = async () => {
     try {
-      const tradeTicketsData = await adminAPI.getTradeTickets(
-        ticketSearchTerm,
-        ticketsPage,
-        PAGE_SIZE
-      );
+      const tradeTicketsData = await adminAPI.getTradeTickets({
+        search: debouncedTicketSearch,
+        page: ticketsPage,
+        pageSize: PAGE_SIZE,
+        status: ticketStatusFilter,
+        sortBy: ticketSortBy,
+        sortOrder: ticketSortOrder
+      });
       setTradeTickets(tradeTicketsData.tickets || []);
       setTicketsTotalPages(tradeTicketsData.totalPages || 1);
       setTicketsTotalCount(tradeTicketsData.totalCount || 0);
@@ -182,10 +279,7 @@ const AdminPanel = () => {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.username?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(userSearchTerm.toLowerCase())
-  );
+  const filteredUsers = users;
 
   const normalizedRankCounts = stats?.rankCounts
     ? stats.rankCounts.reduce((acc, entry) => {
@@ -408,7 +502,7 @@ const AdminPanel = () => {
             <p className="text-3xl font-bold text-n-1">{stats.adminUsers}</p>
           </div>
           <div className="bg-n-6 p-4 rounded-lg border border-n-5">
-            <p className="text-n-4 text-sm mb-1">Verified Users</p>
+            <p className="text-n-4 text-sm mb-1">2FA Verified Users</p>
             <p className="text-3xl font-bold text-n-1">{stats.verifiedUsers}</p>
           </div>
           <div className="bg-n-6 p-4 rounded-lg border border-n-5">
@@ -425,15 +519,74 @@ const AdminPanel = () => {
         </div>
       )}
 
-      {/* Search Bar */}
-      <div className="mb-6">
+      {/* User Controls */}
+      <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <input
           type="text"
           placeholder="Search users by username or email..."
           value={userSearchTerm}
-          onChange={(e) => setUserSearchTerm(e.target.value)}
-          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+          onChange={(e) => {
+            setUserSearchTerm(e.target.value);
+            setUsersPage(1);
+          }}
+          className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
         />
+        <select
+          value={userRoleFilter}
+          onChange={(e) => {
+            setUserRoleFilter(e.target.value);
+            setUsersPage(1);
+          }}
+          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+        >
+          <option value="all">All Roles</option>
+          <option value="user">Users</option>
+          <option value="admin">Admins</option>
+          <option value="moderator">Moderators</option>
+        </select>
+        <select
+          value={userTwoFactorFilter}
+          onChange={(e) => {
+            setUserTwoFactorFilter(e.target.value);
+            setUsersPage(1);
+          }}
+          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+        >
+          <option value="all">2FA: All</option>
+          <option value="enabled">2FA Enabled</option>
+          <option value="disabled">2FA Disabled</option>
+        </select>
+        <div className="flex gap-3">
+          <select
+            value={userSortBy}
+            onChange={(e) => {
+              setUserSortBy(e.target.value);
+              setUsersPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+          >
+            <option value="createdAt">Sort: Joined</option>
+            <option value="username">Sort: Username</option>
+            <option value="role">Sort: Role</option>
+            <option value="rank">Sort: Rank</option>
+            <option value="totalUSDValue">Sort: Total USD</option>
+            <option value="totalDeals">Sort: Deals</option>
+            <option value="passes">Sort: Passes</option>
+            <option value="xp">Sort: XP</option>
+            <option value="twoFactor">Sort: 2FA</option>
+          </select>
+          <select
+            value={userSortOrder}
+            onChange={(e) => {
+              setUserSortOrder(e.target.value);
+              setUsersPage(1);
+            }}
+            className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
       </div>
 
       {/* Users Table */}
@@ -446,6 +599,7 @@ const AdminPanel = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Email</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Rank</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Role</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">2FA</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">XP</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Passes</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Total USD</th>
@@ -516,6 +670,15 @@ const AdminPanel = () => {
                         {user.role}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                      user.twoFactor?.enabled
+                        ? 'bg-[#10B981]/20 text-[#10B981]'
+                        : 'bg-n-5 text-n-3'
+                    }`}>
+                      {user.twoFactor?.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     {editingUser === user._id ? (
@@ -593,6 +756,13 @@ const AdminPanel = () => {
         </div>
       </div>
 
+      {renderPagination({
+        page: usersPage,
+        totalPages: usersTotalPages,
+        totalCount: usersTotalCount,
+        onPageChange: setUsersPage
+      })}
+
       {filteredUsers.length === 0 && (
         <div className="text-center py-8 text-n-4">
           No users found matching your search.
@@ -609,7 +779,7 @@ const AdminPanel = () => {
           <Button onClick={loadTradeTickets}>Refresh Tickets</Button>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <input
             type="text"
             placeholder="Search tickets by sender, receiver, or ticket ID..."
@@ -618,8 +788,53 @@ const AdminPanel = () => {
               setTicketSearchTerm(e.target.value);
               setTicketsPage(1);
             }}
-            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+            className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
           />
+          <select
+            value={ticketStatusFilter}
+            onChange={(e) => {
+              setTicketStatusFilter(e.target.value);
+              setTicketsPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+          >
+            <option value="all">All Statuses</option>
+            <option value="open">Open</option>
+            <option value="in-progress">In Progress</option>
+            <option value="awaiting-close">Awaiting Close</option>
+            <option value="closing">Closing</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="disputed">Disputed</option>
+            <option value="refunded">Refunded</option>
+          </select>
+          <div className="flex gap-3 md:col-span-2">
+            <select
+              value={ticketSortBy}
+              onChange={(e) => {
+                setTicketSortBy(e.target.value);
+                setTicketsPage(1);
+              }}
+              className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+            >
+              <option value="updatedAt">Sort: Updated</option>
+              <option value="createdAt">Sort: Created</option>
+              <option value="status">Sort: Status</option>
+              <option value="ticketId">Sort: Ticket ID</option>
+              <option value="cryptocurrency">Sort: Coin</option>
+            </select>
+            <select
+              value={ticketSortOrder}
+              onChange={(e) => {
+                setTicketSortOrder(e.target.value);
+                setTicketsPage(1);
+              }}
+              className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
         </div>
 
         <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
@@ -674,7 +889,7 @@ const AdminPanel = () => {
           </div>
         </div>
 
-        {ticketsRestricted && !ticketSearchTerm && (
+        {ticketsRestricted && !debouncedTicketSearch && ticketStatusFilter === 'all' && (
           <div className="mt-3 text-xs text-n-4">
             Showing the 10 most recent pages. Use search to access older tickets.
           </div>
@@ -701,7 +916,7 @@ const AdminPanel = () => {
           <Button onClick={loadTradeRequests}>Refresh Trade Requests</Button>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <input
             type="text"
             placeholder="Search trade requests by request ID, creator, or item..."
@@ -710,8 +925,50 @@ const AdminPanel = () => {
               setTradeSearchTerm(e.target.value);
               setTradeRequestsPage(1);
             }}
-            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+            className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
           />
+          <select
+            value={tradeStatusFilter}
+            onChange={(e) => {
+              setTradeStatusFilter(e.target.value);
+              setTradeRequestsPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="expired">Expired</option>
+            <option value="deleted">Deleted</option>
+          </select>
+          <div className="flex gap-3 md:col-span-2">
+            <select
+              value={tradeSortBy}
+              onChange={(e) => {
+                setTradeSortBy(e.target.value);
+                setTradeRequestsPage(1);
+              }}
+              className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+            >
+              <option value="createdAt">Sort: Created</option>
+              <option value="expiresAt">Sort: Expires</option>
+              <option value="priceAmount">Sort: Price</option>
+              <option value="status">Sort: Status</option>
+              <option value="requestId">Sort: Request ID</option>
+              <option value="type">Sort: Type</option>
+            </select>
+            <select
+              value={tradeSortOrder}
+              onChange={(e) => {
+                setTradeSortOrder(e.target.value);
+                setTradeRequestsPage(1);
+              }}
+              className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#ef4444] focus:ring-1 focus:ring-[#ef4444] transition-all"
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
         </div>
 
         <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
@@ -901,7 +1158,7 @@ const AdminPanel = () => {
           </div>
         </div>
 
-        {tradeRequestsRestricted && !tradeSearchTerm && (
+        {tradeRequestsRestricted && !debouncedTradeSearch && tradeStatusFilter === 'all' && (
           <div className="mt-3 text-xs text-n-4">
             Showing the 10 most recent pages. Use search to access older trade requests.
           </div>

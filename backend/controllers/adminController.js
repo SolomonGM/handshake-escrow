@@ -16,6 +16,25 @@ const parsePageParams = (req) => {
   return { page, pageSize };
 };
 
+const resolveSortOrder = (value, fallback = 'desc') => {
+  const normalized = String(value || fallback).trim().toLowerCase();
+  return normalized === 'asc' ? 1 : -1;
+};
+
+const resolveSortField = (requested, mapping, fallback) => (
+  mapping[requested] || mapping[fallback] || fallback
+);
+
+const buildSort = (field, order) => {
+  const sort = { [field]: order };
+  if (field !== '_id') {
+    sort._id = -1;
+  }
+  return sort;
+};
+
+const toTrimmedString = (value, fallback = '') => String(value || fallback).trim();
+
 // Get all users (Admin only)
 export const getAllUsers = async (req, res) => {
   try {
@@ -24,8 +43,84 @@ export const getAllUsers = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
 
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
-    res.json({ users });
+    const search = toTrimmedString(req.query.search);
+    const roleFilter = toTrimmedString(req.query.role, 'all').toLowerCase();
+    const rankFilter = toTrimmedString(req.query.rank, 'all').toLowerCase();
+    const twoFactorFilter = toTrimmedString(req.query.twoFactor, 'all').toLowerCase();
+    const { page, pageSize } = parsePageParams(req);
+
+    const sortFieldMap = {
+      createdAt: 'createdAt',
+      username: 'username',
+      email: 'email',
+      role: 'role',
+      rank: 'rank',
+      xp: 'xp',
+      passes: 'passes',
+      totalUSDValue: 'totalUSDValue',
+      totalDeals: 'totalDeals',
+      lastLogin: 'lastLogin',
+      twoFactor: 'twoFactor.enabled'
+    };
+    const requestedSortBy = toTrimmedString(req.query.sortBy, 'createdAt');
+    const sortField = resolveSortField(requestedSortBy, sortFieldMap, 'createdAt');
+    const sortOrder = resolveSortOrder(req.query.sortOrder, 'desc');
+    const sort = buildSort(sortField, sortOrder);
+
+    const query = {};
+
+    if (search) {
+      const regex = new RegExp(escapeRegExp(search), 'i');
+      const orConditions = [
+        { username: regex },
+        { email: regex },
+        { userId: regex }
+      ];
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      query.$or = orConditions;
+    }
+
+    if (['user', 'admin', 'moderator'].includes(roleFilter)) {
+      query.role = roleFilter;
+    }
+
+    if (rankFilter && rankFilter !== 'all') {
+      query.rank = rankFilter;
+    }
+
+    if (twoFactorFilter === 'enabled') {
+      query['twoFactor.enabled'] = true;
+    } else if (twoFactorFilter === 'disabled') {
+      query['twoFactor.enabled'] = { $ne: true };
+    }
+
+    const totalCount = await User.countDocuments(query);
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const safePage = Math.min(page, totalPages);
+
+    let usersQuery = User.find(query)
+      .select('-password')
+      .sort(sort)
+      .skip((safePage - 1) * pageSize)
+      .limit(pageSize);
+
+    if (['username', 'email', 'role', 'rank'].includes(requestedSortBy)) {
+      usersQuery = usersQuery.collation({ locale: 'en', strength: 2 });
+    }
+
+    const users = await usersQuery;
+
+    res.json({
+      users,
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages
+    });
   } catch (error) {
     console.error('Get all users error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -283,7 +378,7 @@ export const getSiteStats = async (req, res) => {
 
     const totalUsers = await User.countDocuments();
     const adminUsers = await User.countDocuments({ role: 'admin' });
-    const verifiedUsers = await User.countDocuments({ isVerified: true });
+    const verifiedUsers = await User.countDocuments({ 'twoFactor.enabled': true });
     
     const rankCounts = await User.aggregate([
       { $group: { _id: '$rank', count: { $sum: 1 } } }
@@ -308,10 +403,26 @@ export const getTradeRequests = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
 
-    const search = String(req.query.search || '').trim();
+    const search = toTrimmedString(req.query.search);
+    const statusFilter = toTrimmedString(req.query.status, 'all').toLowerCase();
     const { page, pageSize } = parsePageParams(req);
     const isSearch = Boolean(search);
+    const hasStatusFilter = ['active', 'paused', 'expired', 'deleted'].includes(statusFilter);
+    const hasScopedQuery = isSearch || hasStatusFilter;
     const query = {};
+
+    const sortFieldMap = {
+      createdAt: 'createdAt',
+      expiresAt: 'expiresAt',
+      priceAmount: 'priceAmount',
+      status: 'status',
+      requestId: 'requestId',
+      type: 'type'
+    };
+    const requestedSortBy = toTrimmedString(req.query.sortBy, 'createdAt');
+    const sortField = resolveSortField(requestedSortBy, sortFieldMap, 'createdAt');
+    const sortOrder = resolveSortOrder(req.query.sortOrder, 'desc');
+    const sort = buildSort(sortField, sortOrder);
 
     if (isSearch) {
       const regex = new RegExp(escapeRegExp(search), 'i');
@@ -334,11 +445,15 @@ export const getTradeRequests = async (req, res) => {
       query.$or = orConditions;
     }
 
+    if (hasStatusFilter) {
+      query.status = statusFilter;
+    }
+
     const totalCount = await TradeRequest.countDocuments(query);
     const rawTotalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const totalPages = isSearch ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
+    const totalPages = hasScopedQuery ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
 
-    if (!isSearch && page > MAX_RECENT_PAGES) {
+    if (!hasScopedQuery && page > MAX_RECENT_PAGES) {
       return res.json({
         tradeRequests: [],
         page,
@@ -350,11 +465,17 @@ export const getTradeRequests = async (req, res) => {
     }
 
     const safePage = Math.min(page, totalPages);
-    const tradeRequests = await TradeRequest.find(query)
+    let tradeRequestsQuery = TradeRequest.find(query)
       .populate('creator', 'username avatar')
-      .sort({ createdAt: -1 })
+      .sort(sort)
       .skip((safePage - 1) * pageSize)
       .limit(pageSize);
+
+    if (['status', 'requestId', 'type'].includes(requestedSortBy)) {
+      tradeRequestsQuery = tradeRequestsQuery.collation({ locale: 'en', strength: 2 });
+    }
+
+    const tradeRequests = await tradeRequestsQuery;
 
     res.json({
       tradeRequests,
@@ -362,7 +483,7 @@ export const getTradeRequests = async (req, res) => {
       pageSize,
       totalCount,
       totalPages,
-      restricted: !isSearch && rawTotalPages > MAX_RECENT_PAGES
+      restricted: !hasScopedQuery && rawTotalPages > MAX_RECENT_PAGES
     });
   } catch (error) {
     console.error('Get trade requests error:', error);
@@ -469,10 +590,25 @@ export const getTradeTickets = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Staff only.' });
     }
 
-    const search = String(req.query.search || '').trim();
+    const search = toTrimmedString(req.query.search);
+    const statusFilter = toTrimmedString(req.query.status, 'all').toLowerCase();
     const { page, pageSize } = parsePageParams(req);
     const isSearch = Boolean(search);
+    const hasStatusFilter = ['open', 'in-progress', 'awaiting-close', 'closing', 'completed', 'cancelled', 'disputed', 'refunded'].includes(statusFilter);
+    const hasScopedQuery = isSearch || hasStatusFilter;
     const query = {};
+
+    const sortFieldMap = {
+      updatedAt: 'updatedAt',
+      createdAt: 'createdAt',
+      status: 'status',
+      ticketId: 'ticketId',
+      cryptocurrency: 'cryptocurrency'
+    };
+    const requestedSortBy = toTrimmedString(req.query.sortBy, 'updatedAt');
+    const sortField = resolveSortField(requestedSortBy, sortFieldMap, 'updatedAt');
+    const sortOrder = resolveSortOrder(req.query.sortOrder, 'desc');
+    const sort = buildSort(sortField, sortOrder);
 
     if (isSearch) {
       const regex = new RegExp(escapeRegExp(search), 'i');
@@ -494,11 +630,15 @@ export const getTradeTickets = async (req, res) => {
       query.$or = orConditions;
     }
 
+    if (hasStatusFilter) {
+      query.status = statusFilter;
+    }
+
     const totalCount = await TradeTicket.countDocuments(query);
     const rawTotalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const totalPages = isSearch ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
+    const totalPages = hasScopedQuery ? rawTotalPages : Math.min(MAX_RECENT_PAGES, rawTotalPages);
 
-    if (!isSearch && page > MAX_RECENT_PAGES) {
+    if (!hasScopedQuery && page > MAX_RECENT_PAGES) {
       return res.json({
         tickets: [],
         page,
@@ -511,14 +651,19 @@ export const getTradeTickets = async (req, res) => {
 
     const safePage = Math.min(page, totalPages);
 
-    const tickets = await TradeTicket.find(query)
+    let ticketsQuery = TradeTicket.find(query)
       .select('ticketId status cryptocurrency createdAt updatedAt creator creatorRole rolesConfirmed participants')
       .populate('creator', 'username userId avatar')
       .populate('participants.user', 'username userId avatar')
-      .sort({ updatedAt: -1 })
+      .sort(sort)
       .skip((safePage - 1) * pageSize)
-      .limit(pageSize)
-      .lean();
+      .limit(pageSize);
+
+    if (['status', 'ticketId', 'cryptocurrency'].includes(requestedSortBy)) {
+      ticketsQuery = ticketsQuery.collation({ locale: 'en', strength: 2 });
+    }
+
+    const tickets = await ticketsQuery.lean();
 
     const formattedTickets = tickets.map((ticket) => {
       const senderUser = resolveTicketRoleUser(ticket, 'sender');
@@ -550,7 +695,7 @@ export const getTradeTickets = async (req, res) => {
       pageSize,
       totalCount,
       totalPages,
-      restricted: !isSearch && rawTotalPages > MAX_RECENT_PAGES
+      restricted: !hasScopedQuery && rawTotalPages > MAX_RECENT_PAGES
     });
   } catch (error) {
     console.error('Get trade tickets error:', error);

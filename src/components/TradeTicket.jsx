@@ -1,4 +1,4 @@
-import { useSearchParams, useNavigate } from "react-router-dom";
+﻿import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
@@ -443,7 +443,7 @@ const TradeTicket = () => {
             setTicket(nextTicket);
             setMessages(nextTicket.messages || []);
             lastUpdatedAtRef.current = nextUpdatedAt;
-            console.log('🔄 Live-synced ticket state');
+            console.log('[sync] Live-synced ticket state');
           }
         }
       } catch (err) {
@@ -650,7 +650,7 @@ const TradeTicket = () => {
 
   const handleSelectRole = async (role) => {
     try {
-      console.log(`🎯 Selecting role: ${role}`);
+      console.log(`[select-role] Selecting role: ${role}`);
       
       const response = await axios.post(
         `${API_URL}/tickets/${encodeURIComponent(ticket.ticketId)}/select-role`,
@@ -658,22 +658,22 @@ const TradeTicket = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      console.log('✅ Role selection response:', response.data);
+      console.log('[ok] Role selection response:', response.data);
       
       if (response.data.success) {
         // Update state with fresh ticket data
         setTicket(response.data.ticket);
         setMessages(response.data.ticket.messages);
-        console.log('🔄 Ticket state updated');
+        console.log('[sync] Ticket state updated');
       } else {
         // Handle role already taken error
         if (response.data.error === 'role_taken') {
           toast.error(response.data.message);
-          console.log('⚠️ Role taken error:', response.data.message);
+          console.log('[warn] Role taken error:', response.data.message);
         }
       }
     } catch (err) {
-      console.error('❌ Error selecting role:', err);
+      console.error('[error] Error selecting role:', err);
       // Show error message immediately
       if (err.response?.data?.error === 'role_taken') {
         toast.error(err.response.data.message);
@@ -995,12 +995,12 @@ const TradeTicket = () => {
 
   return (
     <Section className="pt-[12rem] -mt-[5.25rem] pb-12 flex-1" crosses crossesOffset="lg:translate-y-[5.25rem]" customPaddings>
-      <div className="container relative z-2 pb-20">
+      <div className="container relative z-2 pb-8 sm:pb-16">
         
         {/* Ticket Header */}
         <div className="max-w-5xl mx-auto mb-6">
-          <div className="flex items-center justify-between p-6 bg-n-7 border-b border-n-6 rounded-t-2xl shadow-lg">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-4 p-4 sm:p-6 bg-n-7 border-b border-n-6 rounded-t-2xl shadow-lg md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               <div className="flex items-center gap-2">
                 <div 
                   className="w-3 h-3 rounded-full animate-pulse"
@@ -1008,7 +1008,7 @@ const TradeTicket = () => {
                 />
                 <span className="text-n-4 text-sm font-code">Ticket {ticket?.ticketId}</span>
               </div>
-              <span className="text-n-4">•</span>
+              <span className="text-n-4 hidden sm:inline">&#8226;</span>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-n-3">{currentCrypto.name}</span>
                 <span 
@@ -1020,10 +1020,10 @@ const TradeTicket = () => {
               </div>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
               <button
                 onClick={() => navigate('/my-requests')}
-                className="flex items-center gap-2 px-4 py-2 bg-n-6 hover:bg-[#10B981]/20 border border-n-6 hover:border-[#10B981]/50 rounded-lg text-n-3 hover:text-[#10B981] transition-all text-sm"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-n-6 hover:bg-[#10B981]/20 border border-n-6 hover:border-[#10B981]/50 rounded-lg text-n-3 hover:text-[#10B981] transition-all text-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -1034,7 +1034,7 @@ const TradeTicket = () => {
               <button
                 onClick={() => setShowCloseModal(true)}
                 disabled={isCancelDisabled}
-                className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm ${
+                className={`w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm ${
                   isCancelDisabled
                     ? 'bg-n-7 border-n-7 text-n-5 cursor-not-allowed opacity-50'
                     : 'bg-n-6 hover:bg-red-600/20 border-n-6 hover:border-red-600/50 text-n-3 hover:text-red-400'
@@ -1054,21 +1054,21 @@ const TradeTicket = () => {
           <div className="bg-n-8 border border-n-6 rounded-b-2xl overflow-hidden shadow-xl">
             
             {/* Chat Messages Area */}
-            <div className="p-8 space-y-8 min-h-[650px] max-h-[650px] overflow-y-auto custom-scrollbar">
+            <div className="p-3 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 min-h-[55vh] sm:min-h-[650px] max-h-[62vh] sm:max-h-[650px] overflow-y-auto custom-scrollbar">
               
               {messages.map((msg, index) => (
-                <div key={msg._id || index} className="flex gap-5">
+                <div key={msg._id || index} className="flex gap-3 sm:gap-5">
                   {/* Avatar */}
                   <div className="flex-shrink-0">
                     {msg.isBot ? (
-                      <div className="w-12 h-12 rounded-full bg-[#10B981] flex items-center justify-center font-bold text-white text-lg shadow-md">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[#10B981] flex items-center justify-center font-bold text-white text-base sm:text-lg shadow-md">
                         H
                       </div>
                     ) : msg.sender?.avatar ? (
                       <img
                         src={msg.sender.avatar}
                         alt={msg.sender.username}
-                        className="w-12 h-12 rounded-full object-cover border-2 border-n-6 shadow-md"
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-n-6 shadow-md"
                         onError={(e) => {
                           e.target.style.display = 'none';
                           e.target.nextSibling.style.display = 'flex';
@@ -1077,7 +1077,7 @@ const TradeTicket = () => {
                     ) : null}
                     {!msg.isBot && (
                       <div 
-                        className="w-12 h-12 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center font-bold text-white text-lg shadow-md"
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-[#10B981] to-[#059669] flex items-center justify-center font-bold text-white text-base sm:text-lg shadow-md"
                         style={{ display: msg.sender?.avatar ? 'none' : 'flex' }}
                       >
                         {msg.sender?.username?.charAt(0).toUpperCase() || user?.username?.charAt(0).toUpperCase()}
@@ -1087,7 +1087,7 @@ const TradeTicket = () => {
 
                   {/* Message Content */}
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
                       <span className="font-semibold text-n-1">
                         {msg.isBot ? 'Handshake' : (msg.sender?.username || user?.username)}
                       </span>
@@ -1136,7 +1136,7 @@ const TradeTicket = () => {
                         {/* Role Selection Buttons */}
                         {(() => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'role-selection';
-                          console.log('🔍 Role Selection Debug:', {
+                          console.log('[debug] Role Selection:', {
                             messageId: msg._id,
                             title: msg.embedData.title,
                             requiresAction: msg.embedData.requiresAction,
@@ -1145,18 +1145,18 @@ const TradeTicket = () => {
                           });
                           if (!shouldShow || isStaffViewer) return null;
                           return (
-                            <div className="flex gap-3 mt-4">
+                            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                               <button
                                 onClick={() => handleSelectRole('sender')}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#10B981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-[#10B981]/20"
                               >
-                                <span>I'm the Sender</span>
+                                <span>I&apos;m the Sender</span>
                               </button>
                               <button
                                 onClick={() => handleSelectRole('receiver')}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-blue-500/20"
                               >
-                                <span>I'm the Receiver</span>
+                                <span>I&apos;m the Receiver</span>
                               </button>
                             </div>
                           );
@@ -1172,7 +1172,7 @@ const TradeTicket = () => {
                               confirmationMap?.[user._id]
                             )
                           );
-                          console.log('🔍 Role Confirmation Debug:', {
+                          console.log('[debug] Role Confirmation:', {
                             messageId: msg._id,
                             title: msg.embedData.title,
                             requiresAction: msg.embedData.requiresAction,
@@ -1191,7 +1191,7 @@ const TradeTicket = () => {
                           }
 
                           return (
-                            <div className="flex gap-3 mt-4">
+                            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                               <button
                                 onClick={() => handleConfirmRoles(true)}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#10B981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-[#10B981]/20"
@@ -1236,7 +1236,7 @@ const TradeTicket = () => {
                           }
 
                           return (
-                            <div className="flex gap-3 mt-4">
+                            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                               <button
                                 onClick={() => handleConfirmAmount(true)}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#10B981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-[#10B981]/20"
@@ -1292,7 +1292,7 @@ const TradeTicket = () => {
                           const shouldShow = msg.embedData.requiresAction && msg.embedData.actionType === 'fee-confirmation';
                           if (!shouldShow || isStaffViewer) return null;
                           return (
-                            <div className="flex gap-3 mt-4">
+                            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                               <button
                                 onClick={() => handleConfirmFees(true)}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#10B981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-[#10B981]/20"
@@ -1331,7 +1331,7 @@ const TradeTicket = () => {
                           }
 
                           return (
-                            <div className="flex gap-3 mt-4">
+                            <div className="flex flex-col sm:flex-row gap-3 mt-4">
                               <button
                                 onClick={() => handleConfirmPayoutAddress(true)}
                                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#10B981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-[#10B981]/20"
@@ -1531,7 +1531,7 @@ const TradeTicket = () => {
 
                           return (
                             <div className="mt-4 space-y-3">
-                              <div className="flex gap-3">
+                              <div className="flex flex-col sm:flex-row gap-3">
                                 <button
                                   onClick={() => handlePrivacySelection('anonymous')}
                                   disabled={Boolean(currentSelection) || isClosing}
@@ -1632,7 +1632,7 @@ const TradeTicket = () => {
                           if (!shouldShow || isStaffViewer) return null;
 
                           return (
-                            <div className="mt-4 flex gap-3">
+                            <div className="mt-4 flex flex-col sm:flex-row gap-3">
                               <button
                                 onClick={handleRescanTransaction}
                                 className="flex-1 px-4 py-3 bg-n-6 hover:bg-n-5 text-n-1 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2"
@@ -1710,7 +1710,7 @@ const TradeTicket = () => {
 
             {/* Input Area or Read-Only Notice */}
             {isReadOnly ? (
-              <div className="border-t border-n-6 p-6 bg-n-7">
+              <div className="border-t border-n-6 p-4 sm:p-6 bg-n-7">
                 <div className="flex items-center justify-center gap-3 text-n-4">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -1720,7 +1720,7 @@ const TradeTicket = () => {
               </div>
             ) : (
               <div
-                className={`border-t border-n-6 p-6 bg-n-7 transition-colors ${
+                className={`border-t border-n-6 p-4 sm:p-6 bg-n-7 transition-colors ${
                   isDraggingImage ? 'bg-n-6/60' : ''
                 }`}
                 onDragOver={handleImageDragOver}
@@ -1766,11 +1766,11 @@ const TradeTicket = () => {
                   </div>
                 )}
 
-                <form onSubmit={handleSendMessage} className="flex items-center gap-4">
+                <form onSubmit={handleSendMessage} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-3 hover:bg-n-6 rounded-lg transition-colors"
+                    className="p-3 hover:bg-n-6 rounded-lg transition-colors self-start sm:self-auto"
                     title="Attach images"
                   >
                     <svg className="w-6 h-6 text-n-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1788,7 +1788,7 @@ const TradeTicket = () => {
                   <button 
                     type="submit"
                     disabled={(!messageInput.trim() && pendingImages.length === 0) || isProcessingImage}
-                    className={`px-8 py-4 rounded-lg font-semibold transition-colors ${
+                    className={`w-full sm:w-auto px-8 py-4 rounded-lg font-semibold transition-colors ${
                       (messageInput.trim() || pendingImages.length > 0) && !isProcessingImage
                         ? 'bg-[#10B981] hover:bg-[#059669] text-white shadow-lg'
                         : 'bg-n-6 text-n-4 cursor-not-allowed'
@@ -1847,7 +1847,7 @@ const TradeTicket = () => {
 
           {/* Modal */}
           <div className="relative z-10 w-full max-w-md mx-4">
-            <div className="relative bg-n-8 border border-red-600/50 rounded-2xl p-8 shadow-2xl">
+            <div className="relative bg-n-8 border border-red-600/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
               {/* Warning Icon */}
               <div className="flex justify-center mb-4">
                 <div className="w-16 h-16 rounded-full bg-red-600/20 flex items-center justify-center">
@@ -1866,7 +1866,7 @@ const TradeTicket = () => {
               </p>
 
               {/* Buttons */}
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => setShowCloseModal(false)}
                   className="flex-1 py-3 px-6 bg-n-7 hover:bg-n-6 text-n-1 rounded-lg font-semibold transition-colors"
@@ -1895,7 +1895,7 @@ const TradeTicket = () => {
               <br /><br />
               Using a pass will allow you to skip all transaction fees for this deal.
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleConfirmPassUse}
                 className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg font-semibold transition-all duration-300"
@@ -1916,7 +1916,7 @@ const TradeTicket = () => {
       {/* Release Funds Confirmation Modal */}
       {showReleaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-n-8 border-2 border-red-500/50 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+          <div className="bg-n-8 border-2 border-red-500/50 rounded-2xl p-6 sm:p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
                 <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1933,7 +1933,7 @@ const TradeTicket = () => {
             
             <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4 mb-6">
               <p className="text-sm text-red-400 mb-2">
-                <strong>⚠️ Warning:</strong>
+                <strong>Warning:</strong>
               </p>
                 <p className="text-sm text-n-3">
                   Only release funds once the receiver confirms delivery. Once released, the funds go directly to the receiver and <strong>cannot be retrieved</strong>.
@@ -1944,7 +1944,7 @@ const TradeTicket = () => {
               Are you sure you want to release <strong className="text-white">${ticket?.expectedAmount?.toFixed(2) || '0.00'} USD</strong>?
             </p>
 
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setShowReleaseModal(false)}
                 className="flex-1 px-4 py-3 bg-n-6 hover:bg-n-5 border border-n-6 rounded-lg text-n-3 font-semibold transition-colors"
@@ -1966,3 +1966,5 @@ const TradeTicket = () => {
 };
 
 export default TradeTicket;
+
+

@@ -6,23 +6,37 @@ import Button from './Button';
 const ModeratorPanel = () => {
   const [tickets, setTickets] = useState([]);
   const [ticketSearchTerm, setTicketSearchTerm] = useState('');
+  const [debouncedTicketSearch, setDebouncedTicketSearch] = useState('');
   const [ticketsPage, setTicketsPage] = useState(1);
   const [ticketsTotalPages, setTicketsTotalPages] = useState(1);
   const [ticketsTotalCount, setTicketsTotalCount] = useState(0);
   const [ticketsRestricted, setTicketsRestricted] = useState(false);
+  const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
+  const [ticketSortBy, setTicketSortBy] = useState('updatedAt');
+  const [ticketSortOrder, setTicketSortOrder] = useState('desc');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const PAGE_SIZE = 25;
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedTicketSearch(ticketSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ticketSearchTerm]);
+
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const tradeTicketsData = await adminAPI.getTradeTickets(
-        ticketSearchTerm,
-        ticketsPage,
-        PAGE_SIZE
-      );
+      const tradeTicketsData = await adminAPI.getTradeTickets({
+        search: debouncedTicketSearch,
+        page: ticketsPage,
+        pageSize: PAGE_SIZE,
+        status: ticketStatusFilter,
+        sortBy: ticketSortBy,
+        sortOrder: ticketSortOrder
+      });
       setTickets(tradeTicketsData.tickets || []);
       setTicketsTotalPages(tradeTicketsData.totalPages || 1);
       setTicketsTotalCount(tradeTicketsData.totalCount || 0);
@@ -39,7 +53,7 @@ const ModeratorPanel = () => {
 
   useEffect(() => {
     loadTickets();
-  }, [ticketSearchTerm, ticketsPage]);
+  }, [debouncedTicketSearch, ticketsPage, ticketStatusFilter, ticketSortBy, ticketSortOrder]);
 
   const filteredTickets = tickets;
 
@@ -118,7 +132,7 @@ const ModeratorPanel = () => {
         </div>
       )}
 
-      <div className="mb-6">
+      <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <input
           type="text"
           placeholder="Search tickets by sender, receiver, or ticket ID..."
@@ -127,8 +141,53 @@ const ModeratorPanel = () => {
             setTicketSearchTerm(e.target.value);
             setTicketsPage(1);
           }}
-          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+          className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
         />
+        <select
+          value={ticketStatusFilter}
+          onChange={(e) => {
+            setTicketStatusFilter(e.target.value);
+            setTicketsPage(1);
+          }}
+          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+        >
+          <option value="all">All Statuses</option>
+          <option value="open">Open</option>
+          <option value="in-progress">In Progress</option>
+          <option value="awaiting-close">Awaiting Close</option>
+          <option value="closing">Closing</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="disputed">Disputed</option>
+          <option value="refunded">Refunded</option>
+        </select>
+        <div className="flex gap-3 md:col-span-2">
+          <select
+            value={ticketSortBy}
+            onChange={(e) => {
+              setTicketSortBy(e.target.value);
+              setTicketsPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+          >
+            <option value="updatedAt">Sort: Updated</option>
+            <option value="createdAt">Sort: Created</option>
+            <option value="status">Sort: Status</option>
+            <option value="ticketId">Sort: Ticket ID</option>
+            <option value="cryptocurrency">Sort: Coin</option>
+          </select>
+          <select
+            value={ticketSortOrder}
+            onChange={(e) => {
+              setTicketSortOrder(e.target.value);
+              setTicketsPage(1);
+            }}
+            className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
+          >
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
       </div>
 
       <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
@@ -183,7 +242,7 @@ const ModeratorPanel = () => {
         </div>
       </div>
 
-      {ticketsRestricted && !ticketSearchTerm && (
+      {ticketsRestricted && !debouncedTicketSearch && ticketStatusFilter === 'all' && (
         <div className="mt-3 text-xs text-n-4">
           Showing the 10 most recent pages. Use search to access older tickets.
         </div>

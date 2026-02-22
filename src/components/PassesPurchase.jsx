@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Section from "./Section";
 import Heading from "./Heading";
 import Button from "./Button";
-import { check, loading } from "../assets";
+import { check } from "../assets";
 import { passes } from "../constants";
 import axios from "axios";
 import { toast } from "../utils/toast";
@@ -29,19 +29,24 @@ const PassesPurchase = () => {
   const [purchaseData, setPurchaseData] = useState(null);
   const [receiptData, setReceiptData] = useState(null);
   const [timeRemaining, setTimeRemaining] = useState(null);
-  const [transactionStatus, setTransactionStatus] = useState({
+  const INITIAL_TRANSACTION_STATUS = {
     detected: false,
     confirmations: 0,
     required: 2,
     transactionHash: null,
     etherscanLink: null
-  });
+  };
+  const [transactionStatus, setTransactionStatus] = useState({ ...INITIAL_TRANSACTION_STATUS });
   const [isLoading, setIsLoading] = useState(true);
   const [copyFeedback, setCopyFeedback] = useState({ address: false, amount: false });
   const copyTimers = useRef({});
   const [paymentIssue, setPaymentIssue] = useState(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const resumeToastRef = useRef(null);
+
+  const resetTransactionStatus = () => {
+    setTransactionStatus({ ...INITIAL_TRANSACTION_STATUS });
+  };
 
   const cryptoOptions = [
     { value: 'litecoin', label: 'Litecoin (LTC)', symbol: 'LTC', color: '#345D9D' },
@@ -148,7 +153,7 @@ const PassesPurchase = () => {
               setTimeRemaining(null);
             }
             
-            console.log('✅ Restored active payment:', activeOrder.orderId);
+            console.log('[ok] Restored active payment:', activeOrder.orderId);
             if (resumeToastRef.current !== activeOrder.orderId) {
               resumeToastRef.current = activeOrder.orderId;
             }
@@ -159,6 +164,15 @@ const PassesPurchase = () => {
               setReceiptData(receipt);
               setStep('complete');
               setPaymentIssue(null);
+              return;
+            }
+
+            if (latestOrder && ['returned', 'refunded'].includes(latestOrder.status)) {
+              setStep('select');
+              setPurchaseData(null);
+              setPaymentIssue(null);
+              setTimeRemaining(null);
+              resetTransactionStatus();
               return;
             }
 
@@ -211,10 +225,10 @@ const PassesPurchase = () => {
     const eventName = `pass_order_update:${purchaseData.orderId}`;
     
     const handleOrderUpdate = (data) => {
-      console.log('📡 Pass order update received:', data);
+      console.log('[socket] Pass order update received:', data);
       
       switch(data.status) {
-        case 'detected':
+        case 'detected': {
           // Transaction detected
           setPaymentIssue(null);
           setTimeRemaining(null);
@@ -227,6 +241,7 @@ const PassesPurchase = () => {
             etherscanLink: data.etherscanLink || getExplorerLink(data.transactionHash, purchaseData?.cryptocurrency || selectedCrypto)
           });
           break;
+        }
           
         case 'confirming':
           // Confirmation progress
@@ -240,7 +255,7 @@ const PassesPurchase = () => {
           console.log(`??? Confirmations: ${data.confirmations}/${data.required}`);
           break;
           
-        case 'completed':
+        case 'completed': {
           // Order completed
           setPaymentIssue(null);
           setTimeRemaining(null);
@@ -261,6 +276,7 @@ const PassesPurchase = () => {
           setStep('complete');
           
           break;
+        }
 
         case 'failed':
           setPaymentIssue({
@@ -282,6 +298,26 @@ const PassesPurchase = () => {
             status: data.status,
             message: data.message || 'Payment window expired. If you sent funds, please contact staff.'
           });
+          break;
+
+        case 'returned':
+          setPurchaseData(null);
+          setReceiptData(null);
+          setPaymentIssue(null);
+          setTimeRemaining(null);
+          resetTransactionStatus();
+          setStep('select');
+          toast.success(data.message || 'Staff returned this order. You can start a new pass purchase.');
+          break;
+
+        case 'refunded':
+          setPurchaseData(null);
+          setReceiptData(null);
+          setPaymentIssue(null);
+          setTimeRemaining(null);
+          resetTransactionStatus();
+          setStep('select');
+          toast.success(data.message || 'Your pass payment was marked refunded by staff.');
           break;
       }
     };
@@ -320,6 +356,15 @@ const PassesPurchase = () => {
           setReceiptData(receipt);
           setStep('complete');
           setPaymentIssue(null);
+          return;
+        }
+
+        if (order.status === 'returned' || order.status === 'refunded') {
+          setPurchaseData(null);
+          setPaymentIssue(null);
+          setTimeRemaining(null);
+          resetTransactionStatus();
+          setStep('select');
           return;
         }
 
@@ -443,7 +488,7 @@ const PassesPurchase = () => {
     if (!hash || !crypto) return null;
 
     if (crypto === 'ethereum') {
-      return process.env.NODE_ENV === 'production'
+      return import.meta.env.PROD
         ? `https://etherscan.io/tx/${hash}`
         : `https://sepolia.etherscan.io/tx/${hash}`;
     }
@@ -492,7 +537,7 @@ const PassesPurchase = () => {
   };
 
   const handleExitToSelection = async () => {
-    if (purchaseData?.orderId) {
+    if (purchaseData?.orderId && !transactionStatus.detected) {
       try {
         await axios.post(
           `${API_URL}/passes/cancel-order`,
@@ -505,13 +550,17 @@ const PassesPurchase = () => {
     }
     setStep('select');
     setPurchaseData(null);
+    setReceiptData(null);
     setPaymentIssue(null);
+    setTimeRemaining(null);
+    resetTransactionStatus();
     setShowExitConfirm(false);
   };
 
   const isExitConfirmRequired = !transactionStatus.detected && (
     timeRemaining?.expired || ['timedout', 'expired'].includes(paymentIssue?.status)
   );
+  const canExitPaymentStep = !transactionStatus.detected || Boolean(paymentIssue);
 
   useEffect(() => {
     if (!isExitConfirmRequired && showExitConfirm) {
@@ -546,21 +595,21 @@ const PassesPurchase = () => {
         <div className="flex items-center justify-center gap-4 mb-12">
           <div className={`flex items-center gap-2 ${step === 'select' ? 'text-[#10B981]' : step !== 'select' ? 'text-n-4' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'select' ? 'bg-[#10B981] text-white' : step !== 'select' && step !== 'payment' && step !== 'processing' && step !== 'complete' ? 'bg-n-7 text-n-3' : 'bg-[#10B981] text-white'}`}>
-              {step !== 'select' ? '✓' : '1'}
+              {step !== 'select' ? 'v' : '1'}
             </div>
             <span className="font-semibold">Select Pass</span>
           </div>
           <div className="h-0.5 w-12 bg-n-6"></div>
           <div className={`flex items-center gap-2 ${step === 'payment' ? 'text-[#10B981]' : step === 'processing' || step === 'complete' ? 'text-n-4' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'payment' ? 'bg-[#10B981] text-white' : step === 'processing' || step === 'complete' ? 'bg-[#10B981] text-white' : 'bg-n-7 text-n-3'}`}>
-              {step === 'processing' || step === 'complete' ? '✓' : '2'}
+              {step === 'processing' || step === 'complete' ? 'v' : '2'}
             </div>
             <span className="font-semibold">Payment</span>
           </div>
           <div className="h-0.5 w-12 bg-n-6"></div>
           <div className={`flex items-center gap-2 ${step === 'complete' ? 'text-[#10B981]' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'complete' ? 'bg-[#10B981] text-white' : 'bg-n-7 text-n-3'}`}>
-              {step === 'complete' ? '✓' : '3'}
+              {step === 'complete' ? 'v' : '3'}
             </div>
             <span className="font-semibold">Complete</span>
           </div>
@@ -648,9 +697,9 @@ const PassesPurchase = () => {
                             boxShadow: `0 4px 14px 0 ${crypto.color}40`
                           }}
                         >
-                          {crypto.symbol === 'BTC' && '₿'}
-                          {crypto.symbol === 'ETH' && 'Ξ'}
-                          {crypto.symbol === 'LTC' && 'Ł'}
+                          {crypto.symbol === 'BTC' && 'B'}
+                          {crypto.symbol === 'ETH' && 'E'}
+                          {crypto.symbol === 'LTC' && 'L'}
                         </div>
                       </div>
                       <span className="font-semibold text-n-1">{crypto.label}</span>
@@ -700,7 +749,7 @@ const PassesPurchase = () => {
             {timeRemaining && !transactionStatus.detected && timeRemaining.total > 0 && timeRemaining.total <= 120000 && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <p className="text-sm text-red-400 text-center">
-                  ⚠️ Transaction detection timeout in {timeRemaining.minutes}:{timeRemaining.seconds.toString().padStart(2, '0')}
+                  Warning: transaction detection timeout in {timeRemaining.minutes}:{timeRemaining.seconds.toString().padStart(2, '0')}
                 </p>
               </div>
             )}
@@ -708,7 +757,7 @@ const PassesPurchase = () => {
             {timeRemaining && !transactionStatus.detected && timeRemaining.total === 0 && (
               <div className="mb-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
                 <p className="text-sm text-orange-400 text-center font-semibold">
-                  ⏰ Detection timeout reached. If you sent payment, please contact staff for manual verification.
+                  Timeout reached. If you sent payment, please contact staff for manual verification.
                 </p>
               </div>
             )}
@@ -784,10 +833,10 @@ const PassesPurchase = () => {
                       {/* USD Tooltip on Hover */}
                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-n-7 border border-[#10B981] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
                         <div className="text-sm text-[#10B981] font-semibold">
-                          ≈ ${purchaseData.priceUSD} USD
+                          ~ ${purchaseData.priceUSD} USD
                         </div>
                         <div className="text-xs text-n-4 mt-1">
-                          ±2% tolerance accepted
+                          +/-2% tolerance accepted
                         </div>
                       </div>
                     </div>
@@ -819,9 +868,9 @@ const PassesPurchase = () => {
                 <h4 className="font-semibold text-n-1 mb-3">Payment Instructions:</h4>
                 <ol className="space-y-2 text-sm text-n-3">
                   <li>1. Send exactly <span className="text-[#10B981] font-semibold">{purchaseData.cryptoAmount} {getCryptoInfo().symbol}</span> to the address above</li>
-                  <li>2. We're monitoring the blockchain and will detect your payment automatically</li>
+                  <li>2. We&apos;re monitoring the blockchain and will detect your payment automatically</li>
                   <li>3. After {transactionStatus.required} confirmations, your passes will be added to your account</li>
-                  <li>4. You'll receive a receipt and can start using your passes immediately</li>
+                  <li>4. You&apos;ll receive a receipt and can start using your passes immediately</li>
                 </ol>
               </div>
 
@@ -909,26 +958,26 @@ const PassesPurchase = () => {
               {/* Back Button - Disabled if payment detected */}
               <button
                 onClick={async () => {
-                  if (transactionStatus.detected) return;
+                  if (!canExitPaymentStep) return;
                   if (isExitConfirmRequired) {
                     setShowExitConfirm(true);
                     return;
                   }
                   await handleExitToSelection();
                 }}
-                disabled={transactionStatus.detected}
+                disabled={!canExitPaymentStep}
                 className={`w-full mt-6 px-6 py-3 rounded-lg transition-colors ${
-                  transactionStatus.detected
+                  !canExitPaymentStep
                     ? 'bg-n-7 text-n-5 cursor-not-allowed opacity-50'
                     : 'bg-n-7 hover:bg-n-6 text-n-1'
                 }`}
-                title={transactionStatus.detected ? 'Cannot go back after payment detected' : ''}
+                title={!canExitPaymentStep ? 'Cannot go back after payment detected' : ''}
               >
-                ← Back to Selection
+                Back to Selection
               </button>
-              {transactionStatus.detected && (
+              {!canExitPaymentStep && (
                 <p className="text-xs text-n-4 text-center mt-2">
-                  ⚠️ Back button disabled - Payment detected
+                  Warning: Back button disabled - Payment detected
                 </p>
               )}
 
@@ -939,7 +988,7 @@ const PassesPurchase = () => {
                     onClick={() => setShowExitConfirm(false)}
                   />
                   <div className="relative z-10 w-full max-w-md mx-4">
-                    <div className="relative bg-n-8 border border-red-500/50 rounded-2xl p-8 shadow-2xl">
+                    <div className="relative bg-n-8 border border-red-500/50 rounded-2xl p-6 sm:p-8 shadow-2xl">
                       <div className="flex justify-center mb-4">
                         <div className="w-14 h-14 rounded-full bg-red-500/15 flex items-center justify-center">
                           <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1105,3 +1154,4 @@ const PassesPurchase = () => {
 };
 
 export default PassesPurchase;
+
