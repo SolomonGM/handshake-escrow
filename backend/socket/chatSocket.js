@@ -15,7 +15,7 @@ let automationInFlight = false;
 
 const BOT_PROFILE = {
   userId: 'N/A',
-  username: 'Handshake BOT',
+  username: 'Handshake',
   avatar: null,
   role: 'BOT',
   rank: 'bot',

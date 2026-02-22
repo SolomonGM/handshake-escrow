@@ -57,22 +57,26 @@ const LiveChat = ({ isOpen, onClose }) => {
     }
   ];
 
-  const toChatMessage = (msg = {}) => ({
-    id: msg.id || msg._id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    userId: msg.userId ?? (msg.isBot ? 'N/A' : null),
-    username: msg.username || 'Unknown',
-    avatar: msg.avatar || null,
-    rank: msg.rank || (msg.isBot ? 'bot' : 'client'),
-    badge: msg.badge || null,
-    role: msg.role || (msg.isBot ? 'BOT' : null),
-    message: msg.message || '',
-    sticker: msg.sticker || null,
-    timestamp: new Date(msg.timestamp || msg.createdAt || Date.now()),
-    mentions: msg.mentions || [],
-    replyTo: msg.replyTo || null,
-    replies: [],
-    isBot: Boolean(msg.isBot)
-  });
+  const toChatMessage = (msg = {}) => {
+    const isBotMessage = Boolean(msg.isBot || msg.role === 'BOT' || msg.rank === 'bot');
+
+    return {
+      id: msg.id || msg._id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      userId: msg.userId ?? (isBotMessage ? 'N/A' : null),
+      username: isBotMessage ? 'Handshake' : (msg.username || 'Unknown'),
+      avatar: msg.avatar || null,
+      rank: isBotMessage ? 'bot' : (msg.rank || 'client'),
+      badge: msg.badge || null,
+      role: msg.role || (isBotMessage ? 'BOT' : null),
+      message: msg.message || '',
+      sticker: msg.sticker || null,
+      timestamp: new Date(msg.timestamp || msg.createdAt || Date.now()),
+      mentions: msg.mentions || [],
+      replyTo: msg.replyTo || null,
+      replies: [],
+      isBot: isBotMessage
+    };
+  };
 
   // Connect to WebSocket and load message history
   useEffect(() => {
