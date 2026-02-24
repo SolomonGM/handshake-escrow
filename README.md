@@ -66,6 +66,16 @@ Backend (`backend/.env`)
 - `BLOCKCYPHER_TOKEN`
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
+- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_OAUTH_REDIRECT_URI` (for account linking OAuth)
+- `DISCORD_GUILD_ID` (guild/server where roles are synced)
+- `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, `DISCORD_ROLE_ID_ADMIN` (site role -> Discord role mapping)
+- `DISCORD_SETTINGS_REDIRECT_URL` optional full frontend settings URL override (default `<CLIENT_URL>/settings`)
+- `DISCORD_OAUTH_SCOPES` optional (defaults to `identify`)
+
+Discord linking notes
+
+- Set your Discord application redirect URI to the same value as `DISCORD_OAUTH_REDIRECT_URI` (for example `https://your-api-domain.com/api/discord/callback`).
+- `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, and `DISCORD_ROLE_ID_ADMIN` are required if you want automatic site-role to Discord-role sync.
 
 ## Build and Preview
 

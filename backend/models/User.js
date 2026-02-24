@@ -226,10 +226,79 @@ const userSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     }
-  }]
+  }],
+  discord: {
+    connected: {
+      type: Boolean,
+      default: false
+    },
+    userId: {
+      type: String,
+      default: null
+    },
+    username: {
+      type: String,
+      default: null
+    },
+    discriminator: {
+      type: String,
+      default: null
+    },
+    globalName: {
+      type: String,
+      default: null
+    },
+    avatar: {
+      type: String,
+      default: null
+    },
+    guildMember: {
+      type: Boolean,
+      default: false
+    },
+    guildRoles: {
+      type: [String],
+      default: []
+    },
+    syncedRoleId: {
+      type: String,
+      default: null
+    },
+    syncedSiteRole: {
+      type: String,
+      default: null
+    },
+    syncStatus: {
+      type: String,
+      enum: ['never', 'synced', 'skipped', 'pending_guild_join', 'failed'],
+      default: 'never'
+    },
+    syncMessage: {
+      type: String,
+      default: null
+    },
+    connectedAt: {
+      type: Date,
+      default: null
+    },
+    lastSyncedAt: {
+      type: Date,
+      default: null
+    }
+  }
 }, {
   timestamps: true // Adds createdAt and updatedAt fields
 });
+
+userSchema.index(
+  { 'discord.userId': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      'discord.userId': { $type: 'string' }
+    }
+  }
+);
 
 // Generate unique user ID before saving
 userSchema.pre('save', async function(next) {

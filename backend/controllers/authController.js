@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
 import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
 import { getTurnstileClientConfig, verifyTurnstileToken } from '../utils/turnstile.js';
+import { buildDiscordConnectionPayload } from '../services/discordIntegrationService.js';
 import {
   USERNAME_RULES,
   buildUsernameExistsQuery,
@@ -89,6 +90,7 @@ const buildAuthUserPayload = (user) => ({
   xp: user.xp,
   passes: user.passes,
   twoFactorEnabled: Boolean(user.twoFactor?.enabled),
+  discord: buildDiscordConnectionPayload(user),
   createdAt: user.createdAt,
   lastLogin: user.lastLogin
 });
@@ -623,18 +625,8 @@ export const getMe = async (req, res, next) => {
     res.status(200).json({
       success: true,
       user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        avatar: user.avatar,
-        role: user.role,
-        rank: user.rank,
-        xp: user.xp,
-        passes: user.passes,
-        twoFactorEnabled: Boolean(user.twoFactor?.enabled),
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-        lastLogin: user.lastLogin
+        ...buildAuthUserPayload(user),
+        isVerified: user.isVerified
       }
     });
   } catch (error) {

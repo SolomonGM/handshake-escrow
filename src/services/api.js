@@ -281,6 +281,26 @@ export const discordAPI = {
       params: forceRefresh ? { refresh: true } : undefined
     });
     return response.data;
+  },
+
+  getConnectUrl: async () => {
+    const response = await api.get('/discord/connect-url');
+    return response.data;
+  },
+
+  getConnectionStatus: async () => {
+    const response = await api.get('/discord/status');
+    return response.data;
+  },
+
+  syncRole: async () => {
+    const response = await api.post('/discord/sync-role');
+    return response.data;
+  },
+
+  disconnect: async () => {
+    const response = await api.post('/discord/disconnect');
+    return response.data;
   }
 };
 

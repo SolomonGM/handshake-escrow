@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
 import TradeTicket from '../models/TradeTicket.js';
 import { refreshLeaderboard } from '../services/leaderboardService.js';
+import { syncDiscordRoleForUserDocument } from '../services/discordIntegrationService.js';
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
@@ -180,17 +181,26 @@ export const updateUserRole = async (req, res) => {
       return res.status(400).json({ message: 'Invalid role' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { role },
-      { new: true, runValidators: true }
-    ).select('-password');
+    const user = await User.findById(userId).select('-password');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ message: 'User role updated successfully', user });
+    user.role = role;
+    await user.save();
+
+    let discordSync = null;
+    if (user.discord?.connected && user.discord?.userId) {
+      discordSync = await syncDiscordRoleForUserDocument(user);
+      await user.save();
+    }
+
+    res.json({
+      message: 'User role updated successfully',
+      user,
+      discordSync
+    });
   } catch (error) {
     console.error('Update user role error:', error);
     res.status(500).json({ message: 'Server error' });

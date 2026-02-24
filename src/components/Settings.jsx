@@ -6,7 +6,7 @@ import Button from './Button';
 import AdminPanel from './AdminPanel';
 import ModeratorPanel from './ModeratorPanel';
 import VerificationCodeInput from './VerificationCodeInput';
-import { passAPI } from '../services/api';
+import { discordAPI, passAPI } from '../services/api';
 import { getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
 
 const USERNAME_MIN_LENGTH = 3;
@@ -27,7 +27,8 @@ const Settings = () => {
     resendEmailChangeCurrentCode,
     verifyEmailChangeCurrentCode,
     resendEmailChangeNewCode,
-    verifyEmailChangeNewCode
+    verifyEmailChangeNewCode,
+    refreshCurrentUser
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -62,6 +63,13 @@ const Settings = () => {
   const [emailChangeNewCooldown, setEmailChangeNewCooldown] = useState(0);
   const [emailChangeMessage, setEmailChangeMessage] = useState('');
   const [emailChangeError, setEmailChangeError] = useState('');
+  const [discordStatus, setDiscordStatus] = useState(user?.discord || null);
+  const [isDiscordLoading, setIsDiscordLoading] = useState(false);
+  const [isDiscordConnecting, setIsDiscordConnecting] = useState(false);
+  const [isDiscordSyncing, setIsDiscordSyncing] = useState(false);
+  const [isDiscordDisconnecting, setIsDiscordDisconnecting] = useState(false);
+  const [discordMessage, setDiscordMessage] = useState('');
+  const [discordError, setDiscordError] = useState('');
   const fileInputRef = useRef(null);
   const hasAutoOpenedTwoFactorRef = useRef(false);
   const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
@@ -108,6 +116,33 @@ const Settings = () => {
     return message;
   };
 
+  const clearDiscordFeedback = () => {
+    setDiscordError('');
+    setDiscordMessage('');
+  };
+
+  const loadDiscordStatus = async ({ silent = false } = {}) => {
+    if (!user) {
+      return;
+    }
+
+    if (!silent) {
+      setIsDiscordLoading(true);
+    }
+
+    try {
+      const response = await discordAPI.getConnectionStatus();
+      setDiscordStatus(response.discord || null);
+    } catch (error) {
+      const nextError = error.response?.data?.message || 'Unable to load Discord connection status.';
+      setDiscordError(nextError);
+    } finally {
+      if (!silent) {
+        setIsDiscordLoading(false);
+      }
+    }
+  };
+
   // Handle tab query parameter
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -121,6 +156,57 @@ const Settings = () => {
       setActiveTab('moderator');
     }
   }, [searchParams, user]);
+
+  useEffect(() => {
+    setDiscordStatus(user?.discord || null);
+  }, [user?.discord]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    loadDiscordStatus();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const discordState = searchParams.get('discord');
+    if (!discordState) {
+      return;
+    }
+
+    const stateMessages = {
+      connected: 'Discord connected successfully. Your role sync was completed.',
+      connected_no_guild: 'Discord connected, but this account is not in the Handshake Discord guild yet.',
+      connected_sync_pending: 'Discord connected. Role sync is pending because no matching Discord role ID is configured.',
+      connected_sync_issue: 'Discord connected, but role sync failed. You can retry with Sync Role.',
+      denied: 'Discord connection was canceled.',
+      already_linked: 'That Discord account is already linked to another Handshake account.',
+      error: 'Discord connection failed. Please try again.'
+    };
+
+    const nextMessage = stateMessages[discordState];
+    if (nextMessage) {
+      if (discordState === 'denied' || discordState === 'already_linked' || discordState === 'error' || discordState === 'connected_sync_issue') {
+        setDiscordError(nextMessage);
+        setDiscordMessage('');
+      } else {
+        setDiscordMessage(nextMessage);
+        setDiscordError('');
+      }
+    }
+
+    if (discordState.startsWith('connected')) {
+      loadDiscordStatus({ silent: true });
+      refreshCurrentUser();
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete('discord');
+    nextParams.delete('discord_reason');
+    const nextQuery = nextParams.toString();
+    navigate(nextQuery ? `/settings?${nextQuery}` : '/settings', { replace: true });
+  }, [searchParams, navigate, refreshCurrentUser]);
 
   useEffect(() => {
     const shouldOpenTwoFactorOnboarding = searchParams.get('setup2fa') === '1';
@@ -561,6 +647,78 @@ const Settings = () => {
     setIsEmailChangeSubmitting(false);
   };
 
+  const handleConnectDiscord = async () => {
+    if (isDiscordConnecting) {
+      return;
+    }
+
+    setIsDiscordConnecting(true);
+    clearDiscordFeedback();
+
+    try {
+      const response = await discordAPI.getConnectUrl();
+      if (!response?.authUrl) {
+        throw new Error('Discord authorization URL is unavailable.');
+      }
+
+      window.location.assign(response.authUrl);
+      return;
+    } catch (error) {
+      const nextError = error.response?.data?.message || error.message || 'Failed to start Discord connection.';
+      setDiscordError(nextError);
+    }
+
+    setIsDiscordConnecting(false);
+  };
+
+  const handleSyncDiscordRole = async () => {
+    if (isDiscordSyncing) {
+      return;
+    }
+
+    setIsDiscordSyncing(true);
+    clearDiscordFeedback();
+
+    try {
+      const response = await discordAPI.syncRole();
+      setDiscordStatus(response.discord || null);
+
+      if (response.success) {
+        setDiscordMessage(response.message || 'Discord role synced successfully.');
+      } else {
+        setDiscordError(response.message || 'Discord role sync failed.');
+      }
+
+      await refreshCurrentUser();
+    } catch (error) {
+      const nextError = error.response?.data?.message || 'Failed to sync Discord role.';
+      setDiscordError(nextError);
+    } finally {
+      setIsDiscordSyncing(false);
+    }
+  };
+
+  const handleDisconnectDiscord = async () => {
+    if (isDiscordDisconnecting) {
+      return;
+    }
+
+    setIsDiscordDisconnecting(true);
+    clearDiscordFeedback();
+
+    try {
+      const response = await discordAPI.disconnect();
+      setDiscordStatus(response.discord || null);
+      setDiscordMessage(response.message || 'Discord account disconnected.');
+      await refreshCurrentUser();
+    } catch (error) {
+      const nextError = error.response?.data?.message || 'Failed to disconnect Discord.';
+      setDiscordError(nextError);
+    } finally {
+      setIsDiscordDisconnecting(false);
+    }
+  };
+
   // Handle file upload
   const handleFileUpload = (file) => {
     setUploadError('');
@@ -656,6 +814,18 @@ const Settings = () => {
   const totalDeals = 0;
   const totalUsdValue = 0;
   const totalPassesUsed = 0;
+  const discordIsConnected = Boolean(discordStatus?.connected);
+  const discordDisplayName = discordStatus?.tag || discordStatus?.displayName || discordStatus?.username || 'Not connected';
+  const discordGuildStatus = discordStatus?.guildMember ? 'In Guild' : 'Not In Guild';
+  const discordSyncStatusMap = {
+    never: 'Not Synced',
+    synced: 'Synced',
+    skipped: 'Mapping Missing',
+    pending_guild_join: 'Awaiting Guild Join',
+    failed: 'Sync Failed'
+  };
+  const discordSyncLabel = discordSyncStatusMap[discordStatus?.syncStatus] || 'Not Synced';
+  const discordExpectedRoleId = discordStatus?.expectedRoleId || null;
 
   // Calculate total passes used (1 per transaction)
 
@@ -850,6 +1020,101 @@ const Settings = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className="mt-8 p-5 bg-n-6 rounded-lg border border-n-5/60">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h3 className="text-n-1 font-semibold">Discord Integration</h3>
+                        <p className="text-n-4 text-sm mt-1">
+                          Link your Discord account to verify guild membership and sync your Handshake role.
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 text-xs rounded-full font-semibold ${
+                        discordIsConnected
+                          ? 'bg-color-4/20 text-color-4'
+                          : 'bg-color-3/20 text-color-3'
+                      }`}>
+                        {discordIsConnected ? 'Connected' : 'Not Connected'}
+                      </span>
+                    </div>
+
+                    {(discordMessage || discordError) && (
+                      <div
+                        className={`mt-4 p-3 rounded-lg text-sm ${
+                          discordError
+                            ? 'bg-color-3/10 border border-color-3/40 text-color-3'
+                            : 'bg-color-4/10 border border-color-4/40 text-color-4'
+                        }`}
+                      >
+                        {discordError || discordMessage}
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Account</p>
+                        <p className="text-n-1 text-sm break-all">{discordDisplayName}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Guild Status</p>
+                        <p className={`text-sm font-semibold ${
+                          discordStatus?.guildMember ? 'text-color-4' : 'text-color-3'
+                        }`}>
+                          {discordIsConnected ? discordGuildStatus : 'Not Connected'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Role Sync</p>
+                        <p className="text-n-1 text-sm">{discordSyncLabel}</p>
+                        <p className="text-xs text-n-4 mt-1 break-all">
+                          {discordExpectedRoleId
+                            ? `Expected Discord role ID: ${discordExpectedRoleId}`
+                            : 'Discord role ID for this site role is not configured yet.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {discordStatus?.syncMessage && (
+                      <p className="mt-3 text-xs text-n-4">{discordStatus.syncMessage}</p>
+                    )}
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <Button
+                        onClick={handleConnectDiscord}
+                        disabled={isDiscordConnecting}
+                        className="min-w-[220px]"
+                      >
+                        {isDiscordConnecting
+                          ? 'Opening Discord...'
+                          : (discordIsConnected ? 'Reconnect Discord' : 'Connect Discord')}
+                      </Button>
+
+                      {discordIsConnected && (
+                        <>
+                          <Button
+                            onClick={handleSyncDiscordRole}
+                            disabled={isDiscordSyncing}
+                            white
+                            className="min-w-[180px]"
+                          >
+                            {isDiscordSyncing ? 'Syncing...' : 'Sync Role'}
+                          </Button>
+                          <Button
+                            onClick={handleDisconnectDiscord}
+                            disabled={isDiscordDisconnecting}
+                            white
+                            className="min-w-[180px]"
+                          >
+                            {isDiscordDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+
+                    {isDiscordLoading && (
+                      <p className="mt-3 text-xs text-n-4">Refreshing Discord status...</p>
+                    )}
+                  </div>
                 </div>
               )}
 

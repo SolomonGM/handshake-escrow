@@ -144,6 +144,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshCurrentUser = async () => {
+    try {
+      setError(null);
+      const response = await authAPI.getMe();
+      updateStoredUser(response.user);
+      return { success: true, user: response.user };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to refresh session user';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
   const requestTwoFactorCode = async () => {
     try {
       setError(null);
@@ -289,6 +302,7 @@ export const AuthProvider = ({ children }) => {
     verifyEmailChangeCurrentCode,
     resendEmailChangeNewCode,
     verifyEmailChangeNewCode,
+    refreshCurrentUser,
     isAuthenticated: !!user,
   };
 
