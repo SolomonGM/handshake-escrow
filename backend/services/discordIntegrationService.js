@@ -11,14 +11,42 @@ const sanitizeRoleId = (value) => {
   return trimmed || null;
 };
 
-const getDiscordRoleMap = () => ({
+const normalizeRankForDiscord = (value) => {
+  const rank = String(value || '').trim().toLowerCase();
+  if (!rank) {
+    return '';
+  }
+
+  const aliases = {
+    whale: 'ruby rich',
+    moderator: 'manager'
+  };
+
+  return aliases[rank] || rank;
+};
+
+const getLegacyDiscordRoleMap = () => ({
   user: sanitizeRoleId(process.env.DISCORD_ROLE_ID_USER),
   moderator: sanitizeRoleId(process.env.DISCORD_ROLE_ID_MODERATOR),
   admin: sanitizeRoleId(process.env.DISCORD_ROLE_ID_ADMIN)
 });
 
+const getDiscordRankRoleMap = () => ({
+  client: sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_CLIENT),
+  'rich client': sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_RICH_CLIENT),
+  'top client': sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_TOP_CLIENT),
+  'ruby rich': sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_RUBY_RICH),
+  manager: sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_MANAGER),
+  admin: sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_ADMIN),
+  owner: sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_OWNER),
+  developer: sanitizeRoleId(process.env.DISCORD_ROLE_ID_RANK_DEVELOPER)
+});
+
 const getMappedDiscordRoleIds = () => (
-  Array.from(new Set(Object.values(getDiscordRoleMap()).filter(Boolean)))
+  Array.from(new Set([
+    ...Object.values(getDiscordRankRoleMap()),
+    ...Object.values(getLegacyDiscordRoleMap())
+  ].filter(Boolean)))
 );
 
 const getPrimaryClientUrl = () => {
@@ -159,19 +187,27 @@ const buildDiscordTag = (discordProfile) => {
   return `${username}#${discriminator}`;
 };
 
-export const resolveDiscordRoleIdForSiteRole = (siteRole) => {
+export const resolveDiscordRoleIdForRank = (siteRank, siteRole = '') => {
+  const normalizedRank = normalizeRankForDiscord(siteRank);
+  const rankMatch = normalizedRank
+    ? getDiscordRankRoleMap()[normalizedRank]
+    : null;
+  if (rankMatch) {
+    return rankMatch;
+  }
+
   const normalizedSiteRole = String(siteRole || '').trim().toLowerCase();
   if (!normalizedSiteRole) {
     return null;
   }
 
-  return getDiscordRoleMap()[normalizedSiteRole] || null;
+  return getLegacyDiscordRoleMap()[normalizedSiteRole] || null;
 };
 
 export const buildDiscordConnectionPayload = (userDoc) => {
   const discord = userDoc?.discord || {};
   const connected = Boolean(discord.connected && discord.userId);
-  const expectedRoleId = resolveDiscordRoleIdForSiteRole(userDoc?.role);
+  const expectedRoleId = resolveDiscordRoleIdForRank(userDoc?.rank, userDoc?.role);
 
   return {
     connected,
@@ -443,7 +479,8 @@ export const syncDiscordRoleForUserDocument = async (userDoc) => {
   }
 
   const discordUserId = String(userDoc.discord.userId).trim();
-  const targetRoleId = resolveDiscordRoleIdForSiteRole(userDoc.role);
+  const normalizedRank = normalizeRankForDiscord(userDoc.rank);
+  const targetRoleId = resolveDiscordRoleIdForRank(userDoc.rank, userDoc.role);
   const { isConfigured, botToken, guildId, message: missingConfigMessage } = getBotGuildConfig();
 
   if (!isConfigured) {
@@ -505,7 +542,7 @@ export const syncDiscordRoleForUserDocument = async (userDoc) => {
     userDoc.discord.syncedRoleId = null;
     userDoc.discord.syncedSiteRole = null;
     userDoc.discord.syncStatus = 'skipped';
-    userDoc.discord.syncMessage = `No Discord role mapping configured for site role "${userDoc.role}".`;
+    userDoc.discord.syncMessage = `No Discord role mapping configured for rank "${normalizedRank || userDoc.rank || 'unknown'}".`;
     userDoc.discord.lastSyncedAt = new Date();
 
     return {
@@ -547,9 +584,9 @@ export const syncDiscordRoleForUserDocument = async (userDoc) => {
       ? refreshedMember.roles
       : Array.from(new Set([...currentRoles.filter((roleId) => !rolesToRemove.includes(roleId)), targetRoleId]));
     userDoc.discord.syncedRoleId = targetRoleId;
-    userDoc.discord.syncedSiteRole = userDoc.role;
+    userDoc.discord.syncedSiteRole = normalizedRank || String(userDoc.rank || '').trim().toLowerCase() || null;
     userDoc.discord.syncStatus = 'synced';
-    userDoc.discord.syncMessage = 'Discord role is synced with your Handshake role.';
+    userDoc.discord.syncMessage = 'Discord role is synced with your Handshake rank.';
     userDoc.discord.lastSyncedAt = new Date();
 
     return {

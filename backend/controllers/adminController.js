@@ -161,7 +161,13 @@ export const updateUserRank = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ message: 'User rank updated successfully', user });
+    let discordSync = null;
+    if (user.discord?.connected && user.discord?.userId) {
+      discordSync = await syncDiscordRoleForUserDocument(user);
+      await user.save();
+    }
+
+    res.json({ message: 'User rank updated successfully', user, discordSync });
   } catch (error) {
     console.error('Update user rank error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -312,8 +318,15 @@ export const updateUserTotalUSDValue = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    let discordSync = null;
+    const rankChanged = typeof updateData.rank === 'string' && updateData.rank !== existingUser.rank;
+    if (rankChanged && user.discord?.connected && user.discord?.userId) {
+      discordSync = await syncDiscordRoleForUserDocument(user);
+      await user.save();
+    }
+
     await refreshLeaderboard({ force: true });
-    res.json({ message: 'User total USD value updated successfully', user });
+    res.json({ message: 'User total USD value updated successfully', user, discordSync });
   } catch (error) {
     console.error('Update user total USD value error:', error);
     res.status(500).json({ message: 'Server error' });

@@ -68,14 +68,15 @@ Backend (`backend/.env`)
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_OAUTH_REDIRECT_URI` (for account linking OAuth)
 - `DISCORD_GUILD_ID` (guild/server where roles are synced)
-- `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, `DISCORD_ROLE_ID_ADMIN` (site role -> Discord role mapping)
+- `DISCORD_ROLE_ID_RANK_CLIENT`, `DISCORD_ROLE_ID_RANK_RICH_CLIENT`, `DISCORD_ROLE_ID_RANK_TOP_CLIENT`, `DISCORD_ROLE_ID_RANK_RUBY_RICH`, `DISCORD_ROLE_ID_RANK_MANAGER`, `DISCORD_ROLE_ID_RANK_ADMIN`, `DISCORD_ROLE_ID_RANK_OWNER`, `DISCORD_ROLE_ID_RANK_DEVELOPER` (site rank -> Discord role mapping)
+- Legacy fallback (optional): `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, `DISCORD_ROLE_ID_ADMIN`
 - `DISCORD_SETTINGS_REDIRECT_URL` optional full frontend settings URL override (default `<CLIENT_URL>/settings`)
 - `DISCORD_OAUTH_SCOPES` optional (defaults to `identify`)
 
 Discord linking notes
 
 - Set your Discord application redirect URI to the same value as `DISCORD_OAUTH_REDIRECT_URI` (for example `https://your-api-domain.com/api/discord/callback`).
-- `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, and `DISCORD_ROLE_ID_ADMIN` are required if you want automatic site-role to Discord-role sync.
+- The `DISCORD_ROLE_ID_RANK_*` variables are required if you want automatic site-rank to Discord-role sync.
 
 ## Build and Preview
 
