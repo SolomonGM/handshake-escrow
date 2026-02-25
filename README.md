@@ -67,16 +67,20 @@ Backend (`backend/.env`)
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_OAUTH_REDIRECT_URI` (for account linking OAuth)
+- `DISCORD_APPLICATION_ID` optional override for slash command registration (defaults to `DISCORD_CLIENT_ID`)
+- `DISCORD_APPLICATION_PUBLIC_KEY` required for Discord interaction signature verification (`/sync` slash command)
 - `DISCORD_GUILD_ID` (guild/server where roles are synced)
 - `DISCORD_ROLE_ID_RANK_CLIENT`, `DISCORD_ROLE_ID_RANK_RICH_CLIENT`, `DISCORD_ROLE_ID_RANK_TOP_CLIENT`, `DISCORD_ROLE_ID_RANK_RUBY_RICH`, `DISCORD_ROLE_ID_RANK_MANAGER`, `DISCORD_ROLE_ID_RANK_ADMIN`, `DISCORD_ROLE_ID_RANK_OWNER`, `DISCORD_ROLE_ID_RANK_DEVELOPER` (site rank -> Discord role mapping)
 - Legacy fallback (optional): `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, `DISCORD_ROLE_ID_ADMIN`
 - `DISCORD_SETTINGS_REDIRECT_URL` optional full frontend settings URL override (default `<CLIENT_URL>/settings`)
 - `DISCORD_OAUTH_SCOPES` optional (defaults to `identify`)
+- `DISCORD_SYNC_LOG_CHANNEL_ID` optional channel id for sync log embeds (default `1476298330022744085`)
 
 Discord linking notes
 
 - Set your Discord application redirect URI to the same value as `DISCORD_OAUTH_REDIRECT_URI` (for example `https://your-api-domain.com/api/discord/callback`).
 - The `DISCORD_ROLE_ID_RANK_*` variables are required if you want automatic site-rank to Discord-role sync.
+- To enable Discord `/sync`, set Interactions Endpoint URL to `https://your-api-domain.com/api/discord/interactions` and configure `DISCORD_APPLICATION_PUBLIC_KEY`.
 
 ## Build and Preview
 

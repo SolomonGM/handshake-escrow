@@ -20,6 +20,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import setupChatSocket from './socket/chatSocket.js';
 import { startTransactionMonitoring } from './services/transactionMonitor.js';
 import { scheduleDiscordProfileRefresh, warmDiscordProfileCache } from './services/discordProfileService.js';
+import { ensureDiscordSyncCommandRegistered } from './services/discordCommandService.js';
 import { scheduleLeaderboardRefresh, warmLeaderboardCache } from './services/leaderboardService.js';
 import { setIo } from './utils/socketRegistry.js';
 import { backfillCompletedTickets, startTicketClosureMonitor } from './services/ticketClosureService.js';
@@ -132,7 +133,12 @@ app.use(helmet({
   }
 }));
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '20mb' })); // Parse JSON bodies
+app.use(express.json({
+  limit: '20mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+})); // Parse JSON bodies + retain raw body for Discord interaction verification
 app.use(express.urlencoded({ extended: true, limit: '20mb' })); // Parse URL-encoded bodies
 app.use('/api', globalApiLimiter);
 
@@ -181,6 +187,19 @@ httpServer.listen(PORT, () => {
   startTransactionMonitoring(io);
   scheduleDiscordProfileRefresh();
   warmDiscordProfileCache();
+  ensureDiscordSyncCommandRegistered()
+    .then((result) => {
+      if (result?.success) {
+        console.log(`✅ ${result.message}`);
+      } else if (result?.skipped) {
+        console.warn(`⚠️ ${result.message}`);
+      } else {
+        console.error(`❌ ${result?.message || 'Discord /sync command registration failed.'}`);
+      }
+    })
+    .catch((error) => {
+      console.error('❌ Discord /sync command bootstrap error:', error);
+    });
   scheduleLeaderboardRefresh();
   warmLeaderboardCache();
   startTicketClosureMonitor();

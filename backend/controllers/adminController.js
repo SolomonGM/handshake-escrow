@@ -163,7 +163,7 @@ export const updateUserRank = async (req, res) => {
 
     let discordSync = null;
     if (user.discord?.connected && user.discord?.userId) {
-      discordSync = await syncDiscordRoleForUserDocument(user);
+      discordSync = await syncDiscordRoleForUserDocument(user, { trigger: 'admin_update' });
       await user.save();
     }
 
@@ -200,7 +200,7 @@ export const updateUserRole = async (req, res) => {
 
     let discordSync = null;
     if (user.discord?.connected && user.discord?.userId) {
-      discordSync = await syncDiscordRoleForUserDocument(user);
+      discordSync = await syncDiscordRoleForUserDocument(user, { trigger: 'admin_update' });
       await user.save();
     }
 
@@ -321,7 +321,7 @@ export const updateUserTotalUSDValue = async (req, res) => {
     let discordSync = null;
     const rankChanged = typeof updateData.rank === 'string' && updateData.rank !== existingUser.rank;
     if (rankChanged && user.discord?.connected && user.discord?.userId) {
-      discordSync = await syncDiscordRoleForUserDocument(user);
+      discordSync = await syncDiscordRoleForUserDocument(user, { trigger: 'admin_update' });
       await user.save();
     }
 

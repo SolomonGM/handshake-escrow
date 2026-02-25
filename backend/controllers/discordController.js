@@ -10,6 +10,10 @@ import {
   syncDiscordRoleForUserDocument,
   verifyDiscordOAuthStateToken
 } from '../services/discordIntegrationService.js';
+import {
+  sendDiscordInteractionFollowup,
+  verifyDiscordInteractionRequest
+} from '../services/discordCommandService.js';
 
 const redirectWithStatus = (res, status, reason = null) => (
   res.redirect(buildDiscordSettingsRedirectUrl({
@@ -132,7 +136,7 @@ export const discordOAuthCallbackHandler = async (req, res) => {
     }
 
     applyDiscordConnectionToUserDocument(user, discordUser);
-    const syncResult = await syncDiscordRoleForUserDocument(user);
+    const syncResult = await syncDiscordRoleForUserDocument(user, { trigger: 'oauth_connect' });
     await user.save();
 
     if (syncResult.status === 'synced') {
@@ -176,7 +180,7 @@ export const syncDiscordRoleHandler = async (req, res) => {
       });
     }
 
-    const syncResult = await syncDiscordRoleForUserDocument(user);
+    const syncResult = await syncDiscordRoleForUserDocument(user, { trigger: 'website_manual' });
     await user.save();
 
     return res.json({
@@ -220,4 +224,112 @@ export const disconnectDiscordHandler = async (req, res) => {
       message: 'Failed to disconnect Discord account'
     });
   }
+};
+
+export const discordInteractionsHandler = async (req, res) => {
+  const signature = req.get('X-Signature-Ed25519');
+  const timestamp = req.get('X-Signature-Timestamp');
+  const rawBody = req.rawBody;
+  const isValid = verifyDiscordInteractionRequest({
+    signature,
+    timestamp,
+    rawBody
+  });
+
+  if (!isValid) {
+    return res.status(401).send('Invalid request signature');
+  }
+
+  const interaction = req.body || {};
+  const interactionType = Number(interaction.type || 0);
+
+  if (interactionType === 1) {
+    return res.status(200).json({ type: 1 });
+  }
+
+  const commandName = String(interaction?.data?.name || '').toLowerCase();
+  if (interactionType !== 2 || commandName !== 'sync') {
+    return res.status(200).json({
+      type: 4,
+      data: {
+        content: 'Unknown command.',
+        flags: 64
+      }
+    });
+  }
+
+  res.status(200).json({
+    type: 5,
+    data: {
+      flags: 64
+    }
+  });
+
+  setImmediate(async () => {
+    try {
+      const discordUserId = String(
+        interaction?.member?.user?.id || interaction?.user?.id || ''
+      ).trim();
+      const applicationId = String(
+        interaction?.application_id || process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID || ''
+      ).trim();
+      const interactionToken = String(interaction?.token || '').trim();
+
+      if (!discordUserId) {
+        await sendDiscordInteractionFollowup({
+          applicationId,
+          interactionToken,
+          content: 'Could not resolve your Discord user id.',
+          isEphemeral: true
+        });
+        return;
+      }
+
+      const user = await User.findOne({ 'discord.userId': discordUserId });
+      if (!user) {
+        await sendDiscordInteractionFollowup({
+          applicationId,
+          interactionToken,
+          content: 'Your Discord account is not linked to Handshake yet. Connect it in website Settings first.',
+          isEphemeral: true
+        });
+        return;
+      }
+
+      const syncResult = await syncDiscordRoleForUserDocument(user, { trigger: 'discord_command' });
+      await user.save();
+
+      if (syncResult.status === 'synced') {
+        await sendDiscordInteractionFollowup({
+          applicationId,
+          interactionToken,
+          content: `Sync complete. Your rank role is now synced. Target role: ${syncResult.targetRoleId ? `<@&${syncResult.targetRoleId}>` : 'N/A'}`,
+          isEphemeral: true
+        });
+        return;
+      }
+
+      await sendDiscordInteractionFollowup({
+        applicationId,
+        interactionToken,
+        content: `Sync finished with status "${syncResult.status}". ${syncResult.message || ''}`.trim(),
+        isEphemeral: true
+      });
+    } catch (error) {
+      console.error('Discord /sync command failed:', error);
+      const applicationId = String(
+        interaction?.application_id || process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID || ''
+      ).trim();
+      const interactionToken = String(interaction?.token || '').trim();
+
+      await sendDiscordInteractionFollowup({
+        applicationId,
+        interactionToken,
+        content: `Sync failed. ${error?.message || 'Unexpected error'}`,
+        isEphemeral: true
+      });
+    }
+  });
+
+  return undefined;
 };

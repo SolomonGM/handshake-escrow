@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_OAUTH_STATE_TTL_SECONDS = 10 * 60;
 const DISCORD_DEFAULT_SCOPES = 'identify';
+const DISCORD_DEFAULT_SYNC_LOG_CHANNEL_ID = '1476298330022744085';
 
 const sanitizeRoleId = (value) => {
   const trimmed = String(value || '').trim();
@@ -139,6 +140,10 @@ const getBotGuildConfig = () => {
     message: null
   };
 };
+
+const getSyncLogChannelId = () => (
+  String(process.env.DISCORD_SYNC_LOG_CHANNEL_ID || DISCORD_DEFAULT_SYNC_LOG_CHANNEL_ID || '').trim()
+);
 
 const getDefaultAvatarIndex = (discordUserId, discriminator) => {
   const numericDiscriminator = Number(discriminator);
@@ -295,6 +300,10 @@ const parseDiscordApiError = (error, fallbackMessage) => {
   return error?.message || fallback;
 };
 
+const appendPermissionHint = (message) => (
+  `${message}. Missing Permissions (Discord 403): ensure the bot has Manage Roles and its highest role is above all target rank roles.`
+);
+
 const exchangeDiscordCodeForToken = async (code) => {
   const { clientId, clientSecret, redirectUri } = getOAuthSecretConfig();
 
@@ -386,7 +395,12 @@ const addGuildRoleWithBotToken = async ({ botToken, guildId, discordUserId, role
       }
     );
   } catch (error) {
-    const wrapped = new Error(parseDiscordApiError(error, 'Failed to assign Discord role'));
+    const status = error?.response?.status;
+    let parsed = parseDiscordApiError(error, 'Failed to assign Discord role');
+    if (status === 403) {
+      parsed = appendPermissionHint(parsed);
+    }
+    const wrapped = new Error(parsed);
     wrapped.code = 'DISCORD_ROLE_ASSIGN_FAILED';
     throw wrapped;
   }
@@ -404,9 +418,103 @@ const removeGuildRoleWithBotToken = async ({ botToken, guildId, discordUserId, r
       }
     );
   } catch (error) {
-    const wrapped = new Error(parseDiscordApiError(error, 'Failed to remove outdated Discord role'));
+    const status = error?.response?.status;
+    let parsed = parseDiscordApiError(error, 'Failed to remove outdated Discord role');
+    if (status === 403) {
+      parsed = appendPermissionHint(parsed);
+    }
+    const wrapped = new Error(parsed);
     wrapped.code = 'DISCORD_ROLE_REMOVE_FAILED';
     throw wrapped;
+  }
+};
+
+const postDiscordSyncLogEmbed = async ({ userDoc, targetRoleId, trigger = 'system' }) => {
+  const channelId = getSyncLogChannelId();
+  const { isConfigured, botToken } = getBotGuildConfig();
+  if (!isConfigured || !channelId || !userDoc?.discord?.userId) {
+    return false;
+  }
+
+  const handshakeUsername = String(userDoc.username || '').trim() || 'Unknown';
+  const handshakeUserId = String(userDoc.userId || '').trim() || 'N/A';
+  const rank = normalizeRankForDiscord(userDoc.rank) || String(userDoc.rank || 'unknown').trim().toLowerCase();
+  const discordMention = `<@${userDoc.discord.userId}>`;
+  const roleMention = targetRoleId ? `<@&${targetRoleId}>` : 'N/A';
+  const syncedAt = new Date().toISOString();
+  const triggerLabelMap = {
+    oauth_connect: 'OAuth Connect',
+    website_manual: 'Website Sync',
+    admin_update: 'Admin Update',
+    discord_command: 'Discord /sync',
+    system: 'System'
+  };
+  const triggerLabel = triggerLabelMap[trigger] || trigger;
+
+  const embed = {
+    title: 'Handshake Discord Role Synced',
+    color: 0x2ecc71,
+    description: `${discordMention} has been synced successfully.`,
+    fields: [
+      {
+        name: 'Handshake User',
+        value: `${handshakeUsername} (${handshakeUserId})`,
+        inline: true
+      },
+      {
+        name: 'Rank',
+        value: rank,
+        inline: true
+      },
+      {
+        name: 'Discord Role',
+        value: roleMention,
+        inline: true
+      },
+      {
+        name: 'Triggered By',
+        value: triggerLabel,
+        inline: true
+      },
+      {
+        name: 'Synced At',
+        value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+        inline: true
+      }
+    ],
+    footer: {
+      text: `ISO: ${syncedAt}`
+    },
+    timestamp: syncedAt
+  };
+
+  try {
+    await axios.post(
+      `${DISCORD_API_BASE}/channels/${channelId}/messages`,
+      {
+        embeds: [embed],
+        allowed_mentions: {
+          users: [String(userDoc.discord.userId)],
+          roles: targetRoleId ? [String(targetRoleId)] : []
+        }
+      },
+      {
+        headers: {
+          Authorization: `Bot ${botToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return true;
+  } catch (error) {
+    const status = error?.response?.status;
+    const details = parseDiscordApiError(error, 'Failed to post Discord sync log embed');
+    if (status === 403) {
+      console.warn(`${details}. Ensure bot can View Channel and Send Messages in sync log channel ${channelId}.`);
+    } else {
+      console.warn(details);
+    }
+    return false;
   }
 };
 
@@ -459,7 +567,8 @@ export const clearDiscordConnectionOnUserDocument = (userDoc) => {
   };
 };
 
-export const syncDiscordRoleForUserDocument = async (userDoc) => {
+export const syncDiscordRoleForUserDocument = async (userDoc, options = {}) => {
+  const trigger = String(options?.trigger || 'system').trim().toLowerCase() || 'system';
   if (!userDoc?.discord?.connected || !userDoc?.discord?.userId) {
     if (userDoc?.discord) {
       userDoc.discord.guildMember = false;
@@ -588,6 +697,12 @@ export const syncDiscordRoleForUserDocument = async (userDoc) => {
     userDoc.discord.syncStatus = 'synced';
     userDoc.discord.syncMessage = 'Discord role is synced with your Handshake rank.';
     userDoc.discord.lastSyncedAt = new Date();
+
+    await postDiscordSyncLogEmbed({
+      userDoc,
+      targetRoleId,
+      trigger
+    });
 
     return {
       status: 'synced',
