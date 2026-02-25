@@ -4,6 +4,7 @@ import { generateToken } from '../utils/jwt.js';
 import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
 import { getTurnstileClientConfig, verifyTurnstileToken } from '../utils/turnstile.js';
 import { buildDiscordConnectionPayload } from '../services/discordIntegrationService.js';
+import { buildModerationStatePayload } from '../services/moderationService.js';
 import {
   USERNAME_RULES,
   buildUsernameExistsQuery,
@@ -91,6 +92,7 @@ const buildAuthUserPayload = (user) => ({
   passes: user.passes,
   twoFactorEnabled: Boolean(user.twoFactor?.enabled),
   discord: buildDiscordConnectionPayload(user),
+  siteModeration: buildModerationStatePayload(user),
   createdAt: user.createdAt,
   lastLogin: user.lastLogin
 });
@@ -613,7 +615,8 @@ export const resendLoginTwoFactorCode = async (req, res, next) => {
 // @access  Private
 export const getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id)
+      .populate('chatModeration.bannedBy', 'username userId role rank');
 
     if (!user) {
       return res.status(404).json({ 

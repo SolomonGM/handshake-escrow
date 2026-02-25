@@ -3,8 +3,13 @@ import Message from '../models/Message.js';
 import User from '../models/User.js';
 import Announcement from '../models/Announcement.js';
 import PassOrder from '../models/PassOrder.js';
+import TradeTicket from '../models/TradeTicket.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { upsertPassTransactionHistory } from '../services/passTransactionHistory.js';
+import {
+  getBanResetUpdate,
+  logModerationAction
+} from '../services/moderationService.js';
 import { isDeveloperUser, isStaffUser } from '../utils/staffUtils.js';
 import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
 
@@ -54,18 +59,18 @@ const moderationCommands = [
 
 const adminModerationCommands = [
   {
-    command: '/ban @user [reason]',
-    description: 'Permanently ban a user from chat',
-    example: '/ban @botfarm repeated abuse'
+    command: '/ban @user [duration] [reason]',
+    description: 'Ban a user from the site (duration optional, defaults permanent)',
+    example: '/ban @botfarm 7d repeated abuse'
   },
   {
     command: '/permban @user [reason]',
-    description: 'Alias for /ban',
+    description: 'Permanently ban a user from the site',
     example: '/permban @botfarm repeated abuse'
   },
   {
     command: '/unban @user',
-    description: 'Remove a chat ban',
+    description: 'Remove a site ban',
     example: '/unban @user'
   }
 ];
@@ -150,6 +155,19 @@ const passManagementCommands = [
     command: '/pass-order <user> [orderId]',
     description: 'Inspect latest pass order context for a user',
     example: '/pass-order @client'
+  }
+];
+
+const ticketManagementCommands = [
+  {
+    command: '/join-ticket <ticketId>',
+    description: 'Open a direct spectator link for a ticket',
+    example: '/join-ticket #1234567'
+  },
+  {
+    command: '/release <ticketId> <sender|receiver> [reason]',
+    description: 'Force-mark ticket as refunded and assign refund target role',
+    example: '/release #1234567 sender sender requested manual refund'
   }
 ];
 
@@ -301,10 +319,7 @@ const resolveChatModerationBlock = async (user) => {
 
   if (moderation.isBanned) {
     if (moderation.bannedUntil && moderation.bannedUntil <= now) {
-      updates['chatModeration.isBanned'] = false;
-      updates['chatModeration.bannedUntil'] = null;
-      updates['chatModeration.bannedReason'] = null;
-      updates['chatModeration.bannedBy'] = null;
+      Object.assign(updates, getBanResetUpdate());
     } else {
       const untilText = moderation.bannedUntil
         ? ` until ${new Date(moderation.bannedUntil).toLocaleString()}`
@@ -433,6 +448,159 @@ const isLikelyTxHash = (value) => {
   if (!raw) return false;
   if (raw.startsWith('0x') && raw.length >= 18) return true;
   return /^[A-Fa-f0-9]{16,}$/.test(raw);
+};
+
+const normalizeTicketId = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('#')) return raw;
+  if (/^\d+$/.test(raw)) return `#${raw}`;
+  return raw;
+};
+
+const resolveTicketRoleUser = (ticket, role) => {
+  if (!ticket || !role) {
+    return null;
+  }
+
+  if (ticket.creatorRole === role && ticket.creator) {
+    return ticket.creator;
+  }
+
+  const participant = (ticket.participants || []).find(
+    (entry) => entry?.status === 'accepted' && entry?.role === role && entry?.user
+  );
+  return participant?.user || null;
+};
+
+const handleTicketStaffCommand = async ({ io, socket, command, args }) => {
+  if (command === '/join-ticket') {
+    const ticketIdArg = normalizeTicketId(args[0]);
+    if (!ticketIdArg) {
+      emitPrivateBotMessage(socket, 'Usage: /join-ticket <ticketId>');
+      return true;
+    }
+
+    const ticket = await TradeTicket.findOne({ ticketId: ticketIdArg })
+      .select('ticketId status updatedAt')
+      .lean();
+
+    if (!ticket) {
+      emitPrivateBotMessage(socket, `Ticket ${ticketIdArg} was not found.`);
+      return true;
+    }
+
+    const spectatorUrl = `/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}&readonly=true`;
+    emitPrivateBotMessage(
+      socket,
+      `Ticket ${ticket.ticketId} (${ticket.status}) spectator link: ${spectatorUrl}`
+    );
+    return true;
+  }
+
+  if (command === '/release') {
+    const ticketIdArg = normalizeTicketId(args[0]);
+    const refundTargetRole = String(args[1] || '').trim().toLowerCase();
+    const reason = args.slice(2).join(' ').trim() || 'Manual refund issued by staff.';
+
+    if (!ticketIdArg || !refundTargetRole) {
+      emitPrivateBotMessage(socket, 'Usage: /release <ticketId> <sender|receiver> [reason]');
+      return true;
+    }
+
+    if (refundTargetRole !== 'sender' && refundTargetRole !== 'receiver') {
+      emitPrivateBotMessage(socket, 'Refund target must be either sender or receiver.');
+      return true;
+    }
+
+    const ticket = await TradeTicket.findOne({ ticketId: ticketIdArg })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+
+    if (!ticket) {
+      emitPrivateBotMessage(socket, `Ticket ${ticketIdArg} was not found.`);
+      return true;
+    }
+
+    if (ticket.status === 'refunded') {
+      emitPrivateBotMessage(socket, `Ticket ${ticket.ticketId} is already refunded.`);
+      return true;
+    }
+
+    const refundTargetUser = resolveTicketRoleUser(ticket, refundTargetRole);
+    if (!refundTargetUser?._id) {
+      emitPrivateBotMessage(
+        socket,
+        `Unable to resolve ${refundTargetRole} on ticket ${ticket.ticketId}. Confirm both ticket roles are set.`
+      );
+      return true;
+    }
+
+    ticket.status = 'refunded';
+    ticket.refundedAt = new Date();
+    ticket.refundedBy = socket.user._id;
+    ticket.refundTargetRole = refundTargetRole;
+    ticket.refundReason = reason;
+    ticket.closeScheduledAt = null;
+    ticket.releaseInitiated = false;
+    ticket.releaseInitiatedBy = null;
+    ticket.awaitingPayoutAddress = false;
+    ticket.awaitingPayoutConfirmation = false;
+    ticket.pendingPayoutAddress = null;
+    ticket.fundsReleased = false;
+    ticket.closedAt = new Date();
+    ticket.closedBy = socket.user._id;
+
+    ticket.messages = (ticket.messages || []).filter((msg) => (
+      msg.embedData?.actionType !== 'release-funds' &&
+      msg.embedData?.actionType !== 'payout-address' &&
+      msg.embedData?.actionType !== 'payout-address-confirmation' &&
+      msg.embedData?.actionType !== 'payout-confirming'
+    ));
+
+    ticket.messages.push({
+      isBot: true,
+      content: 'Ticket Refunded by Staff',
+      type: 'embed',
+      embedData: {
+        title: 'Ticket Refunded by Staff',
+        description: `This ticket was marked as refunded by @${socket.user.username}. Refund target: @${refundTargetUser.username} (${refundTargetRole}).\n\nReason: ${reason}`,
+        color: 'orange',
+        requiresAction: false
+      },
+      timestamp: new Date()
+    });
+
+    await ticket.save();
+
+    await logModerationAction({
+      actionType: 'ticket_refund',
+      scope: 'ticket',
+      targetUser: refundTargetUser._id,
+      moderatorUser: socket.user._id,
+      reason,
+      ticketId: ticket.ticketId,
+      metadata: {
+        refundTargetRole,
+        ticketStatus: ticket.status
+      }
+    });
+
+    const targetNotified = emitPrivateBotMessageToUser(
+      io,
+      refundTargetUser._id,
+      `Ticket ${ticket.ticketId} was marked refunded by staff. Reason: ${reason}`
+    );
+
+    const spectatorUrl = `/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}&readonly=true`;
+    emitPrivateBotMessage(
+      socket,
+      `Ticket ${ticket.ticketId} marked refunded for @${refundTargetUser.username} (${refundTargetRole}). Link: ${spectatorUrl}.${targetNotified ? '' : ' User is offline.'}`
+    );
+    return true;
+  }
+
+  return false;
 };
 
 const toAnnouncementPayload = (announcement) => {
@@ -881,6 +1049,17 @@ const handlePassAdminCommand = async ({ io, socket, command, args }) => {
     });
     await order.save();
 
+    await logModerationAction({
+      actionType: 'pass_return',
+      scope: 'pass',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason,
+      metadata: {
+        orderId: order.orderId
+      }
+    });
+
     io.emit(`pass_order_update:${order.orderId}`, {
       orderId: order.orderId,
       status: 'returned',
@@ -957,6 +1136,18 @@ const handlePassAdminCommand = async ({ io, socket, command, args }) => {
     await refreshedOrder.save();
     await upsertPassTransactionHistory(refreshedOrder, 'completed');
 
+    await logModerationAction({
+      actionType: 'pass_force_complete',
+      scope: 'pass',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason: note || 'Force completed by admin.',
+      metadata: {
+        orderId: refreshedOrder.orderId,
+        transactionHash: txHash
+      }
+    });
+
     const newBalance = refreshedOrder?.transactionDetails?.balanceAfter ?? refreshedOrder?.user?.passes;
 
     const targetNotified = emitPrivateBotMessageToUser(
@@ -1017,6 +1208,18 @@ const handlePassAdminCommand = async ({ io, socket, command, args }) => {
         message: refundMessage
       });
       await order.save();
+
+      await logModerationAction({
+        actionType: 'pass_refund_prompt',
+        scope: 'pass',
+        targetUser: targetUser._id,
+        moderatorUser: socket.user._id,
+        reason: refundMessage,
+        metadata: {
+          orderId: order.orderId,
+          coin: normalizedCoin
+        }
+      });
 
       const promptText = `Staff is reviewing a ${normalizedCoin.toUpperCase()} refund for order ${order.orderId}. Please send your ${normalizedCoin.toUpperCase()} refund address in live chat.`;
       const targetNotified = emitPrivateBotMessageToUser(io, targetUser._id, promptText);
@@ -1080,6 +1283,21 @@ const handlePassAdminCommand = async ({ io, socket, command, args }) => {
     await order.save();
     await upsertPassTransactionHistory(order, 'refunded');
 
+    await logModerationAction({
+      actionType: 'pass_refund',
+      scope: 'pass',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason: refundMessage,
+      metadata: {
+        orderId: order.orderId,
+        coin: normalizedCoin,
+        address: refundAddress,
+        balanceBefore,
+        balanceAfter
+      }
+    });
+
     io.emit(`pass_order_update:${order.orderId}`, {
       orderId: order.orderId,
       status: 'refunded',
@@ -1135,6 +1353,15 @@ const handleModerationCommand = async ({ io, socket, command, args, roleFlags })
         'chatModeration.mutedBy': socket.user._id
       }
     });
+
+    await logModerationAction({
+      actionType: 'mute',
+      scope: 'chat',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason
+    });
+
     emitPrivateBotMessage(socket, `Muted @${targetUser.username}${reason ? ` (${reason})` : ''}.`);
     emitPublicBotMessage(
       io,
@@ -1162,6 +1389,20 @@ const handleModerationCommand = async ({ io, socket, command, args, roleFlags })
         'chatModeration.mutedBy': socket.user._id
       }
     });
+
+    await logModerationAction({
+      actionType: 'timeout',
+      scope: 'chat',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason,
+      isPermanent: false,
+      expiresAt: mutedUntil,
+      metadata: {
+        durationMs
+      }
+    });
+
     emitPrivateBotMessage(
       socket,
       `Timed out @${targetUser.username} until ${mutedUntil.toLocaleString()}${reason ? ` (${reason})` : ''}.`
@@ -1178,21 +1419,63 @@ const handleModerationCommand = async ({ io, socket, command, args, roleFlags })
         'chatModeration.mutedBy': null
       }
     });
+
+    await logModerationAction({
+      actionType: 'unmute',
+      scope: 'chat',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason: 'Mute removed by staff.'
+    });
+
     emitPrivateBotMessage(socket, `Unmuted @${targetUser.username}.`);
     return true;
   }
 
   if (command === '/ban' || command === '/permban') {
-    const reason = args.slice(1).join(' ').trim() || null;
+    const isExplicitPermanent = command === '/permban';
+    const durationCandidate = args[1];
+    const durationMs = !isExplicitPermanent ? parseDurationToMs(durationCandidate) : null;
+    const bannedUntil = durationMs ? new Date(Date.now() + durationMs) : null;
+    const reasonStartIndex = durationMs ? 2 : 1;
+    const reason = args.slice(reasonStartIndex).join(' ').trim() || null;
+    const banIssuedAt = new Date();
+
     await User.findByIdAndUpdate(targetUser._id, {
       $set: {
         'chatModeration.isBanned': true,
-        'chatModeration.bannedUntil': null,
+        'chatModeration.bannedUntil': bannedUntil,
+        'chatModeration.bannedAt': banIssuedAt,
         'chatModeration.bannedReason': reason,
         'chatModeration.bannedBy': socket.user._id
       }
     });
-    emitPrivateBotMessage(socket, `Permanently banned @${targetUser.username}${reason ? ` (${reason})` : ''}.`);
+
+    await logModerationAction({
+      actionType: bannedUntil ? 'ban_temporary' : 'ban',
+      scope: 'site',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason,
+      isPermanent: !bannedUntil,
+      expiresAt: bannedUntil,
+      metadata: {
+        command
+      }
+    });
+
+    const actorMessage = bannedUntil
+      ? `Banned @${targetUser.username} until ${bannedUntil.toLocaleString()}${reason ? ` (${reason})` : ''}.`
+      : `Permanently banned @${targetUser.username}${reason ? ` (${reason})` : ''}.`;
+    emitPrivateBotMessage(socket, actorMessage);
+
+    const targetMessage = bannedUntil
+      ? `Your account has been banned until ${bannedUntil.toLocaleString()}${reason ? `. Reason: ${reason}` : '.'}`
+      : `Your account has been permanently banned${reason ? `. Reason: ${reason}` : '.'}`;
+    emitPrivateBotMessageToUser(io, targetUser._id, targetMessage, {
+      commandEvent: 'site_ban_notice'
+    });
+
     emitPublicBotMessage(
       io,
       pickRandom(banBroadcastTemplates).replace('{user}', `@${targetUser.username}`),
@@ -1203,12 +1486,19 @@ const handleModerationCommand = async ({ io, socket, command, args, roleFlags })
 
   if (command === '/unban') {
     await User.findByIdAndUpdate(targetUser._id, {
-      $set: {
-        'chatModeration.isBanned': false,
-        'chatModeration.bannedUntil': null,
-        'chatModeration.bannedReason': null,
-        'chatModeration.bannedBy': null
-      }
+      $set: getBanResetUpdate()
+    });
+
+    await logModerationAction({
+      actionType: 'unban',
+      scope: 'site',
+      targetUser: targetUser._id,
+      moderatorUser: socket.user._id,
+      reason: 'Ban removed by staff.'
+    });
+
+    emitPrivateBotMessageToUser(io, targetUser._id, 'Your site ban has been removed.', {
+      commandEvent: 'site_unban_notice'
     });
     emitPrivateBotMessage(socket, `Unbanned @${targetUser.username}.`);
     return true;
@@ -1228,6 +1518,10 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
       {
         title: 'Moderation',
         commands: moderationCommands
+      },
+      {
+        title: 'Ticket Operations',
+        commands: ticketManagementCommands
       }
     ];
 
@@ -1257,8 +1551,8 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
     socket.emit('chat_help', {
       title: roleFlags.isAdmin ? 'Admin Command Center' : 'Moderator Command Center',
       subtitle: roleFlags.isAdmin
-        ? 'Moderation, admin, announcement, giveaway, and pass recovery tools'
-        : 'Moderation plus allowed announcement tools',
+        ? 'Moderation, ticket operations, admin, announcement, giveaway, and pass recovery tools'
+        : 'Moderation, ticket operations, and allowed announcement tools',
       sections,
       footer: 'Commands are restricted by role.'
     });
@@ -1470,6 +1764,20 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
       `Pass giveaway ${commandId} started. Countdown: ${formatCountdown(endsAt)} (${endsAt.toLocaleString()}).`
     );
     return true;
+  }
+
+  if (command === '/join-ticket' || command === '/release') {
+    if (!roleFlags.isStaff) {
+      emitPrivateBotMessage(socket, 'Only moderators and admins can use ticket commands.');
+      return true;
+    }
+
+    return handleTicketStaffCommand({
+      io,
+      socket,
+      command,
+      args
+    });
   }
 
   if (

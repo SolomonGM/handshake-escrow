@@ -258,6 +258,24 @@ const tradeTicketSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  refundedAt: {
+    type: Date,
+    default: null
+  },
+  refundedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  refundTargetRole: {
+    type: String,
+    enum: ['sender', 'receiver', null],
+    default: null
+  },
+  refundReason: {
+    type: String,
+    default: null
+  },
   cryptocurrency: {
     type: String,
     required: true,

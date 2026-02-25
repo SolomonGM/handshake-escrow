@@ -117,6 +117,10 @@ const userSchema = new mongoose.Schema({
       type: Date,
       default: null
     },
+    bannedAt: {
+      type: Date,
+      default: null
+    },
     bannedReason: {
       type: String,
       default: null
@@ -299,6 +303,8 @@ userSchema.index(
     }
   }
 );
+
+userSchema.index({ 'chatModeration.isBanned': 1, 'chatModeration.bannedUntil': 1 });
 
 // Generate unique user ID before saving
 userSchema.pre('save', async function(next) {

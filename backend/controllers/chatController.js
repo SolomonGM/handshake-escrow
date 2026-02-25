@@ -2,6 +2,7 @@ import Message from '../models/Message.js';
 import User from '../models/User.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
+import { getBanResetUpdate } from '../services/moderationService.js';
 
 const resolveChatModerationBlock = async (user) => {
   const moderation = user?.chatModeration || {};
@@ -10,10 +11,7 @@ const resolveChatModerationBlock = async (user) => {
 
   if (moderation.isBanned) {
     if (moderation.bannedUntil && moderation.bannedUntil <= now) {
-      updates['chatModeration.isBanned'] = false;
-      updates['chatModeration.bannedUntil'] = null;
-      updates['chatModeration.bannedReason'] = null;
-      updates['chatModeration.bannedBy'] = null;
+      Object.assign(updates, getBanResetUpdate());
     } else {
       const untilText = moderation.bannedUntil
         ? ` until ${new Date(moderation.bannedUntil).toLocaleString()}`

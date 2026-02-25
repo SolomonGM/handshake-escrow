@@ -826,6 +826,26 @@ const Settings = () => {
   };
   const discordSyncLabel = discordSyncStatusMap[discordStatus?.syncStatus] || 'Not Synced';
   const discordExpectedRoleId = discordStatus?.expectedRoleId || null;
+  const discordConnectedDate = discordStatus?.connectedAt
+    ? new Date(discordStatus.connectedAt).toLocaleDateString()
+    : null;
+  const discordLastSynced = discordStatus?.lastSyncedAt
+    ? new Date(discordStatus.lastSyncedAt).toLocaleString()
+    : 'Never';
+  const discordConnectionChipClass = discordIsConnected
+    ? 'bg-color-4/20 text-color-4 border border-color-4/40'
+    : 'bg-color-3/20 text-color-3 border border-color-3/40';
+  const discordGuildChipClass = discordStatus?.guildMember
+    ? 'bg-color-4/20 text-color-4 border border-color-4/40'
+    : 'bg-n-5/80 text-n-3 border border-n-5';
+  const discordSyncChipClassMap = {
+    synced: 'bg-color-4/20 text-color-4 border border-color-4/40',
+    failed: 'bg-color-3/20 text-color-3 border border-color-3/40',
+    pending_guild_join: 'bg-n-5/80 text-n-3 border border-n-5',
+    skipped: 'bg-n-5/80 text-n-3 border border-n-5',
+    never: 'bg-n-5/80 text-n-3 border border-n-5'
+  };
+  const discordSyncChipClass = discordSyncChipClassMap[discordStatus?.syncStatus] || 'bg-n-5/80 text-n-3 border border-n-5';
 
   // Calculate total passes used (1 per transaction)
 
@@ -1021,99 +1041,129 @@ const Settings = () => {
                     </div>
                   )}
 
-                  <div className="mt-8 p-5 bg-n-6 rounded-lg border border-n-5/60">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div>
-                        <h3 className="text-n-1 font-semibold">Discord Integration</h3>
-                        <p className="text-n-4 text-sm mt-1">
-                          Link your Discord account to verify guild membership and sync your Handshake role.
-                        </p>
-                      </div>
-                      <span className={`px-3 py-1 text-xs rounded-full font-semibold ${
-                        discordIsConnected
-                          ? 'bg-color-4/20 text-color-4'
-                          : 'bg-color-3/20 text-color-3'
-                      }`}>
-                        {discordIsConnected ? 'Connected' : 'Not Connected'}
-                      </span>
-                    </div>
-
-                    {(discordMessage || discordError) && (
-                      <div
-                        className={`mt-4 p-3 rounded-lg text-sm ${
-                          discordError
-                            ? 'bg-color-3/10 border border-color-3/40 text-color-3'
-                            : 'bg-color-4/10 border border-color-4/40 text-color-4'
-                        }`}
-                      >
-                        {discordError || discordMessage}
-                      </div>
-                    )}
-
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Account</p>
-                        <p className="text-n-1 text-sm break-all">{discordDisplayName}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Guild Status</p>
-                        <p className={`text-sm font-semibold ${
-                          discordStatus?.guildMember ? 'text-color-4' : 'text-color-3'
-                        }`}>
-                          {discordIsConnected ? discordGuildStatus : 'Not Connected'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wider text-n-4 mb-1">Role Sync</p>
-                        <p className="text-n-1 text-sm">{discordSyncLabel}</p>
-                        <p className="text-xs text-n-4 mt-1 break-all">
-                          {discordExpectedRoleId
-                            ? `Expected Discord role ID: ${discordExpectedRoleId}`
-                            : 'Discord role ID for this site role is not configured yet.'}
-                        </p>
+                  <div className="mt-8 rounded-2xl border border-n-5/70 bg-n-6/70 overflow-hidden">
+                    <div className="px-5 sm:px-6 py-5 border-b border-n-5/70 bg-n-7/70">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#5865F2]/20 border border-[#5865F2]/40 flex items-center justify-center text-[#8EA1FF]">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 8h2a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2h2m2 0V6a3 3 0 016 0v2m-6 0h6" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 className="text-n-1 font-semibold">Discord Integration</h3>
+                            <p className="text-n-4 text-sm mt-1">
+                              Connect your account to verify guild membership and keep Discord roles synced with Handshake.
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`px-3 py-1 text-xs rounded-full font-semibold whitespace-nowrap ${discordConnectionChipClass}`}>
+                          {discordIsConnected ? 'Connected' : 'Not Connected'}
+                        </span>
                       </div>
                     </div>
 
-                    {discordStatus?.syncMessage && (
-                      <p className="mt-3 text-xs text-n-4">{discordStatus.syncMessage}</p>
-                    )}
+                    <div className="px-5 sm:px-6 py-5 space-y-5">
+                      {(discordMessage || discordError) && (
+                        <div
+                          className={`p-3 rounded-lg text-sm ${
+                            discordError
+                              ? 'bg-color-3/10 border border-color-3/40 text-color-3'
+                              : 'bg-color-4/10 border border-color-4/40 text-color-4'
+                          }`}
+                        >
+                          {discordError || discordMessage}
+                        </div>
+                      )}
 
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <Button
-                        onClick={handleConnectDiscord}
-                        disabled={isDiscordConnecting}
-                        className="min-w-[220px]"
-                      >
-                        {isDiscordConnecting
-                          ? 'Opening Discord...'
-                          : (discordIsConnected ? 'Reconnect Discord' : 'Connect Discord')}
-                      </Button>
+                      <div className="rounded-xl border border-n-5 bg-n-7/70 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-12 h-12 rounded-full bg-n-5 border border-n-4/40 overflow-hidden flex items-center justify-center text-n-1 font-semibold">
+                            {discordStatus?.avatarUrl ? (
+                              <img src={discordStatus.avatarUrl} alt="Discord avatar" className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{discordDisplayName?.charAt(0)?.toUpperCase() || 'D'}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs uppercase tracking-wider text-n-4">Linked Discord</p>
+                            <p className="text-n-1 text-sm font-medium truncate">{discordDisplayName}</p>
+                            <p className="text-n-4 text-xs mt-1">
+                              {discordIsConnected
+                                ? `Connected on ${discordConnectedDate || 'Unknown date'}`
+                                : 'No Discord account linked yet'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-xs text-n-4">
+                          Last role sync: <span className="text-n-2">{discordLastSynced}</span>
+                        </div>
+                      </div>
 
-                      {discordIsConnected && (
-                        <>
-                          <Button
-                            onClick={handleSyncDiscordRole}
-                            disabled={isDiscordSyncing}
-                            white
-                            className="min-w-[180px]"
-                          >
-                            {isDiscordSyncing ? 'Syncing...' : 'Sync Role'}
-                          </Button>
-                          <Button
-                            onClick={handleDisconnectDiscord}
-                            disabled={isDiscordDisconnecting}
-                            white
-                            className="min-w-[180px]"
-                          >
-                            {isDiscordDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                          </Button>
-                        </>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="rounded-xl border border-n-5 bg-n-7/70 p-4">
+                          <p className="text-xs uppercase tracking-wider text-n-4 mb-2">Guild Status</p>
+                          <span className={`inline-flex px-3 py-1 text-xs rounded-full font-semibold ${discordGuildChipClass}`}>
+                            {discordIsConnected ? discordGuildStatus : 'Not Connected'}
+                          </span>
+                        </div>
+                        <div className="rounded-xl border border-n-5 bg-n-7/70 p-4">
+                          <p className="text-xs uppercase tracking-wider text-n-4 mb-2">Role Sync</p>
+                          <span className={`inline-flex px-3 py-1 text-xs rounded-full font-semibold ${discordSyncChipClass}`}>
+                            {discordSyncLabel}
+                          </span>
+                        </div>
+                        <div className="rounded-xl border border-n-5 bg-n-7/70 p-4">
+                          <p className="text-xs uppercase tracking-wider text-n-4 mb-2">Mapped Discord Role</p>
+                          <p className="text-n-1 text-sm break-all">
+                            {discordExpectedRoleId || 'Not configured'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {discordStatus?.syncMessage && (
+                        <p className="text-xs text-n-4 rounded-lg border border-n-5 bg-n-7/60 px-3 py-2">
+                          {discordStatus.syncMessage}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <Button
+                          onClick={handleConnectDiscord}
+                          disabled={isDiscordConnecting}
+                          className="min-w-[220px]"
+                        >
+                          {isDiscordConnecting
+                            ? 'Opening Discord...'
+                            : (discordIsConnected ? 'Reconnect Discord' : 'Connect Discord')}
+                        </Button>
+
+                        {discordIsConnected && (
+                          <>
+                            <Button
+                              onClick={handleSyncDiscordRole}
+                              disabled={isDiscordSyncing}
+                              white
+                              className="min-w-[180px]"
+                            >
+                              {isDiscordSyncing ? 'Syncing...' : 'Sync Role'}
+                            </Button>
+                            <Button
+                              onClick={handleDisconnectDiscord}
+                              disabled={isDiscordDisconnecting}
+                              white
+                              className="min-w-[180px]"
+                            >
+                              {isDiscordDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+
+                      {isDiscordLoading && (
+                        <p className="text-xs text-n-4">Refreshing Discord status...</p>
                       )}
                     </div>
-
-                    {isDiscordLoading && (
-                      <p className="mt-3 text-xs text-n-4">Refreshing Discord status...</p>
-                    )}
                   </div>
                 </div>
               )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import ButtonGradient from "./assets/svg/ButtonGradient";
 import About from "./components/About";
 import BlockchainVerification from "./components/BlockchainVerification";
@@ -24,6 +24,7 @@ import DocsFees from "./components/docs/DocsFees";
 import DocsOther from "./components/docs/DocsOther";
 import DocsTerms from "./components/docs/DocsTerms";
 import AllTransactions from "./components/AllTransactions";
+import BanLockOverlay from "./components/BanLockOverlay";
 
 const PageLayout = ({ children }) => (
   <div className="min-h-[calc(100vh-4.75rem)] lg:min-h-[calc(100vh-5.25rem)] flex flex-col">
@@ -151,7 +152,9 @@ const AllTransactionsPage = () => (
   </PageLayout>
 );
 
-const App = () => {
+const AppShell = () => {
+  const { user } = useAuth();
+
   // Persist chat state in localStorage
   const [isChatOpen, setIsChatOpen] = useState(() => {
     const saved = localStorage.getItem('chatOpen');
@@ -167,8 +170,10 @@ const App = () => {
     });
   };
 
+  const activeBan = user?.siteModeration?.activeBan ? user.siteModeration.ban : null;
+
   return (
-    <AuthProvider>
+    <>
       <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-x-hidden transition-[margin] duration-300 ${
         isChatOpen ? 'ml-0 lg:ml-80' : 'ml-0'
       }`}>
@@ -214,8 +219,15 @@ const App = () => {
       </div>
       <LiveChat isOpen={isChatOpen} onClose={toggleChat} />
       <ButtonGradient />
-    </AuthProvider>
+      <BanLockOverlay banDetails={activeBan} />
+    </>
   );
 };
+
+const App = () => (
+  <AuthProvider>
+    <AppShell />
+  </AuthProvider>
+);
 
 export default App;

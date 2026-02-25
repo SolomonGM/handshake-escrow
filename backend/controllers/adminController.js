@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
 import TradeTicket from '../models/TradeTicket.js';
+import ModerationAction from '../models/ModerationAction.js';
 import { refreshLeaderboard } from '../services/leaderboardService.js';
 import { syncDiscordRoleForUserDocument } from '../services/discordIntegrationService.js';
+import { getBanResetUpdate } from '../services/moderationService.js';
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
@@ -709,6 +711,226 @@ export const getTradeTickets = async (req, res) => {
     });
   } catch (error) {
     console.error('Get trade tickets error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get moderation action history (Developer only)
+export const getModerationActions = async (req, res) => {
+  try {
+    if (req.user.rank !== 'developer') {
+      return res.status(403).json({ message: 'Access denied. Developer rank required.' });
+    }
+
+    const search = toTrimmedString(req.query.search);
+    const actionTypeFilter = toTrimmedString(req.query.actionType, 'all').toLowerCase();
+    const scopeFilter = toTrimmedString(req.query.scope, 'all').toLowerCase();
+    const { page, pageSize } = parsePageParams(req);
+    const query = {};
+
+    const sortFieldMap = {
+      createdAt: 'createdAt',
+      actionType: 'actionType',
+      scope: 'scope',
+      expiresAt: 'expiresAt',
+      ticketId: 'ticketId'
+    };
+    const requestedSortBy = toTrimmedString(req.query.sortBy, 'createdAt');
+    const sortField = resolveSortField(requestedSortBy, sortFieldMap, 'createdAt');
+    const sortOrder = resolveSortOrder(req.query.sortOrder, 'desc');
+    const sort = buildSort(sortField, sortOrder);
+
+    if (actionTypeFilter && actionTypeFilter !== 'all') {
+      query.actionType = actionTypeFilter;
+    }
+
+    if (['chat', 'site', 'ticket', 'pass', 'system'].includes(scopeFilter)) {
+      query.scope = scopeFilter;
+    }
+
+    if (search) {
+      const regex = new RegExp(escapeRegExp(search), 'i');
+      const userMatches = await User.find({
+        $or: [
+          { username: regex },
+          { userId: regex },
+          { email: regex }
+        ]
+      }).select('_id');
+      const matchedUserIds = userMatches.map((user) => user._id);
+
+      const orConditions = [
+        { reason: regex },
+        { ticketId: regex },
+        { actionType: regex }
+      ];
+
+      if (matchedUserIds.length) {
+        orConditions.push({ targetUser: { $in: matchedUserIds } });
+        orConditions.push({ moderatorUser: { $in: matchedUserIds } });
+      }
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      query.$or = orConditions;
+    }
+
+    const totalCount = await ModerationAction.countDocuments(query);
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const safePage = Math.min(page, totalPages);
+
+    let actionsQuery = ModerationAction.find(query)
+      .populate('targetUser', 'username userId avatar role rank')
+      .populate('moderatorUser', 'username userId avatar role rank')
+      .sort(sort)
+      .skip((safePage - 1) * pageSize)
+      .limit(pageSize);
+
+    if (['actionType', 'scope', 'ticketId'].includes(requestedSortBy)) {
+      actionsQuery = actionsQuery.collation({ locale: 'en', strength: 2 });
+    }
+
+    const actions = await actionsQuery.lean();
+
+    res.json({
+      actions,
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages
+    });
+  } catch (error) {
+    console.error('Get moderation actions error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get active site bans (Developer only)
+export const getActiveBans = async (req, res) => {
+  try {
+    if (req.user.rank !== 'developer') {
+      return res.status(403).json({ message: 'Access denied. Developer rank required.' });
+    }
+
+    const now = new Date();
+    await User.updateMany(
+      {
+        'chatModeration.isBanned': true,
+        'chatModeration.bannedUntil': { $ne: null, $lte: now }
+      },
+      {
+        $set: getBanResetUpdate()
+      }
+    );
+
+    const search = toTrimmedString(req.query.search);
+    const permanenceFilter = toTrimmedString(req.query.permanence, 'all').toLowerCase();
+    const { page, pageSize } = parsePageParams(req);
+    const query = {
+      'chatModeration.isBanned': true,
+      $or: [
+        { 'chatModeration.bannedUntil': null },
+        { 'chatModeration.bannedUntil': { $gt: now } }
+      ]
+    };
+
+    const sortFieldMap = {
+      bannedAt: 'chatModeration.bannedAt',
+      bannedUntil: 'chatModeration.bannedUntil',
+      username: 'username',
+      createdAt: 'createdAt'
+    };
+    const requestedSortBy = toTrimmedString(req.query.sortBy, 'bannedAt');
+    const sortField = resolveSortField(requestedSortBy, sortFieldMap, 'chatModeration.bannedAt');
+    const sortOrder = resolveSortOrder(req.query.sortOrder, 'desc');
+    const sort = buildSort(sortField, sortOrder);
+
+    if (permanenceFilter === 'permanent') {
+      query['chatModeration.bannedUntil'] = null;
+      delete query.$or;
+    } else if (permanenceFilter === 'temporary') {
+      query['chatModeration.bannedUntil'] = { $gt: now };
+      delete query.$or;
+    }
+
+    if (search) {
+      const regex = new RegExp(escapeRegExp(search), 'i');
+      const moderatorMatches = await User.find({
+        $or: [
+          { username: regex },
+          { userId: regex }
+        ]
+      }).select('_id');
+      const moderatorIds = moderatorMatches.map((user) => user._id);
+
+      const orConditions = [
+        { username: regex },
+        { userId: regex },
+        { email: regex },
+        { 'chatModeration.bannedReason': regex }
+      ];
+
+      if (moderatorIds.length) {
+        orConditions.push({ 'chatModeration.bannedBy': { $in: moderatorIds } });
+      }
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      query.$and = query.$and || [];
+      query.$and.push({ $or: orConditions });
+    }
+
+    const totalCount = await User.countDocuments(query);
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const safePage = Math.min(page, totalPages);
+
+    let bansQuery = User.find(query)
+      .select('username userId avatar role rank chatModeration createdAt')
+      .populate('chatModeration.bannedBy', 'username userId role rank')
+      .sort(sort)
+      .skip((safePage - 1) * pageSize)
+      .limit(pageSize);
+
+    if (requestedSortBy === 'username') {
+      bansQuery = bansQuery.collation({ locale: 'en', strength: 2 });
+    }
+
+    const users = await bansQuery.lean();
+    const bans = users.map((user) => ({
+      _id: user._id,
+      username: user.username,
+      userId: user.userId,
+      avatar: user.avatar,
+      role: user.role,
+      rank: user.rank,
+      reason: user.chatModeration?.bannedReason || null,
+      bannedAt: user.chatModeration?.bannedAt || null,
+      bannedUntil: user.chatModeration?.bannedUntil || null,
+      isPermanent: !user.chatModeration?.bannedUntil,
+      bannedBy: user.chatModeration?.bannedBy
+        ? {
+          _id: user.chatModeration.bannedBy._id,
+          username: user.chatModeration.bannedBy.username,
+          userId: user.chatModeration.bannedBy.userId,
+          role: user.chatModeration.bannedBy.role,
+          rank: user.chatModeration.bannedBy.rank
+        }
+        : null
+    }));
+
+    res.json({
+      bans,
+      page: safePage,
+      pageSize,
+      totalCount,
+      totalPages
+    });
+  } catch (error) {
+    console.error('Get active bans error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

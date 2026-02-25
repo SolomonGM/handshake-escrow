@@ -59,6 +59,20 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
 
+  useEffect(() => {
+    const handleExternalUserUpdate = (event) => {
+      const nextUser = event?.detail;
+      if (nextUser) {
+        setUser(nextUser);
+      }
+    };
+
+    window.addEventListener('handshake:user-updated', handleExternalUserUpdate);
+    return () => {
+      window.removeEventListener('handshake:user-updated', handleExternalUserUpdate);
+    };
+  }, []);
+
   const register = async (userData) => {
     try {
       setError(null);

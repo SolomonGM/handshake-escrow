@@ -12,7 +12,9 @@ import {
   getTradeRequests,
   updateTradeRequest,
   deleteTradeRequest,
-  getTradeTickets
+  getTradeTickets,
+  getModerationActions,
+  getActiveBans
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -32,5 +34,7 @@ router.get('/trade-requests', protect, getTradeRequests);
 router.put('/trade-requests/:requestId', protect, updateTradeRequest);
 router.delete('/trade-requests/:requestId', protect, deleteTradeRequest);
 router.get('/tickets', protect, getTradeTickets);
+router.get('/moderation-actions', protect, getModerationActions);
+router.get('/active-bans', protect, getActiveBans);
 
 export default router;

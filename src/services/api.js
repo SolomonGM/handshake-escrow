@@ -28,6 +28,31 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const isAccountBanned = (
+      error.response?.status === 403 &&
+      error.response?.data?.code === 'ACCOUNT_BANNED'
+    );
+
+    if (isAccountBanned && typeof window !== 'undefined') {
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          const nextUser = {
+            ...parsedUser,
+            siteModeration: error.response?.data?.moderation || {
+              activeBan: true,
+              ban: error.response?.data?.ban || null
+            }
+          };
+          localStorage.setItem('user', JSON.stringify(nextUser));
+          window.dispatchEvent(new CustomEvent('handshake:user-updated', { detail: nextUser }));
+        }
+      } catch (parseError) {
+        console.error('Failed to persist banned moderation state:', parseError);
+      }
+    }
+
     // Only redirect on 401 if it's not a login/register attempt (those should handle their own errors)
     const isAuthEndpoint = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register');
     
@@ -235,6 +260,20 @@ export const adminAPI = {
 
   getTradeTickets: async (options = {}) => {
     const response = await api.get('/admin/tickets', {
+      params: buildAdminListParams(options)
+    });
+    return response.data;
+  },
+
+  getModerationActions: async (options = {}) => {
+    const response = await api.get('/admin/moderation-actions', {
+      params: buildAdminListParams(options)
+    });
+    return response.data;
+  },
+
+  getActiveBans: async (options = {}) => {
+    const response = await api.get('/admin/active-bans', {
       params: buildAdminListParams(options)
     });
     return response.data;

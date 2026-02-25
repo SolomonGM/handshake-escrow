@@ -42,6 +42,25 @@ const AdminPanel = () => {
   const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
   const [ticketSortBy, setTicketSortBy] = useState('updatedAt');
   const [ticketSortOrder, setTicketSortOrder] = useState('desc');
+  const [moderationActions, setModerationActions] = useState([]);
+  const [moderationSearchTerm, setModerationSearchTerm] = useState('');
+  const [debouncedModerationSearch, setDebouncedModerationSearch] = useState('');
+  const [moderationPage, setModerationPage] = useState(1);
+  const [moderationTotalPages, setModerationTotalPages] = useState(1);
+  const [moderationTotalCount, setModerationTotalCount] = useState(0);
+  const [moderationScopeFilter, setModerationScopeFilter] = useState('all');
+  const [moderationActionTypeFilter, setModerationActionTypeFilter] = useState('all');
+  const [moderationSortBy, setModerationSortBy] = useState('createdAt');
+  const [moderationSortOrder, setModerationSortOrder] = useState('desc');
+  const [activeBans, setActiveBans] = useState([]);
+  const [banSearchTerm, setBanSearchTerm] = useState('');
+  const [debouncedBanSearch, setDebouncedBanSearch] = useState('');
+  const [bansPage, setBansPage] = useState(1);
+  const [bansTotalPages, setBansTotalPages] = useState(1);
+  const [bansTotalCount, setBansTotalCount] = useState(0);
+  const [banPermanenceFilter, setBanPermanenceFilter] = useState('all');
+  const [banSortBy, setBanSortBy] = useState('bannedAt');
+  const [banSortOrder, setBanSortOrder] = useState('desc');
 
   const PAGE_SIZE = 25;
   const navigate = useNavigate();
@@ -70,6 +89,20 @@ const AdminPanel = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [ticketSearchTerm]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedModerationSearch(moderationSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [moderationSearchTerm]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedBanSearch(banSearchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [banSearchTerm]);
 
   useEffect(() => {
     if (!hasInitialized) return;
@@ -106,6 +139,31 @@ const AdminPanel = () => {
     ticketStatusFilter,
     ticketSortBy,
     ticketSortOrder
+  ]);
+
+  useEffect(() => {
+    if (!hasInitialized) return;
+    loadModerationActions();
+  }, [
+    hasInitialized,
+    debouncedModerationSearch,
+    moderationPage,
+    moderationScopeFilter,
+    moderationActionTypeFilter,
+    moderationSortBy,
+    moderationSortOrder
+  ]);
+
+  useEffect(() => {
+    if (!hasInitialized) return;
+    loadActiveBans();
+  }, [
+    hasInitialized,
+    debouncedBanSearch,
+    bansPage,
+    banPermanenceFilter,
+    banSortBy,
+    banSortOrder
   ]);
 
   const loadUsersAndStats = async () => {
@@ -189,6 +247,51 @@ const AdminPanel = () => {
       }
     } catch (error) {
       setMessage('Error loading trade tickets: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const loadModerationActions = async () => {
+    try {
+      const moderationData = await adminAPI.getModerationActions({
+        search: debouncedModerationSearch,
+        page: moderationPage,
+        pageSize: PAGE_SIZE,
+        scope: moderationScopeFilter,
+        actionType: moderationActionTypeFilter,
+        sortBy: moderationSortBy,
+        sortOrder: moderationSortOrder
+      });
+
+      setModerationActions(moderationData.actions || []);
+      setModerationTotalPages(moderationData.totalPages || 1);
+      setModerationTotalCount(moderationData.totalCount || 0);
+      if (moderationData.page && moderationData.page !== moderationPage) {
+        setModerationPage(moderationData.page);
+      }
+    } catch (error) {
+      setMessage('Error loading moderation actions: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const loadActiveBans = async () => {
+    try {
+      const bansData = await adminAPI.getActiveBans({
+        search: debouncedBanSearch,
+        page: bansPage,
+        pageSize: PAGE_SIZE,
+        permanence: banPermanenceFilter,
+        sortBy: banSortBy,
+        sortOrder: banSortOrder
+      });
+
+      setActiveBans(bansData.bans || []);
+      setBansTotalPages(bansData.totalPages || 1);
+      setBansTotalCount(bansData.totalCount || 0);
+      if (bansData.page && bansData.page !== bansPage) {
+        setBansPage(bansData.page);
+      }
+    } catch (error) {
+      setMessage('Error loading active bans: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -298,6 +401,8 @@ const AdminPanel = () => {
 
   const filteredTradeRequests = tradeRequests;
   const filteredTickets = tradeTickets;
+  const filteredModerationActions = moderationActions;
+  const filteredBans = activeBans;
 
   const startEditingTradeRequest = (request) => {
     setEditingTradeRequestId(request._id);
@@ -414,6 +519,36 @@ const AdminPanel = () => {
     return styles[status] || 'bg-n-5 text-n-3';
   };
 
+  const getModerationActionStyle = (actionType) => {
+    const value = String(actionType || '').toLowerCase();
+    const styles = {
+      ban: 'bg-red-500/20 text-red-300',
+      ban_temporary: 'bg-red-500/20 text-red-300',
+      unban: 'bg-emerald-500/20 text-emerald-300',
+      mute: 'bg-amber-500/20 text-amber-300',
+      timeout: 'bg-amber-500/20 text-amber-300',
+      unmute: 'bg-sky-500/20 text-sky-300',
+      ticket_refund: 'bg-orange-500/20 text-orange-300',
+      pass_refund: 'bg-orange-500/20 text-orange-300',
+      pass_refund_prompt: 'bg-yellow-500/20 text-yellow-300',
+      pass_return: 'bg-cyan-500/20 text-cyan-300',
+      pass_force_complete: 'bg-indigo-500/20 text-indigo-300'
+    };
+    return styles[value] || 'bg-n-5 text-n-3';
+  };
+
+  const getModerationScopeStyle = (scope) => {
+    const value = String(scope || '').toLowerCase();
+    const styles = {
+      site: 'bg-red-500/15 text-red-200',
+      chat: 'bg-blue-500/15 text-blue-200',
+      ticket: 'bg-emerald-500/15 text-emerald-200',
+      pass: 'bg-orange-500/15 text-orange-200',
+      system: 'bg-n-5 text-n-3'
+    };
+    return styles[value] || 'bg-n-5 text-n-3';
+  };
+
   const renderPagination = ({ page, totalPages, totalCount, onPageChange }) => {
     if (totalPages <= 1) return null;
     return (
@@ -479,6 +614,8 @@ const AdminPanel = () => {
           loadUsersAndStats();
           loadTradeTickets();
           loadTradeRequests();
+          loadModerationActions();
+          loadActiveBans();
         }}>
           Refresh Data
         </Button>
@@ -905,6 +1042,278 @@ const AdminPanel = () => {
         {filteredTickets.length === 0 && (
           <div className="text-center py-8 text-n-4">
             No trade tickets found matching your search.
+          </div>
+        )}
+      </div>
+
+      {/* Active Bans Section */}
+      <div className="mt-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="h4 text-n-1">Active Bans</h3>
+            <p className="text-n-4 text-sm">Live site bans with moderator and expiration details</p>
+          </div>
+          <Button onClick={loadActiveBans}>Refresh Bans</Button>
+        </div>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <input
+            type="text"
+            placeholder="Search by username, user ID, reason, or moderator..."
+            value={banSearchTerm}
+            onChange={(e) => {
+              setBanSearchTerm(e.target.value);
+              setBansPage(1);
+            }}
+            className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+          />
+          <select
+            value={banPermanenceFilter}
+            onChange={(e) => {
+              setBanPermanenceFilter(e.target.value);
+              setBansPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+          >
+            <option value="all">All Bans</option>
+            <option value="permanent">Permanent</option>
+            <option value="temporary">Temporary</option>
+          </select>
+          <div className="flex gap-3 md:col-span-2">
+            <select
+              value={banSortBy}
+              onChange={(e) => {
+                setBanSortBy(e.target.value);
+                setBansPage(1);
+              }}
+              className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+            >
+              <option value="bannedAt">Sort: Issued</option>
+              <option value="bannedUntil">Sort: Expires</option>
+              <option value="username">Sort: Username</option>
+              <option value="createdAt">Sort: Joined</option>
+            </select>
+            <select
+              value={banSortOrder}
+              onChange={(e) => {
+                setBanSortOrder(e.target.value);
+                setBansPage(1);
+              }}
+              className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-n-7 border-b border-n-5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">User</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Reason</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Issued</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Expires</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Moderator</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-n-5">
+                {filteredBans.map((ban) => (
+                  <tr key={ban._id} className="hover:bg-n-7/50 transition-colors">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-n-1 font-medium">@{ban.username}</span>
+                        <span className="text-xs text-n-4">{ban.userId || 'N/A'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-n-2 max-w-[340px]">
+                      <div className="line-clamp-2">{ban.reason || 'No reason provided'}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-3">
+                      {ban.bannedAt ? new Date(ban.bannedAt).toLocaleString() : 'Unknown'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1">
+                      {ban.isPermanent
+                        ? <span className="text-red-300 font-semibold">Permanent</span>
+                        : (ban.bannedUntil ? new Date(ban.bannedUntil).toLocaleString() : 'Unknown')}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-2">
+                      {ban.bannedBy?.username ? `@${ban.bannedBy.username}` : 'Unknown'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${ban.isPermanent ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                        {ban.isPermanent ? 'Permanent' : 'Temporary'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {renderPagination({
+          page: bansPage,
+          totalPages: bansTotalPages,
+          totalCount: bansTotalCount,
+          onPageChange: setBansPage
+        })}
+
+        {filteredBans.length === 0 && (
+          <div className="text-center py-8 text-n-4">
+            No active bans found for the current filters.
+          </div>
+        )}
+      </div>
+
+      {/* Moderation Actions Section */}
+      <div className="mt-12">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="h4 text-n-1">Moderation Actions</h3>
+            <p className="text-n-4 text-sm">Searchable audit timeline for moderation, ticket, and pass actions</p>
+          </div>
+          <Button onClick={loadModerationActions}>Refresh Actions</Button>
+        </div>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <input
+            type="text"
+            placeholder="Search by user, reason, ticket ID, or action..."
+            value={moderationSearchTerm}
+            onChange={(e) => {
+              setModerationSearchTerm(e.target.value);
+              setModerationPage(1);
+            }}
+            className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] transition-all"
+          />
+          <select
+            value={moderationScopeFilter}
+            onChange={(e) => {
+              setModerationScopeFilter(e.target.value);
+              setModerationPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] transition-all"
+          >
+            <option value="all">All Scopes</option>
+            <option value="site">Site</option>
+            <option value="chat">Chat</option>
+            <option value="ticket">Ticket</option>
+            <option value="pass">Pass</option>
+            <option value="system">System</option>
+          </select>
+          <select
+            value={moderationActionTypeFilter}
+            onChange={(e) => {
+              setModerationActionTypeFilter(e.target.value);
+              setModerationPage(1);
+            }}
+            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] transition-all"
+          >
+            <option value="all">All Actions</option>
+            <option value="ban">Ban</option>
+            <option value="ban_temporary">Temporary Ban</option>
+            <option value="unban">Unban</option>
+            <option value="mute">Mute</option>
+            <option value="timeout">Timeout</option>
+            <option value="unmute">Unmute</option>
+            <option value="ticket_refund">Ticket Refund</option>
+            <option value="pass_refund">Pass Refund</option>
+            <option value="pass_refund_prompt">Pass Refund Prompt</option>
+            <option value="pass_return">Pass Return</option>
+            <option value="pass_force_complete">Pass Force Complete</option>
+          </select>
+          <div className="flex gap-3 md:col-span-2">
+            <select
+              value={moderationSortBy}
+              onChange={(e) => {
+                setModerationSortBy(e.target.value);
+                setModerationPage(1);
+              }}
+              className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] transition-all"
+            >
+              <option value="createdAt">Sort: Time</option>
+              <option value="actionType">Sort: Action</option>
+              <option value="scope">Sort: Scope</option>
+              <option value="expiresAt">Sort: Expires</option>
+              <option value="ticketId">Sort: Ticket ID</option>
+            </select>
+            <select
+              value={moderationSortOrder}
+              onChange={(e) => {
+                setModerationSortOrder(e.target.value);
+                setModerationPage(1);
+              }}
+              className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#06b6d4] focus:ring-1 focus:ring-[#06b6d4] transition-all"
+            >
+              <option value="desc">Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-n-7 border-b border-n-5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Action</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Scope</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Target</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Moderator</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Reason</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Reference</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-n-5">
+                {filteredModerationActions.map((action) => (
+                  <tr key={action._id} className="hover:bg-n-7/50 transition-colors">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-3">
+                      {action.createdAt ? new Date(action.createdAt).toLocaleString() : 'N/A'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getModerationActionStyle(action.actionType)}`}>
+                        {String(action.actionType || 'unknown').replaceAll('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold uppercase ${getModerationScopeStyle(action.scope)}`}>
+                        {action.scope || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1">
+                      {action.targetUser?.username ? `@${action.targetUser.username}` : 'System'}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-n-2">
+                      {action.moderatorUser?.username ? `@${action.moderatorUser.username}` : 'System'}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-n-2 max-w-[360px]">
+                      <div className="line-clamp-2">{action.reason || 'No reason provided'}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-xs text-n-3 font-mono">
+                      {action.ticketId || (action.expiresAt ? new Date(action.expiresAt).toLocaleString() : 'N/A')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {renderPagination({
+          page: moderationPage,
+          totalPages: moderationTotalPages,
+          totalCount: moderationTotalCount,
+          onPageChange: setModerationPage
+        })}
+
+        {filteredModerationActions.length === 0 && (
+          <div className="text-center py-8 text-n-4">
+            No moderation actions found matching your filters.
           </div>
         )}
       </div>

@@ -21,7 +21,7 @@ import {
   verifyPasswordResetCode,
   resetPassword
 } from '../controllers/authController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, protectAllowBanned } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -107,7 +107,7 @@ router.post('/forgot-password/verify', passwordResetVerifyLimiter, verifyPasswor
 router.post('/forgot-password/reset', passwordResetVerifyLimiter, resetPassword);
 
 // Protected routes (require authentication)
-router.get('/me', protect, getMe);
+router.get('/me', protectAllowBanned, getMe);
 router.put('/profile', protect, updateProfile);
 router.get('/profile/:userId', protect, getUserProfile);
 router.post('/2fa/request', twoFactorRequestLimiter, protect, requestTwoFactorCode);
