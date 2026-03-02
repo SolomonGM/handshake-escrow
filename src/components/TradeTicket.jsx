@@ -5,6 +5,7 @@ import axios from "axios";
 import Section from "./Section";
 import { toast } from "../utils/toast";
 import { QRCodeSVG } from 'qrcode.react';
+import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from "../utils/rankDisplay";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -1056,7 +1057,16 @@ const TradeTicket = () => {
             {/* Chat Messages Area */}
             <div className="p-3 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 min-h-[55vh] sm:min-h-[650px] max-h-[62vh] sm:max-h-[650px] overflow-y-auto custom-scrollbar">
               
-              {messages.map((msg, index) => (
+              {messages.map((msg, index) => {
+                const senderId = msg.sender?._id ? String(msg.sender._id) : '';
+                const currentUserId = user?._id ? String(user._id) : '';
+                const senderRank = msg.sender?.rank || (senderId && currentUserId && senderId === currentUserId ? user?.rank : null);
+                const senderRankGradientClass = senderRank ? getRankGradientClass(senderRank) : '';
+                const senderRankColor = senderRank ? getRankColor(senderRank) : null;
+                const senderRankBadge = senderRank ? getRankBadge(senderRank) : null;
+                const senderRankLabel = senderRank ? getRankLabel(senderRank) : '';
+
+                return (
                 <div key={msg._id || index} className="flex gap-3 sm:gap-5">
                   {/* Avatar */}
                   <div className="flex-shrink-0">
@@ -1088,9 +1098,30 @@ const TradeTicket = () => {
                   {/* Message Content */}
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
-                      <span className="font-semibold text-n-1">
-                        {msg.isBot ? 'Handshake' : (msg.sender?.username || user?.username)}
-                      </span>
+                      {msg.isBot ? (
+                        <span className="font-semibold text-n-1">Handshake</span>
+                      ) : senderRankGradientClass ? (
+                        <span className={`font-semibold ${senderRankGradientClass}`}>
+                          {msg.sender?.username || user?.username}
+                        </span>
+                      ) : (
+                        <span
+                          className="font-semibold text-n-1"
+                          style={{ color: senderRankColor || undefined }}
+                        >
+                          {msg.sender?.username || user?.username}
+                        </span>
+                      )}
+                      {!msg.isBot && senderRankBadge && (
+                        <span className="w-4 h-4 flex items-center justify-center">
+                          <img
+                            src={senderRankBadge}
+                            alt={senderRankLabel ? `${senderRankLabel} badge` : 'Rank badge'}
+                            className="w-4 h-4"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        </span>
+                      )}
                       {msg.isBot && (
                         <span className="px-2 py-0.5 text-xs font-bold bg-[#10B981] text-white rounded">
                           BOT
@@ -1703,7 +1734,8 @@ const TradeTicket = () => {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               <div ref={messagesEndRef} />
             </div>

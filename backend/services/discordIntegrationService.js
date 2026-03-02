@@ -6,6 +6,7 @@ const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_OAUTH_STATE_TTL_SECONDS = 10 * 60;
 const DISCORD_DEFAULT_SCOPES = 'identify';
 const DISCORD_DEFAULT_SYNC_LOG_CHANNEL_ID = '1476298330022744085';
+const DISCORD_ROLE_SYNC_BYPASS_RANKS = new Set(['owner', 'developer']);
 
 const sanitizeRoleId = (value) => {
   const trimmed = String(value || '').trim();
@@ -25,6 +26,10 @@ const normalizeRankForDiscord = (value) => {
 
   return aliases[rank] || rank;
 };
+
+const shouldBypassDiscordRoleSyncForRank = (normalizedRank) => (
+  DISCORD_ROLE_SYNC_BYPASS_RANKS.has(String(normalizedRank || '').trim().toLowerCase())
+);
 
 const getLegacyDiscordRoleMap = () => ({
   user: sanitizeRoleId(process.env.DISCORD_ROLE_ID_USER),
@@ -590,7 +595,46 @@ export const syncDiscordRoleForUserDocument = async (userDoc, options = {}) => {
   const discordUserId = String(userDoc.discord.userId).trim();
   const normalizedRank = normalizeRankForDiscord(userDoc.rank);
   const targetRoleId = resolveDiscordRoleIdForRank(userDoc.rank, userDoc.role);
+  const bypassRoleSync = shouldBypassDiscordRoleSyncForRank(normalizedRank);
   const { isConfigured, botToken, guildId, message: missingConfigMessage } = getBotGuildConfig();
+
+  if (bypassRoleSync) {
+    let member = null;
+
+    if (isConfigured) {
+      try {
+        member = await fetchGuildMemberWithBotToken({
+          botToken,
+          guildId,
+          discordUserId
+        });
+      } catch (error) {
+        console.warn(`Discord member lookup skipped for privileged rank sync bypass: ${error.message}`);
+      }
+    }
+
+    userDoc.discord.guildMember = Boolean(member);
+    userDoc.discord.guildRoles = Array.isArray(member?.roles) ? member.roles : [];
+    userDoc.discord.syncedRoleId = targetRoleId || null;
+    userDoc.discord.syncedSiteRole = normalizedRank || String(userDoc.rank || '').trim().toLowerCase() || null;
+    userDoc.discord.syncStatus = 'synced';
+    userDoc.discord.syncMessage = 'Discord connected. Role sync is bypassed for privileged rank accounts.';
+    userDoc.discord.lastSyncedAt = new Date();
+
+    if (isConfigured && member) {
+      await postDiscordSyncLogEmbed({
+        userDoc,
+        targetRoleId,
+        trigger
+      });
+    }
+
+    return {
+      status: 'synced',
+      message: userDoc.discord.syncMessage,
+      targetRoleId
+    };
+  }
 
   if (!isConfigured) {
     userDoc.discord.syncStatus = 'failed';

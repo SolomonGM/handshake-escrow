@@ -80,6 +80,7 @@ Discord linking notes
 
 - Set your Discord application redirect URI to the same value as `DISCORD_OAUTH_REDIRECT_URI` (for example `https://your-api-domain.com/api/discord/callback`).
 - The `DISCORD_ROLE_ID_RANK_*` variables are required if you want automatic site-rank to Discord-role sync.
+- `owner` and `developer` ranks are treated as privileged and bypass Discord add/remove role operations; they are marked synced on connect/sync requests.
 - To enable Discord `/sync`, set Interactions Endpoint URL to `https://your-api-domain.com/api/discord/interactions` and configure `DISCORD_APPLICATION_PUBLIC_KEY`.
 
 ## Build and Preview

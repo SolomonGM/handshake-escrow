@@ -458,7 +458,7 @@ export const getTicket = async (req, res) => {
     const ticket = await TradeTicket.findOne({ ticketId })
       .populate('creator', 'username userId avatar')
       .populate('participants.user', 'username userId avatar')
-      .populate('messages.sender', 'username userId avatar');
+      .populate('messages.sender', 'username userId avatar rank');
 
     if (!ticket) {
       return res.status(404).json({
@@ -674,7 +674,7 @@ export const sendMessage = async (req, res) => {
           color: 'blue'
         });
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       };
 
@@ -685,14 +685,14 @@ export const sendMessage = async (req, res) => {
       if (staffCommand === 'rescan') {
         applyRescanTransaction(ticket);
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
       if (staffCommand === 'cancel-transaction') {
         applyCancelTransaction(ticket);
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
@@ -731,7 +731,7 @@ export const sendMessage = async (req, res) => {
 
         await ticket.save();
         scheduleTicketClosure(ticket._id, ticket.closeScheduledAt);
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
@@ -745,7 +745,7 @@ export const sendMessage = async (req, res) => {
           color: 'red'
         });
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
@@ -757,7 +757,7 @@ export const sendMessage = async (req, res) => {
           color: 'orange'
         });
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
@@ -771,7 +771,7 @@ export const sendMessage = async (req, res) => {
           color: 'red'
         });
         await ticket.save();
-        await ticket.populate('messages.sender', 'username userId avatar');
+        await ticket.populate('messages.sender', 'username userId avatar rank');
         return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
       }
 
@@ -830,7 +830,7 @@ export const sendMessage = async (req, res) => {
     }
 
     await ticket.save();
-    await ticket.populate('messages.sender', 'username userId avatar');
+    await ticket.populate('messages.sender', 'username userId avatar rank');
 
     res.json({
       success: true,
