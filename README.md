@@ -75,6 +75,7 @@ Backend (`backend/.env`)
 - `DISCORD_SETTINGS_REDIRECT_URL` optional full frontend settings URL override (default `<CLIENT_URL>/settings`)
 - `DISCORD_OAUTH_SCOPES` optional (defaults to `identify`)
 - `DISCORD_SYNC_LOG_CHANNEL_ID` optional channel id for sync log embeds (default `1476298330022744085`)
+- `DISCORD_COMPLETED_TICKET_CHANNEL_ID` optional channel id for completed ticket embeds (default `1439533047480586310`)
 
 Discord linking notes
 

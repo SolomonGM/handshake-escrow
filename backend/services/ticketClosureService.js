@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { getIo } from '../utils/socketRegistry.js';
 import { MAX_USD_FOR_XP, MAX_XP, RANK_THRESHOLDS, STAFF_RANKS } from '../utils/rankUtils.js';
 import { buildTransactionFeedItem } from './transactionFeedService.js';
+import { postCompletedTicketDiscordEmbed } from './discordTicketBroadcastService.js';
 
 const closureTimers = new Map();
 
@@ -120,9 +121,6 @@ export const applyTicketCompletionStats = async (ticket) => {
 
 const emitBroadcastIfNeeded = async (ticketId) => {
   const io = getIo();
-  if (!io) {
-    return;
-  }
 
   const ticket = await TradeTicket.findOneAndUpdate(
     { _id: ticketId, broadcastedAt: null },
@@ -138,7 +136,14 @@ const emitBroadcastIfNeeded = async (ticketId) => {
 
   const transaction = buildTransactionFeedItem(ticket);
   if (transaction) {
-    io.emit('transaction_completed', { transaction });
+    if (io) {
+      io.emit('transaction_completed', { transaction });
+    }
+
+    await postCompletedTicketDiscordEmbed({
+      ticket,
+      transaction
+    });
   }
 };
 

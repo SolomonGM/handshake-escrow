@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import socketService from "../services/socket";
 import { currencyFlags } from "../assets/currencies";
 import { formatTransactionId, getExplorerName, getExplorerUrl } from "../utils/blockchainUtils";
@@ -17,6 +17,7 @@ const COIN_FILTERS = [
   { value: "USDT", label: "USDT" },
   { value: "USDC", label: "USDC" }
 ];
+const COIN_FILTER_VALUES = new Set(COIN_FILTERS.map((filter) => filter.value));
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -54,15 +55,38 @@ const formatTimestamp = (completedAt, fallback) => {
 };
 
 const AllTransactions = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const normalizeCoinParam = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw || raw.toLowerCase() === 'all') {
+      return 'all';
+    }
+    const upper = raw.toUpperCase();
+    return COIN_FILTER_VALUES.has(upper) ? upper : 'all';
+  };
+
+  const normalizePageParam = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 1;
+    }
+    return Math.floor(parsed);
+  };
+
+  const initialSearch = String(searchParams.get('search') || '').trim();
+  const initialCoinFilter = normalizeCoinParam(searchParams.get('coin'));
+  const initialPage = normalizePageParam(searchParams.get('page'));
+
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [coinFilter, setCoinFilter] = useState("all");
-  const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [coinFilter, setCoinFilter] = useState(initialCoinFilter);
+  const [page, setPage] = useState(initialPage);
   const [pagination, setPagination] = useState({
-    page: 1,
+    page: initialPage,
     pageSize: PAGE_SIZE,
     total: 0,
     totalPages: 1
@@ -104,6 +128,28 @@ const AllTransactions = () => {
 
     return () => clearTimeout(debounceTimer);
   }, [searchInput]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams();
+
+    if (searchQuery) {
+      nextParams.set('search', searchQuery);
+    }
+
+    if (coinFilter !== 'all') {
+      nextParams.set('coin', coinFilter);
+    }
+
+    if (page > 1) {
+      nextParams.set('page', String(page));
+    }
+
+    const current = searchParams.toString();
+    const next = nextParams.toString();
+    if (current !== next) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [coinFilter, page, searchParams, searchQuery, setSearchParams]);
 
   useEffect(() => {
     fetchTransactions();
