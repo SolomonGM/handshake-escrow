@@ -105,7 +105,10 @@ const handleCodeDeliveryResult = async ({
   cleanup
 }) => {
   if (emailResult?.sent) {
-    return { ok: true };
+    return {
+      ok: true,
+      provider: emailResult.provider || null
+    };
   }
 
   const reason = emailResult?.reason || 'unknown';
@@ -132,11 +135,15 @@ const handleCodeDeliveryResult = async ({
 };
 
 const withDeliveryFallbackMessage = (message, deliveryStatus) => {
-  if (!deliveryStatus?.usedConsoleFallback) {
-    return message;
+  if (deliveryStatus?.usedConsoleFallback) {
+    return `${message} Email delivery is unavailable in development. Check backend logs for the code.`;
   }
 
-  return `${message} Email delivery is unavailable in development. Check backend logs for the code.`;
+  if (deliveryStatus?.provider === 'smtp') {
+    return `${message} If you do not see it, check your junk/spam folder.`;
+  }
+
+  return message;
 };
 
 // @desc    Get public auth security configuration
