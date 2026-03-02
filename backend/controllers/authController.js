@@ -124,7 +124,19 @@ const handleCodeDeliveryResult = async ({
   }
 
   console.log(`[${contextLabel}][dev] Code for ${emailAddress}: ${code}`);
-  return { ok: true };
+  return {
+    ok: true,
+    usedConsoleFallback: true,
+    fallbackReason: reason
+  };
+};
+
+const withDeliveryFallbackMessage = (message, deliveryStatus) => {
+  if (!deliveryStatus?.usedConsoleFallback) {
+    return message;
+  }
+
+  return `${message} Email delivery is unavailable in development. Check backend logs for the code.`;
 };
 
 // @desc    Get public auth security configuration
@@ -355,7 +367,7 @@ export const login = async (req, res, next) => {
       return res.status(200).json({
         success: true,
         requiresTwoFactor: true,
-        message: 'Two-factor code sent',
+        message: withDeliveryFallbackMessage('Two-factor code sent.', deliveryStatus),
         email: user.email,
         loginSessionToken,
         cooldownSeconds: Math.ceil(TWO_FACTOR_RESEND_COOLDOWN_MS / 1000),
@@ -600,7 +612,7 @@ export const resendLoginTwoFactorCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Verification code sent',
+      message: withDeliveryFallbackMessage('Verification code sent.', deliveryStatus),
       cooldownSeconds: Math.ceil(TWO_FACTOR_RESEND_COOLDOWN_MS / 1000),
       expiresInSeconds: Math.ceil(TWO_FACTOR_CODE_TTL_MS / 1000)
     });
@@ -847,9 +859,10 @@ export const requestTwoFactorCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: wasEnabled
-        ? 'Verification code sent'
-        : 'Two-factor setup code sent',
+      message: withDeliveryFallbackMessage(
+        wasEnabled ? 'Verification code sent.' : 'Two-factor setup code sent.',
+        deliveryStatus
+      ),
       cooldownSeconds: Math.ceil(TWO_FACTOR_RESEND_COOLDOWN_MS / 1000),
       expiresInSeconds: Math.ceil(TWO_FACTOR_CODE_TTL_MS / 1000)
     });
@@ -1151,7 +1164,10 @@ export const requestEmailChangeCurrentCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: `We sent a verification code to ${getMaskedEmail(user.email)}.`,
+      message: withDeliveryFallbackMessage(
+        `We sent a verification code to ${getMaskedEmail(user.email)}.`,
+        deliveryStatus
+      ),
       stage: 'verify-current',
       verificationSessionToken,
       cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
@@ -1275,7 +1291,10 @@ export const resendEmailChangeCurrentCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: `A new code was sent to ${getMaskedEmail(user.email)}.`,
+      message: withDeliveryFallbackMessage(
+        `A new code was sent to ${getMaskedEmail(user.email)}.`,
+        deliveryStatus
+      ),
       cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
       expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
     });
@@ -1464,7 +1483,10 @@ export const verifyEmailChangeCurrentCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: `Current email verified. We sent a code to ${getMaskedEmail(pendingEmail)}.`,
+      message: withDeliveryFallbackMessage(
+        `Current email verified. We sent a code to ${getMaskedEmail(pendingEmail)}.`,
+        deliveryStatus
+      ),
       stage: 'verify-new',
       cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
       expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
@@ -1603,7 +1625,10 @@ export const resendEmailChangeNewCode = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: `A new code was sent to ${getMaskedEmail(pendingEmail)}.`,
+      message: withDeliveryFallbackMessage(
+        `A new code was sent to ${getMaskedEmail(pendingEmail)}.`,
+        deliveryStatus
+      ),
       cooldownSeconds: Math.ceil(EMAIL_CHANGE_RESEND_COOLDOWN_MS / 1000),
       expiresInSeconds: Math.ceil(EMAIL_CHANGE_CODE_TTL_MS / 1000)
     });
@@ -1854,7 +1879,7 @@ export const requestPasswordReset = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Reset code sent',
+      message: withDeliveryFallbackMessage('Reset code sent.', deliveryStatus),
       cooldownSeconds: Math.ceil(RESEND_COOLDOWN_MS / 1000)
     });
   } catch (error) {

@@ -16,7 +16,11 @@ const getEmailProvider = () => {
     return 'resend';
   }
 
-  return 'smtp';
+  if (process.env.SMTP_HOST) {
+    return 'smtp';
+  }
+
+  return null;
 };
 const getFromAddress = () => process.env.EMAIL_FROM || process.env.SMTP_FROM || EMAIL_FROM_DEFAULT;
 
@@ -132,8 +136,12 @@ export const sendEmail = async ({ to, subject, text, html }) => {
     return sendWithResend({ to, subject, text, html });
   }
 
-  if (provider === 'smtp' || !provider) {
+  if (provider === 'smtp') {
     return sendWithSmtp({ to, subject, text, html });
+  }
+
+  if (!provider) {
+    return { sent: false, reason: 'email_not_configured' };
   }
 
   return { sent: false, reason: `unsupported_provider_${provider}` };
