@@ -12,9 +12,9 @@ const createAdminUser = async () => {
     console.log('Connected to MongoDB');
 
     // Admin credentials
-    const adminEmail = '27523270@students.lincoln.ac.uk';
-    const adminPassword = 'Bukunmi100!';
-    const adminUsername = 'developer_admin';
+    const adminEmail = 'email';
+    const adminPassword = 'password';
+    const adminUsername = 'adminUser';
 
     // Check if admin already exists
     const existingAdmin = await User.findOne({ email: adminEmail });

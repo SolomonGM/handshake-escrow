@@ -230,6 +230,16 @@ export const discordInteractionsHandler = async (req, res) => {
   const signature = req.get('X-Signature-Ed25519');
   const timestamp = req.get('X-Signature-Timestamp');
   const rawBody = req.rawBody;
+  const publicKeyConfigured = Boolean(String(process.env.DISCORD_APPLICATION_PUBLIC_KEY || '').trim());
+  const interactionType = Number(req.body?.type || 0);
+  const commandName = String(req.body?.data?.name || '').toLowerCase();
+
+  console.log(
+    `[discord] Interaction received: type=${interactionType || 'unknown'} command=${commandName || 'n/a'} ` +
+    `hasSig=${Boolean(signature)} hasTimestamp=${Boolean(timestamp)} rawBodyBytes=${Buffer.isBuffer(rawBody) ? rawBody.length : 0} ` +
+    `publicKeyConfigured=${publicKeyConfigured}`
+  );
+
   const isValid = verifyDiscordInteractionRequest({
     signature,
     timestamp,
@@ -237,18 +247,24 @@ export const discordInteractionsHandler = async (req, res) => {
   });
 
   if (!isValid) {
+    console.warn(
+      '[discord] Interaction signature verification failed. ' +
+      'Check DISCORD_APPLICATION_PUBLIC_KEY matches the exact Discord application used for /sync.'
+    );
     return res.status(401).send('Invalid request signature');
   }
 
   const interaction = req.body || {};
-  const interactionType = Number(interaction.type || 0);
+  const resolvedInteractionType = Number(interaction.type || 0);
 
-  if (interactionType === 1) {
+  if (resolvedInteractionType === 1) {
+    console.log('[discord] Interaction PING acknowledged.');
     return res.status(200).json({ type: 1 });
   }
 
-  const commandName = String(interaction?.data?.name || '').toLowerCase();
-  if (interactionType !== 2 || commandName !== 'sync') {
+  const resolvedCommandName = String(interaction?.data?.name || '').toLowerCase();
+  if (resolvedInteractionType !== 2 || resolvedCommandName !== 'sync') {
+    console.warn(`[discord] Unsupported interaction command received: ${resolvedCommandName || 'unknown'}`);
     return res.status(200).json({
       type: 4,
       data: {
@@ -264,6 +280,7 @@ export const discordInteractionsHandler = async (req, res) => {
       flags: 64
     }
   });
+  console.log('[discord] /sync interaction acknowledged with deferred response.');
 
   setImmediate(async () => {
     try {
@@ -276,6 +293,7 @@ export const discordInteractionsHandler = async (req, res) => {
       const interactionToken = String(interaction?.token || '').trim();
 
       if (!discordUserId) {
+        console.warn('[discord] /sync failed: could not resolve Discord user id from interaction.');
         await sendDiscordInteractionFollowup({
           applicationId,
           interactionToken,
@@ -287,6 +305,7 @@ export const discordInteractionsHandler = async (req, res) => {
 
       const user = await User.findOne({ 'discord.userId': discordUserId });
       if (!user) {
+        console.warn(`[discord] /sync requested by unlinked Discord user ${discordUserId}.`);
         await sendDiscordInteractionFollowup({
           applicationId,
           interactionToken,
@@ -298,6 +317,7 @@ export const discordInteractionsHandler = async (req, res) => {
 
       const syncResult = await syncDiscordRoleForUserDocument(user, { trigger: 'discord_command' });
       await user.save();
+      console.log(`[discord] /sync completed for user ${discordUserId} with status=${syncResult.status}.`);
 
       if (syncResult.status === 'synced') {
         await sendDiscordInteractionFollowup({

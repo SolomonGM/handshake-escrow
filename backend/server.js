@@ -92,7 +92,7 @@ const globalApiLimiter = rateLimit({
   max: parsePositiveInt(process.env.API_RATE_LIMIT_MAX, 300),
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/health',
+  skip: (req) => req.path === '/health' || req.path === '/discord/interactions',
   message: {
     success: false,
     message: 'Too many requests from this IP. Please try again shortly.'
@@ -180,30 +180,40 @@ app.use(errorHandler);
 // Start server
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`💬 WebSocket server ready`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);  
-  // Start transaction monitoring service
+  console.log(`Server running on port ${PORT}`);
+  console.log('WebSocket server ready');
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  const discordPublicKeyConfigured = Boolean(String(process.env.DISCORD_APPLICATION_PUBLIC_KEY || '').trim());
+  const discordAppId = String(process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID || '').trim();
+  console.log('[discord] Interactions endpoint: /api/discord/interactions');
+  console.log(`[discord] Application ID configured: ${discordAppId ? 'yes' : 'no'}`);
+  console.log(`[discord] Public key configured: ${discordPublicKeyConfigured ? 'yes' : 'no'}`);
+  if (!discordPublicKeyConfigured) {
+    console.warn('[discord] DISCORD_APPLICATION_PUBLIC_KEY is missing; slash command verification will fail.');
+  }
+
+  // Start background services
   startTransactionMonitoring(io);
   scheduleDiscordProfileRefresh();
   warmDiscordProfileCache();
   ensureDiscordSyncCommandRegistered()
     .then((result) => {
       if (result?.success) {
-        console.log(`✅ ${result.message}`);
+        console.log(`[discord] ${result.message}`);
       } else if (result?.skipped) {
-        console.warn(`⚠️ ${result.message}`);
+        console.warn(`[discord] ${result.message}`);
       } else {
-        console.error(`❌ ${result?.message || 'Discord /sync command registration failed.'}`);
+        console.error(`[discord] ${result?.message || 'Discord /sync command registration failed.'}`);
       }
     })
     .catch((error) => {
-      console.error('❌ Discord /sync command bootstrap error:', error);
+      console.error('[discord] Discord /sync command bootstrap error:', error);
     });
   scheduleLeaderboardRefresh();
   warmLeaderboardCache();
   startTicketClosureMonitor();
   backfillCompletedTickets().catch((error) => {
-    console.error('❌ Error backfilling completed tickets:', error);
+    console.error('Error backfilling completed tickets:', error);
   });
 });
