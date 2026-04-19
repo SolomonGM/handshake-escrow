@@ -133,14 +133,17 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
         }
 
         const backendEnabled = Boolean(response?.captcha?.enabled);
+        const backendReady = response?.captcha?.ready === undefined
+          ? backendEnabled
+          : Boolean(response?.captcha?.ready);
         const backendSiteKey = String(response?.captcha?.siteKey || '').trim();
         const resolvedSiteKey = backendSiteKey || TURNSTILE_SITE_KEY;
 
-        setCaptchaRequired(backendEnabled || Boolean(resolvedSiteKey));
+        setCaptchaRequired(backendEnabled);
         setCaptchaSiteKey(resolvedSiteKey);
 
-        if ((backendEnabled || Boolean(resolvedSiteKey)) && !resolvedSiteKey) {
-          setLocalError('Security check is enabled but unavailable. Please try again later.');
+        if (backendEnabled && (!backendReady || !resolvedSiteKey)) {
+          setLocalError('Security check is temporarily unavailable. Please try again later.');
         }
       } catch (configError) {
         if (cancelled) {

@@ -187,6 +187,7 @@ export const register = async (req, res, next) => {
         : [];
       const isExpiredOrDuplicate = errorCodes.includes('timeout-or-duplicate');
       const isServerSideIssue = (
+        captchaVerification.reason === 'turnstile_not_configured' ||
         captchaVerification.reason === 'turnstile_secret_missing' ||
         captchaVerification.reason === 'turnstile_verify_request_failed'
       );

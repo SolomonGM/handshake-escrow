@@ -48,7 +48,7 @@ Backend
 Frontend (`.env`)
 
 - `VITE_API_URL` base URL for the backend API
-- `VITE_TURNSTILE_SITE_KEY` Cloudflare Turnstile site key (enables signup captcha widget)
+- `VITE_TURNSTILE_SITE_KEY` optional fallback Turnstile site key (used if backend security config is unavailable)
 
 Backend (`backend/.env`)
 
@@ -61,7 +61,7 @@ Backend (`backend/.env`)
 - `EMAIL_PROVIDER`, `EMAIL_FROM`
 - `RESEND_API_KEY` (if `EMAIL_PROVIDER=resend`)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (if `EMAIL_PROVIDER=smtp`)
-- `TURNSTILE_SECRET_KEY`, `TURNSTILE_ENABLED` (signup captcha verification)
+- `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_ENABLED` (signup captcha verification)
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` (global per-IP API throttling)
 - `BLOCKCYPHER_TOKEN`
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
@@ -112,9 +112,10 @@ Backend
 - Signup captcha verification (Turnstile) when secret/site keys are configured.
 
 2. Turnstile setup:
-- Frontend env: set `VITE_TURNSTILE_SITE_KEY`.
-- Backend env: set `TURNSTILE_SECRET_KEY`.
-- Optional: set `TURNSTILE_ENABLED=true` to force-enable explicitly.
+- Backend env: set `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`.
+- Optional frontend fallback: set `VITE_TURNSTILE_SITE_KEY`.
+- Optional: set `TURNSTILE_ENABLED=true` to force-enable explicitly (`false` to force-disable).
+- In non-production, when both Turnstile keys are unset, the backend falls back to Cloudflare's official test key pair.
 
 3. DDoS note:
 - Render protects infrastructure-level traffic, but dedicated L3/L4 + WAF-style DDoS mitigation is best handled by Cloudflare in front of your custom domain.

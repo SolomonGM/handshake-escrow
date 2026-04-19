@@ -1,48 +1,112 @@
 import axios from 'axios';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA';
+const TURNSTILE_TEST_SECRET_KEY = '1x0000000000000000000000000000000AA';
 
 const normalizeFlag = (value) => String(value || '').trim().toLowerCase();
+const getNodeEnv = () => normalizeFlag(process.env.NODE_ENV);
 
-export const isTurnstileEnabled = () => {
-  const configuredFlag = normalizeFlag(process.env.TURNSTILE_ENABLED);
+const getConfiguredSiteKey = () => String(
+  process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || ''
+).trim();
+const getConfiguredSecretKey = () => String(process.env.TURNSTILE_SECRET_KEY || '').trim();
 
-  if (configuredFlag === 'true') {
-    return true;
+const getResolvedKeys = () => {
+  const configuredSiteKey = getConfiguredSiteKey();
+  const configuredSecretKey = getConfiguredSecretKey();
+  const isProduction = getNodeEnv() === 'production';
+  const hasAnyConfiguredKey = Boolean(configuredSiteKey || configuredSecretKey);
+
+  // In non-production, default to Cloudflare's documented test keys only when neither key is set.
+  if (!isProduction && !hasAnyConfiguredKey) {
+    return {
+      siteKey: TURNSTILE_TEST_SITE_KEY,
+      secretKey: TURNSTILE_TEST_SECRET_KEY,
+      usingTestKeys: true
+    };
   }
+
+  return {
+    siteKey: configuredSiteKey,
+    secretKey: configuredSecretKey,
+    usingTestKeys: false
+  };
+};
+
+const getTurnstileConfig = () => {
+  const configuredFlag = normalizeFlag(process.env.TURNSTILE_ENABLED);
+  const { siteKey, secretKey, usingTestKeys } = getResolvedKeys();
+  const hasSiteKey = Boolean(siteKey);
+  const hasSecretKey = Boolean(secretKey);
 
   if (configuredFlag === 'false') {
-    return false;
+    return {
+      enabled: false,
+      ready: false,
+      siteKey: hasSiteKey ? siteKey : null,
+      secretKey,
+      hasSiteKey,
+      hasSecretKey,
+      usingTestKeys
+    };
   }
 
-  return Boolean(process.env.TURNSTILE_SECRET_KEY);
+  if (configuredFlag === 'true') {
+    return {
+      enabled: true,
+      ready: hasSiteKey && hasSecretKey,
+      siteKey: hasSiteKey ? siteKey : null,
+      secretKey,
+      hasSiteKey,
+      hasSecretKey,
+      usingTestKeys
+    };
+  }
+
+  // Auto-enable when secret key exists (including dev test key fallback).
+  const enabled = hasSecretKey;
+  return {
+    enabled,
+    ready: enabled && hasSiteKey,
+    siteKey: hasSiteKey ? siteKey : null,
+    secretKey,
+    hasSiteKey,
+    hasSecretKey,
+    usingTestKeys
+  };
+};
+
+export const isTurnstileEnabled = () => {
+  return getTurnstileConfig().enabled;
 };
 
 export const getTurnstileClientConfig = () => {
-  const enabled = isTurnstileEnabled();
-  const siteKey = String(process.env.TURNSTILE_SITE_KEY || process.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+  const turnstileConfig = getTurnstileConfig();
 
   return {
-    enabled,
-    siteKey: siteKey || null
+    enabled: turnstileConfig.enabled,
+    ready: turnstileConfig.ready,
+    provider: 'turnstile',
+    mode: turnstileConfig.usingTestKeys ? 'test' : 'live',
+    siteKey: turnstileConfig.siteKey
   };
 };
 
 export const verifyTurnstileToken = async ({ token, remoteIp }) => {
-  const enabled = isTurnstileEnabled();
-  if (!enabled) {
+  const turnstileConfig = getTurnstileConfig();
+  if (!turnstileConfig.enabled) {
     return {
       enabled: false,
       success: true
     };
   }
 
-  const secret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
-  if (!secret) {
+  if (!turnstileConfig.ready) {
     return {
       enabled: true,
       success: false,
-      reason: 'turnstile_secret_missing'
+      reason: 'turnstile_not_configured'
     };
   }
 
@@ -57,7 +121,7 @@ export const verifyTurnstileToken = async ({ token, remoteIp }) => {
 
   try {
     const payload = new URLSearchParams();
-    payload.set('secret', secret);
+    payload.set('secret', turnstileConfig.secretKey);
     payload.set('response', normalizedToken);
 
     if (remoteIp) {
@@ -74,7 +138,8 @@ export const verifyTurnstileToken = async ({ token, remoteIp }) => {
     return {
       enabled: true,
       success: Boolean(response.data?.success),
-      errorCodes: response.data?.['error-codes'] || []
+      errorCodes: response.data?.['error-codes'] || [],
+      mode: turnstileConfig.usingTestKeys ? 'test' : 'live'
     };
   } catch (error) {
     return {
