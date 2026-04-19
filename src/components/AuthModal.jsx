@@ -1106,7 +1106,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
                         }}
                       />
                       <p className="text-xs text-n-4 mt-2">
-                        Complete the security check to continue.
+                        Complete the Cloudflare security checkbox to continue.
                       </p>
                     </>
                   )}
