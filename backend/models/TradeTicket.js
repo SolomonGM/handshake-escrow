@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 
 const extractDataUrls = (value) => {
   if (typeof value !== 'string') {
@@ -151,6 +151,11 @@ const tradeTicketSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  transactionNetworkMode: {
+    type: String,
+    enum: ['mainnet', 'testnet', null],
+    default: null
+  },
   expectedAmount: {
     type: Number,
     default: null
@@ -226,6 +231,11 @@ const tradeTicketSchema = new mongoose.Schema({
   },
   payoutTransactionHash: {
     type: String,
+    default: null
+  },
+  payoutNetworkMode: {
+    type: String,
+    enum: ['mainnet', 'testnet', null],
     default: null
   },
   privacySelections: {
@@ -305,7 +315,7 @@ const tradeTicketSchema = new mongoose.Schema({
       default: 'text'
     },
     attachments: {
-      // Use Mixed to tolerate legacy string payloads, normalize via setter.
+      // Uses Mixed to tolerate legacy string payloads, normalize via setter.
       type: [mongoose.Schema.Types.Mixed],
       default: [],
       set: normalizeMessageAttachments
@@ -380,7 +390,7 @@ tradeTicketSchema.pre('validate', function(next) {
 
 // Helper method to prevent duplicate prompts
 tradeTicketSchema.methods.addUniqueMessage = function(messageData) {
-  // Check if a message with the same title already exists
+  // This check determines whether a bot prompt with the same title already exists so duplicate prompts are avoided.
   const isDuplicate = this.messages.some(msg => 
     msg.embedData?.title === messageData.embedData?.title &&
     msg.isBot === messageData.isBot
@@ -396,3 +406,4 @@ tradeTicketSchema.methods.addUniqueMessage = function(messageData) {
 const TradeTicket = mongoose.model('TradeTicket', tradeTicketSchema);
 
 export default TradeTicket;
+

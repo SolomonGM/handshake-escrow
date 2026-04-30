@@ -16,7 +16,7 @@ const ModeratorPanel = () => {
   const [ticketSortOrder, setTicketSortOrder] = useState('desc');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const PAGE_SIZE = 25;
+  const PAGE_SIZE = 10;
   const navigate = useNavigate();
 
   useEffect(() => {

@@ -201,7 +201,7 @@ const RecentTransactions = () => {
                         {formatTransactionId(transaction.transactionId)}
                       </code>
                       <a
-                        href={getExplorerUrl(transaction.blockchain, transaction.transactionId)}
+                        href={getExplorerUrl(transaction.blockchain, transaction.transactionId, transaction.networkMode)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[#4A9EFF] hover:text-[#6BB6FF] transition-colors text-sm font-semibold ml-2"

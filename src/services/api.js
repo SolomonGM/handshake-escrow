@@ -278,6 +278,26 @@ export const adminAPI = {
     });
     return response.data;
   },
+
+  getRuntimeConfig: async () => {
+    const response = await api.get('/admin/runtime-config');
+    return response.data;
+  },
+
+  pauseTicketWorkflow: async (reason = '') => {
+    const response = await api.post('/admin/runtime-config/pause', { reason });
+    return response.data;
+  },
+
+  resumeTicketWorkflow: async () => {
+    const response = await api.post('/admin/runtime-config/resume');
+    return response.data;
+  },
+
+  updateRuntimeConfig: async ({ networkModes, wallets }) => {
+    const response = await api.put('/admin/runtime-config', { networkModes, wallets });
+    return response.data;
+  },
 };
 
 // Passes API calls

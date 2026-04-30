@@ -61,9 +61,23 @@ const AdminPanel = () => {
   const [banPermanenceFilter, setBanPermanenceFilter] = useState('all');
   const [banSortBy, setBanSortBy] = useState('bannedAt');
   const [banSortOrder, setBanSortOrder] = useState('desc');
+  const [runtimeConfig, setRuntimeConfig] = useState(null);
+  const [runtimeDraft, setRuntimeDraft] = useState(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const [runtimeWorkflowBusy, setRuntimeWorkflowBusy] = useState(false);
+  const [runtimePauseReason, setRuntimePauseReason] = useState('Runtime configuration update in progress');
 
-  const PAGE_SIZE = 25;
+  const PAGE_SIZE = 10;
   const navigate = useNavigate();
+  const runtimeWalletCoins = [
+    { key: 'bitcoin', label: 'Bitcoin (BTC)' },
+    { key: 'litecoin', label: 'Litecoin (LTC)' },
+    { key: 'ethereum', label: 'Ethereum (ETH)' },
+    { key: 'solana', label: 'Solana (SOL)' },
+    { key: 'usdt-erc20', label: 'USDT (ERC-20)' },
+    { key: 'usdc-erc20', label: 'USDC (ERC-20)' }
+  ];
 
   useEffect(() => {
     loadUsersAndStats();
@@ -169,7 +183,7 @@ const AdminPanel = () => {
   const loadUsersAndStats = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadUsers(), loadStats()]);
+      await Promise.all([loadUsers(), loadStats(), loadRuntimeConfig()]);
     } catch (error) {
       setMessage('Error loading data: ' + (error.response?.data?.message || error.message));
     } finally {
@@ -181,6 +195,44 @@ const AdminPanel = () => {
   const loadStats = async () => {
     const statsData = await adminAPI.getSiteStats();
     setStats(statsData);
+  };
+
+  const cloneRuntimeConfigForDraft = (runtime) => {
+    if (!runtime) return null;
+    return {
+      networkModes: {
+        bitcoin: runtime.networkModes?.bitcoin || 'testnet',
+        litecoin: runtime.networkModes?.litecoin || 'mainnet',
+        ethereum: runtime.networkModes?.ethereum || 'testnet',
+        solana: runtime.networkModes?.solana || 'mainnet'
+      },
+      wallets: Object.fromEntries(
+        runtimeWalletCoins.map(({ key }) => [
+          key,
+          {
+            mainnet: runtime.wallets?.[key]?.mainnet || '',
+            testnet: runtime.wallets?.[key]?.testnet || ''
+          }
+        ])
+      )
+    };
+  };
+
+  const loadRuntimeConfig = async () => {
+    try {
+      setRuntimeLoading(true);
+      const response = await adminAPI.getRuntimeConfig();
+      const nextRuntime = response.runtimeConfig || null;
+      setRuntimeConfig(nextRuntime);
+      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
+      if (nextRuntime?.pauseReason) {
+        setRuntimePauseReason(nextRuntime.pauseReason);
+      }
+    } catch (error) {
+      setMessage('Error loading runtime config: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRuntimeLoading(false);
+    }
   };
 
   const loadUsers = async () => {
@@ -292,6 +344,88 @@ const AdminPanel = () => {
       }
     } catch (error) {
       setMessage('Error loading active bans: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const updateRuntimeDraftMode = (modeKey, value) => {
+    setRuntimeDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        networkModes: {
+          ...prev.networkModes,
+          [modeKey]: value
+        }
+      };
+    });
+  };
+
+  const updateRuntimeDraftWallet = (coin, mode, value) => {
+    setRuntimeDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        wallets: {
+          ...prev.wallets,
+          [coin]: {
+            ...(prev.wallets?.[coin] || { mainnet: '', testnet: '' }),
+            [mode]: value
+          }
+        }
+      };
+    });
+  };
+
+  const handlePauseTicketWorkflow = async () => {
+    try {
+      setRuntimeWorkflowBusy(true);
+      const response = await adminAPI.pauseTicketWorkflow(runtimePauseReason);
+      const nextRuntime = response.runtimeConfig || null;
+      setRuntimeConfig(nextRuntime);
+      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
+      setMessage(response.message || 'Ticket workflow paused successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error pausing ticket workflow: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRuntimeWorkflowBusy(false);
+    }
+  };
+
+  const handleResumeTicketWorkflow = async () => {
+    try {
+      setRuntimeWorkflowBusy(true);
+      const response = await adminAPI.resumeTicketWorkflow();
+      const nextRuntime = response.runtimeConfig || null;
+      setRuntimeConfig(nextRuntime);
+      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
+      setMessage(response.message || 'Ticket workflow resumed successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error resuming ticket workflow: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRuntimeWorkflowBusy(false);
+    }
+  };
+
+  const handleSaveRuntimeConfig = async () => {
+    if (!runtimeDraft) return;
+
+    try {
+      setRuntimeSaving(true);
+      const response = await adminAPI.updateRuntimeConfig({
+        networkModes: runtimeDraft.networkModes,
+        wallets: runtimeDraft.wallets
+      });
+      const nextRuntime = response.runtimeConfig || null;
+      setRuntimeConfig(nextRuntime);
+      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
+      setMessage(response.message || 'Runtime configuration updated successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error updating runtime config: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRuntimeSaving(false);
     }
   };
 
@@ -655,6 +789,160 @@ const AdminPanel = () => {
           </div>
         </div>
       )}
+
+      {/* Runtime Config Section */}
+      <div className="mb-10 bg-n-6 rounded-lg border border-n-5 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="h4 text-n-1">Runtime Network & Wallet Config</h3>
+            <p className="text-n-4 text-sm mt-1">
+              Developer-only live network switch and wallet map. Pause workflow before saving changes.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                runtimeConfig?.ticketWorkflowPaused
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+              }`}
+            >
+              {runtimeConfig?.ticketWorkflowPaused ? 'Workflow Paused' : 'Workflow Active'}
+            </span>
+            {runtimeConfig?.ticketWorkflowPaused ? (
+              <button
+                onClick={handleResumeTicketWorkflow}
+                disabled={runtimeWorkflowBusy}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {runtimeWorkflowBusy ? 'Resuming...' : 'Resume Workflow'}
+              </button>
+            ) : (
+              <button
+                onClick={handlePauseTicketWorkflow}
+                disabled={runtimeWorkflowBusy}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {runtimeWorkflowBusy ? 'Pausing...' : 'Pause Workflow'}
+              </button>
+            )}
+            <button
+              onClick={loadRuntimeConfig}
+              disabled={runtimeLoading}
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-n-7 text-n-2 hover:bg-n-5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {runtimeLoading ? 'Loading...' : 'Reload'}
+            </button>
+          </div>
+        </div>
+
+        {runtimeLoading ? (
+          <div className="mt-4 text-sm text-n-3">Loading runtime configuration...</div>
+        ) : runtimeDraft ? (
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <select
+                value={runtimeDraft.networkModes.bitcoin}
+                onChange={(e) => updateRuntimeDraftMode('bitcoin', e.target.value)}
+                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
+              >
+                <option value="mainnet">BTC: Mainnet</option>
+                <option value="testnet">BTC: Testnet</option>
+              </select>
+              <select
+                value={runtimeDraft.networkModes.litecoin}
+                onChange={(e) => updateRuntimeDraftMode('litecoin', e.target.value)}
+                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
+              >
+                <option value="mainnet">LTC: Mainnet</option>
+                <option value="testnet">LTC: Testnet (limited)</option>
+              </select>
+              <select
+                value={runtimeDraft.networkModes.ethereum}
+                onChange={(e) => updateRuntimeDraftMode('ethereum', e.target.value)}
+                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
+              >
+                <option value="mainnet">ETH/ERC20: Mainnet</option>
+                <option value="testnet">ETH/ERC20: Testnet</option>
+              </select>
+              <select
+                value={runtimeDraft.networkModes.solana}
+                onChange={(e) => updateRuntimeDraftMode('solana', e.target.value)}
+                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
+              >
+                <option value="mainnet">SOL: Mainnet</option>
+                <option value="testnet">SOL: Testnet</option>
+              </select>
+              <input
+                type="text"
+                value={runtimePauseReason}
+                onChange={(e) => setRuntimePauseReason(e.target.value)}
+                placeholder="Pause reason shown to users"
+                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981]"
+              />
+            </div>
+
+            <div className="mt-4 rounded-lg border border-n-5 overflow-hidden">
+              <div className="px-4 py-2 border-b border-n-5 bg-n-7/50 text-xs text-n-4">
+                Wallets by coin and network mode. Keep active-mode addresses valid.
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[860px]">
+                  <thead className="bg-n-7 border-b border-n-5">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Coin</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Mainnet Wallet</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Testnet Wallet</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-n-5">
+                    {runtimeWalletCoins.map((coin) => (
+                      <tr key={coin.key} className="hover:bg-n-7/40 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-n-2 font-semibold">{coin.label}</td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={runtimeDraft.wallets?.[coin.key]?.mainnet || ''}
+                            onChange={(e) => updateRuntimeDraftWallet(coin.key, 'mainnet', e.target.value)}
+                            className="w-full px-3 py-2 bg-n-8 border border-n-6 rounded text-sm text-n-1 focus:outline-none focus:border-[#10B981]"
+                            placeholder="Mainnet wallet address"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={runtimeDraft.wallets?.[coin.key]?.testnet || ''}
+                            onChange={(e) => updateRuntimeDraftWallet(coin.key, 'testnet', e.target.value)}
+                            className="w-full px-3 py-2 bg-n-8 border border-n-6 rounded text-sm text-n-1 focus:outline-none focus:border-[#10B981]"
+                            placeholder="Testnet wallet address"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className={`text-xs ${runtimeConfig?.ticketWorkflowPaused ? 'text-amber-300' : 'text-n-4'}`}>
+                {runtimeConfig?.ticketWorkflowPaused
+                  ? 'Workflow is paused. Save config, then resume to continue tickets from current state.'
+                  : 'Pause workflow first to prevent in-flight ticket state issues while changing runtime config.'}
+              </p>
+              <button
+                onClick={handleSaveRuntimeConfig}
+                disabled={runtimeSaving || !runtimeConfig?.ticketWorkflowPaused}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-[#10B981]/20 text-[#A7F3D0] hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {runtimeSaving ? 'Saving...' : 'Save Runtime Config'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="mt-4 text-sm text-n-4">Runtime configuration unavailable.</div>
+        )}
+      </div>
 
       {/* User Controls */}
       <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">

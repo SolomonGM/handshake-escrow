@@ -3,7 +3,11 @@ import PassTransaction from '../models/PassTransaction.js';
 import User from '../models/User.js';
 import axios from 'axios';
 import { upsertPassTransactionHistory } from '../services/passTransactionHistory.js';
-import { BTC_NETWORK_MODE, LTC_NETWORK_MODE, getUtxoNetwork } from '../config/wallets.js';
+import {
+  getBotWalletForCoin,
+  getRuntimeConfig,
+  getUtxoRuntimeNetwork
+} from '../services/runtimeConfigService.js';
 
 const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
 
@@ -25,40 +29,6 @@ const CRYPTO_PRICES = {
   'usdc-erc20': 1
 };
 
-const getMasterWallet = (crypto) => {
-  if (crypto === 'bitcoin') {
-    return BTC_NETWORK_MODE === 'mainnet'
-      ? (process.env.BTC_MAINNET_WALLET || '')
-      : (process.env.BTC_TESTNET_WALLET || 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn');
-  }
-
-  if (crypto === 'litecoin') {
-    if (LTC_NETWORK_MODE === 'mainnet') {
-      return process.env.LTC_MAINNET_WALLET || '';
-    }
-    return process.env.LTC_TESTNET_WALLET || 'miJwGUNLFGhFVfr7kDqskVotW4HgY1ePmP';
-  }
-
-  const fallbackWallets = {
-    'ethereum': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E', // Sepolia testnet wallet
-    'solana': 'DYw8jCTfwHNRJhhmFcbXvVDTqWMEVFBX6ZKUmG5CNSKK',
-    'usdt-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E',
-    'usdc-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E'
-  };
-
-  return fallbackWallets[crypto] || '';
-};
-
-// Master wallet addresses for each crypto (where funds ultimately go)
-const MASTER_WALLETS = {
-  'litecoin': getMasterWallet('litecoin'),
-  'bitcoin': getMasterWallet('bitcoin'),
-  'ethereum': getMasterWallet('ethereum'),
-  'solana': getMasterWallet('solana'),
-  'usdt-erc20': getMasterWallet('usdt-erc20'),
-  'usdc-erc20': getMasterWallet('usdc-erc20')
-};
-
 const UTXO_CRYPTOS = new Set(['litecoin', 'bitcoin']);
 const SUPPORTED_CRYPTOS = new Set([
   'litecoin',
@@ -77,11 +47,11 @@ const SUPPORTED_CRYPTOS = new Set([
  * For Ethereum: Uses the master wallet directly since Ethereum transactions
  * can be tracked by unique order amounts and transaction history.
  */
-const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
+const generateUniquePaymentAddress = async (cryptocurrency, orderId, runtimeConfig) => {
   try {
     // For Litecoin and Bitcoin, use BlockCypher's address generation
     if (cryptocurrency === 'litecoin' || cryptocurrency === 'bitcoin') {
-      const network = getUtxoNetwork(cryptocurrency);
+      const network = getUtxoRuntimeNetwork(cryptocurrency, runtimeConfig)?.config;
       if (!network) {
         throw new Error(`Unsupported UTXO network: ${cryptocurrency}`);
       }
@@ -101,14 +71,13 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
     }
     
     // For Ethereum, Solana, and ERC-20 tokens:
-    // Use master wallet directly. Each order is identified by:
+    // Uses master wallet directly. Each order is identified by:
     // 1. Unique expected amount (down to 8 decimal places)
     // 2. Transaction timestamp
     // 3. User's sending address
     // This allows multiple simultaneous orders to be tracked properly
-    console.log(`ðŸ”‘ Using master wallet for ${cryptocurrency} order ${orderId}: ${MASTER_WALLETS[cryptocurrency]}`);
-    
-    const fallbackAddress = MASTER_WALLETS[cryptocurrency];
+    const fallbackAddress = getBotWalletForCoin(cryptocurrency, runtimeConfig).wallet;
+    console.log(`Using runtime wallet for ${cryptocurrency} order ${orderId}: ${fallbackAddress}`);
     if (!fallbackAddress) {
       throw new Error(`Master wallet not configured for ${cryptocurrency}`);
     }
@@ -122,7 +91,7 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
   } catch (error) {
     console.error('Error generating unique address:', error.message);
     // Fallback to master wallet if generation fails
-    const fallbackAddress = MASTER_WALLETS[cryptocurrency];
+    const fallbackAddress = getBotWalletForCoin(cryptocurrency, runtimeConfig).wallet;
     if (!fallbackAddress) {
       throw new Error(`Master wallet not configured for ${cryptocurrency}`);
     }
@@ -135,18 +104,19 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
   }
 };
 
-// Generate unique order ID
+// Generates unique order ID
 const generateOrderId = () => {
   return `PASS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 };
 
-// Create pass purchase order
+// Creates pass purchase order
 export const createPassOrder = async (req, res) => {
   try {
     const { passId, cryptocurrency, passCount } = req.body;
     const userId = req.user._id;
+    const runtimeConfig = await getRuntimeConfig();
 
-    // Check if user already has an active order (pending or confirmed, not yet completed)
+    // This check determines whether user already has an active order (pending or confirmed, not yet completed)
     const activeOrders = await PassOrder.find({
       user: userId,
       status: { $in: ['pending', 'confirmed'] },
@@ -154,7 +124,7 @@ export const createPassOrder = async (req, res) => {
     });
 
     if (activeOrders.length > 0) {
-      // If any order has a detected transaction (transactionHash exists), prevent creating new order
+      // This branch handles when any order has a detected transaction (transactionHash exists), prevent creating new order
       const orderWithPayment = activeOrders.find(order => order.transactionHash);
       
       if (orderWithPayment) {
@@ -179,7 +149,7 @@ export const createPassOrder = async (req, res) => {
         });
       }
       
-      // If no payment detected yet, cancel all old orders and create new one
+      // This branch handles when no payment detected yet, cancel all old orders and create new one
       // This allows user to switch payment methods before sending funds
       console.log(`ðŸ—‘ï¸  Cancelling ${activeOrders.length} previous order(s) for user ${userId} (no payment detected)`);
       await PassOrder.updateMany(
@@ -196,37 +166,40 @@ export const createPassOrder = async (req, res) => {
       );
     }
 
-    // Validate pass
+    // Validates pass
     const passConfig = PASS_CONFIG[passId];
     if (!passConfig) {
       return res.status(400).json({ success: false, message: 'Invalid pass ID' });
     }
 
-    // Validate cryptocurrency
+    // Validates cryptocurrency
     if (!SUPPORTED_CRYPTOS.has(cryptocurrency)) {
       return res.status(400).json({ success: false, message: 'Unsupported cryptocurrency' });
     }
-    if (!UTXO_CRYPTOS.has(cryptocurrency) && !MASTER_WALLETS[cryptocurrency]) {
+    const runtimeWalletConfig = getBotWalletForCoin(cryptocurrency, runtimeConfig);
+    const runtimeWallet = runtimeWalletConfig.wallet;
+    const coinNetworkMode = runtimeWalletConfig.mode;
+    if (!UTXO_CRYPTOS.has(cryptocurrency) && !runtimeWallet) {
       return res.status(400).json({ success: false, message: 'Wallet not configured for selected cryptocurrency' });
     }
-    if (UTXO_CRYPTOS.has(cryptocurrency) && !getUtxoNetwork(cryptocurrency)) {
+    if (UTXO_CRYPTOS.has(cryptocurrency) && !getUtxoRuntimeNetwork(cryptocurrency, runtimeConfig)?.config) {
       return res.status(400).json({ success: false, message: 'UTXO network not configured for selected cryptocurrency' });
     }
 
-    // Calculate crypto amount
+    // Calculates crypto amount
     const priceUSD = passConfig.price;
     const cryptoPrice = CRYPTO_PRICES[cryptocurrency];
     const cryptoAmount = (priceUSD / cryptoPrice).toFixed(8);
 
-    // Generate unique payment address for this order
+    // Generates unique payment address for this order
     const orderId = generateOrderId();
-    const paymentAddressData = await generateUniquePaymentAddress(cryptocurrency, orderId);
+    const paymentAddressData = await generateUniquePaymentAddress(cryptocurrency, orderId, runtimeConfig);
     
-    // Set expiration time (30 minutes for payment)
+    // Sets expiration time (30 minutes for payment)
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 30);
     
-    // Set 10-minute timeout for initial detection
+    // Sets 10-minute timeout for initial detection
     const timeoutAt = new Date();
     timeoutAt.setMinutes(timeoutAt.getMinutes() + 10);
 
@@ -238,6 +211,7 @@ export const createPassOrder = async (req, res) => {
       passCount: passConfig.count,
       priceUSD,
       cryptocurrency,
+      networkMode: coinNetworkMode,
       cryptoAmount: parseFloat(cryptoAmount),
       paymentAddress: paymentAddressData.address,
       expiresAt,
@@ -278,7 +252,7 @@ export const createPassOrder = async (req, res) => {
   }
 };
 
-// Get user's pass orders
+// Retrieves user's pass orders
 export const getUserPassOrders = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -297,7 +271,7 @@ export const getUserPassOrders = async (req, res) => {
   }
 };
 
-// Get single order
+// Retrieves single order
 export const getPassOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -319,7 +293,7 @@ export const getPassOrder = async (req, res) => {
   }
 };
 
-// Get pass transaction history for the user
+// Retrieves pass transaction history for the user
 export const getPassTransactionHistory = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -368,12 +342,12 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
       return true;
     }
 
-    // Update order
+    // Updated order
     order.status = 'completed';
     order.transactionHash = transactionHash;
     order.completedAt = new Date();
     
-    // Calculate confirmation time if we have detection time
+    // Calculates confirmation time if we have detection time
     if (order.transactionDetails?.detectedAt) {
       const confirmationTime = Math.round(
         (new Date() - new Date(order.transactionDetails.detectedAt)) / 60000
@@ -384,7 +358,7 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
     
     await order.save();
 
-    // Add passes to user (use order.passCount to prevent exploits)
+    // Added passes to user (use order.passCount to prevent exploits)
     const user = await User.findById(order.user);
     if (user) {
       const previousBalance = user.passes || 0;
@@ -427,7 +401,7 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
   }
 };
 
-// Cancel pass order (user manually cancels before payment)
+// Cancels pass order (user manually cancels before payment)
 export const cancelPassOrder = async (req, res) => {
   try {
     const { orderId } = req.body;
@@ -480,4 +454,6 @@ export default {
   completePassOrder,
   cancelPassOrder
 };
+
+
 

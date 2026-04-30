@@ -54,6 +54,21 @@ const formatTimestamp = (completedAt, fallback) => {
   });
 };
 
+const formatTotalTransactions = (value) => {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0";
+
+  if (total >= 1_000_000) {
+    return `${Math.floor(total / 1_000_000)}M+`;
+  }
+
+  if (total >= 1_000) {
+    return `${Math.floor(total / 1_000)}k+`;
+  }
+
+  return `${Math.floor(total)}`;
+};
+
 const AllTransactions = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -230,7 +245,7 @@ const AllTransactions = () => {
                 ))}
               </select>
               <span className="whitespace-nowrap rounded-md border border-n-6/80 bg-n-7/60 px-2.5 py-1 text-xs text-n-3">
-                {pagination.total} total
+                {formatTotalTransactions(pagination.total)} total
               </span>
             </div>
           </div>
@@ -293,7 +308,7 @@ const AllTransactions = () => {
                           </span>
                           {transaction.transactionId && transaction.transactionId !== "N/A" ? (
                             <a
-                              href={getExplorerUrl(transaction.blockchain, transaction.transactionId)}
+                              href={getExplorerUrl(transaction.blockchain, transaction.transactionId, transaction.networkMode)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="truncate text-xs text-[#7DD3FC] hover:text-[#BAE6FD]"

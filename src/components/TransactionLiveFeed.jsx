@@ -81,7 +81,7 @@ const TransactionLiveFeed = ({ className }) => {
           <div className="flex items-center justify-between">
             {hasTxId && !isPlaceholder ? (
               <a
-                href={getExplorerUrl(transaction.blockchain, transaction.transactionId)}
+                href={getExplorerUrl(transaction.blockchain, transaction.transactionId, transaction.networkMode)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#4A9EFF] hover:text-[#6BB6FF] transition-colors"

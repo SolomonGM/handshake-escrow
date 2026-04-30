@@ -6,6 +6,13 @@ import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { ETH_RPC_CONFIG, ETH_NETWORK_MODE, EXCHANGE_RATES, getUtxoNetwork, getUtxoNetworkMode } from '../config/wallets.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
+import {
+  getActiveNetworkModeForCoin,
+  getEthereumRuntimeConfig,
+  getRuntimeConfig,
+  getUtxoRuntimeNetwork,
+  isTicketWorkflowPaused
+} from './runtimeConfigService.js';
 
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
@@ -23,6 +30,29 @@ const ETH_RATE_LIMIT_COOLDOWN_MS = 30000;
 const ethLastScanAtByTicket = new Map();
 const ethCooldownByTicket = new Map();
 const ethDetectionLoggedByTicket = new Set();
+
+const getNetworkModeBucketForCoin = (coin) => {
+  const normalized = String(coin || '').trim().toLowerCase();
+  if (normalized === 'bitcoin') return 'bitcoin';
+  if (normalized === 'litecoin') return 'litecoin';
+  if (normalized === 'solana') return 'solana';
+  return 'ethereum';
+};
+
+const applyTicketModeOverride = (runtimeConfig, coin, forcedMode) => {
+  if (!runtimeConfig || !forcedMode) {
+    return runtimeConfig;
+  }
+
+  const bucket = getNetworkModeBucketForCoin(coin);
+  return {
+    ...runtimeConfig,
+    networkModes: {
+      ...(runtimeConfig.networkModes || {}),
+      [bucket]: forcedMode
+    }
+  };
+};
 
 const isRateLimitError = (error) => {
   const status = error?.error?.code || error?.code;
@@ -76,16 +106,16 @@ const getAlchemyTransferValueWei = (transfer) => {
   return null;
 };
 
-const getBlockCypherTxLink = (txHash, crypto) => {
-  const network = getUtxoNetwork(crypto);
+const getBlockCypherTxLink = (txHash, crypto, networkOverride = null) => {
+  const network = networkOverride || getUtxoNetwork(crypto);
   if (!network || !txHash) return null;
   return `${network.explorer}/tx/${txHash}`;
 };
 
-// Get address transactions from BlockCypher
-const getAddressTransactions = async (address, crypto = 'litecoin') => {
+// Retrieves address transactions from BlockCypher
+const getAddressTransactions = async (address, crypto = 'litecoin', networkOverride = null) => {
   try {
-    const network = getUtxoNetwork(crypto);
+    const network = networkOverride || getUtxoNetwork(crypto);
     if (!network) {
       console.error(`Unsupported UTXO network: ${crypto}`);
       return null;
@@ -100,9 +130,9 @@ const getAddressTransactions = async (address, crypto = 'litecoin') => {
   }
 };
 
-const getUtxoTransaction = async (txHash, crypto = 'litecoin') => {
+const getUtxoTransaction = async (txHash, crypto = 'litecoin', networkOverride = null) => {
   try {
-    const network = getUtxoNetwork(crypto);
+    const network = networkOverride || getUtxoNetwork(crypto);
     if (!network || !txHash) {
       return null;
     }
@@ -116,9 +146,9 @@ const getUtxoTransaction = async (txHash, crypto = 'litecoin') => {
   }
 };
 
-// Check if transaction matches expected amount (with tolerance for price fluctuations)
-const isUtxoAmountMatch = (receivedSatoshis, expectedAmount, expectedUSD, crypto) => {
-  const network = getUtxoNetwork(crypto);
+// This check determines whether transaction matches expected amount (with tolerance for price fluctuations)
+const isUtxoAmountMatch = (receivedSatoshis, expectedAmount, expectedUSD, crypto, networkOverride = null) => {
+  const network = networkOverride || getUtxoNetwork(crypto);
   const symbol = network ? network.symbol : 'COIN';
   const receivedCrypto = receivedSatoshis / 100000000; // Convert satoshis to coin
   const expectedValue = parseFloat(expectedAmount);
@@ -165,8 +195,8 @@ const getUtxoNetworkFee = (txDetails) => {
   return txDetails.fees / 100000000;
 };
 
-const refreshUtxoConfirmations = async (order, io, crypto = 'litecoin') => {
-  const network = getUtxoNetwork(crypto);
+const refreshUtxoConfirmations = async (order, io, crypto = 'litecoin', networkOverride = null) => {
+  const network = networkOverride || getUtxoNetwork(crypto);
   if (!network || !order?.transactionHash) {
     return false;
   }
@@ -177,7 +207,7 @@ const refreshUtxoConfirmations = async (order, io, crypto = 'litecoin') => {
     console.error('Error updating pass transaction history:', historyError);
   }
 
-  const tx = await getUtxoTransaction(order.transactionHash, crypto);
+  const tx = await getUtxoTransaction(order.transactionHash, crypto, network);
   if (!tx) {
     return false;
   }
@@ -290,13 +320,15 @@ const addTicketTransactionDetectedMessage = (ticket, txHash, confirmations, requ
   });
 };
 
-const monitorUtxoTicketTransaction = async (ticket, crypto) => {
-  const network = getUtxoNetwork(crypto);
+const monitorUtxoTicketTransaction = async (ticket, crypto, runtimeConfig) => {
+  const ticketRuntimeConfig = applyTicketModeOverride(runtimeConfig, crypto, ticket.transactionNetworkMode);
+  const networkInfo = getUtxoRuntimeNetwork(crypto, ticketRuntimeConfig);
+  const network = networkInfo?.config;
   if (!network) {
     return;
   }
 
-  const addressData = await getAddressTransactions(ticket.botWalletAddress, crypto);
+  const addressData = await getAddressTransactions(ticket.botWalletAddress, crypto, network);
   if (!addressData || !addressData.txs) {
     return;
   }
@@ -322,7 +354,7 @@ const monitorUtxoTicketTransaction = async (ticket, crypto) => {
     );
 
     for (const output of ourOutputs) {
-      const matchResult = isUtxoAmountMatch(output.value, expectedCrypto, ticket.expectedAmount, crypto);
+      const matchResult = isUtxoAmountMatch(output.value, expectedCrypto, ticket.expectedAmount, crypto, network);
 
       if (matchResult.isMatch) {
         console.log(`✅ TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
@@ -359,14 +391,18 @@ const monitorUtxoTicketTransaction = async (ticket, crypto) => {
   }
 };
 
-const monitorEthTicketTransaction = async (ticket) => {
-  const provider = getEthProvider();
+const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
+  const ticketRuntimeConfig = applyTicketModeOverride(runtimeConfig, 'ethereum', ticket.transactionNetworkMode);
+  const ethRuntime = getEthereumRuntimeConfig(ticketRuntimeConfig);
+  const provider = ethRuntime?.config?.rpcUrl
+    ? new ethers.JsonRpcProvider(ethRuntime.config.rpcUrl)
+    : null;
   if (!provider) {
     console.error('❌ Ethereum provider not available. Please configure RPC URL.');
     return;
   }
 
-  const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+  const config = ethRuntime?.config;
   const requiredConfirmations = config?.confirmationsRequired || 2;
 
   const now = Date.now();
@@ -605,9 +641,13 @@ const monitorEthTicketTransaction = async (ticket) => {
   }
 };
 
-// Monitor a specific ticket for transactions
+// Monitors a specific ticket for transactions
 export const monitorTicketTransaction = async (ticketId) => {
   try {
+    if (await isTicketWorkflowPaused()) {
+      return;
+    }
+
     const ticket = await TradeTicket.findOne({ ticketId })
       .populate('creator', 'username userId avatar')
       .populate('participants.user', 'username userId avatar');
@@ -623,30 +663,37 @@ export const monitorTicketTransaction = async (ticketId) => {
       return;
     }
 
+    const runtimeConfig = await getRuntimeConfig();
+
+    if (!ticket.transactionNetworkMode) {
+      ticket.transactionNetworkMode = getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
+      await ticket.save();
+    }
+
     const timedOut = await handleTicketTimeout(ticket);
     if (timedOut) {
       return;
     }
 
     if (ticket.cryptocurrency === 'ethereum') {
-      await monitorEthTicketTransaction(ticket);
+      await monitorEthTicketTransaction(ticket, runtimeConfig);
       return;
     }
 
     if (ticket.cryptocurrency === 'bitcoin' || ticket.cryptocurrency === 'litecoin') {
-      await monitorUtxoTicketTransaction(ticket, ticket.cryptocurrency);
+      await monitorUtxoTicketTransaction(ticket, ticket.cryptocurrency, runtimeConfig);
     }
   } catch (error) {
     console.error(`❌ Error monitoring ticket ${ticketId}:`, error);
   }
 };
 
-// Update confirmation count
+// Updated confirmation count
 const updateTransactionConfirmations = async (ticket, txHash, confirmations, requiredConfirmations = 2) => {
   try {
     ticket.confirmationCount = confirmations;
 
-    // Update the confirmation message
+    // Updated the confirmation message
     const confirmingMsg = ticket.messages.find(msg => 
       msg.embedData?.actionType === 'transaction-confirming'
     );
@@ -659,11 +706,11 @@ const updateTransactionConfirmations = async (ticket, txHash, confirmations, req
       ticket.markModified('messages');
     }
 
-    // If reached required confirmations, mark as confirmed
+    // This branch handles when reached required confirmations, mark as confirmed
     if (confirmations >= requiredConfirmations && !ticket.transactionConfirmed) {
       ticket.transactionConfirmed = true;
       
-      // Remove confirming message
+      // Removed confirming message
       ticket.messages = ticket.messages.filter(msg => 
         msg.embedData?.actionType !== 'transaction-confirming'
       );
@@ -697,7 +744,7 @@ const updateTransactionConfirmations = async (ticket, txHash, confirmations, req
         receiverUser = ticket.creator;
       }
 
-      // Add confirmed message
+      // Added confirmed message
       ticket.messages.push({
         isBot: true,
         content: 'Funds Received',
@@ -722,7 +769,7 @@ const updateTransactionConfirmations = async (ticket, txHash, confirmations, req
   }
 };
 
-// Monitor pass order for payment (UTXO networks)
+// Monitors pass order for payment (UTXO networks)
 const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => {
   try {
     const order = await PassOrder.findOne({ orderId }).populate('user', 'username email');
@@ -731,14 +778,16 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       return;
     }
 
-    const network = getUtxoNetwork(crypto);
+    const runtimeConfig = await getRuntimeConfig();
+    const runtimeWithOrderMode = applyTicketModeOverride(runtimeConfig, crypto, order.networkMode);
+    const network = getUtxoRuntimeNetwork(crypto, runtimeWithOrderMode)?.config;
     if (!network) {
       console.error(`Unsupported UTXO network for order ${orderId}: ${crypto}`);
       return;
     }
 
     if (order.status === 'confirmed' && order.transactionHash) {
-      await refreshUtxoConfirmations(order, io, crypto);
+      await refreshUtxoConfirmations(order, io, crypto, network);
       return;
     }
 
@@ -748,7 +797,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // Check if 10-minute timeout has been reached (no transaction detected yet)
+    // This check determines whether 10-minute timeout has been reached (no transaction detected yet)
     if (order.timeoutDetails?.timeoutAt && !order.transactionHash && !order.timeoutDetails.timedOut) {
       const timeoutDate = new Date(order.timeoutDetails.timeoutAt);
       
@@ -762,7 +811,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       }
     }
 
-    // Check if order has expired (30 minutes total)
+    // This check determines whether order has expired (30 minutes total)
     if (now > order.expiresAt && order.status === 'pending') {
       console.log(`${network.symbol} pass order ${orderId} expired without payment (30 min expiry)`);
       order.status = 'expired';
@@ -770,14 +819,14 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       return;
     }
     
-    // Stop monitoring if already timed out
+    // This guard stops monitoring if already timed out
     if (order.status === 'timedout') {
       return;
     }
 
     console.log(`Monitoring ${network.symbol} pass order ${orderId} - Expecting ${order.cryptoAmount} ${network.symbol} to ${order.paymentAddress}`);
 
-    const addressData = await getAddressTransactions(order.paymentAddress, crypto);
+    const addressData = await getAddressTransactions(order.paymentAddress, crypto, network);
     if (!addressData) {
       return;
     }
@@ -797,7 +846,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
     let matched = false;
     let duplicateMatch = null;
 
-    // Look for matching incoming transactions
+    // This scan looks for matching incoming transactions
     for (const txRef of txrefs) {
       if (txRef.tx_output_n === -1) continue; // Skip outgoing transactions
       
@@ -812,12 +861,12 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
 
       // Skip if already processed this transaction
       if (order.transactionHash === txHash) {
-        // Update confirmations if still confirming
+        // Updated confirmations if still confirming
         if (order.status === 'confirmed') {
           const confirmations = txRef.confirmations || 0;
           const reachedRequired = confirmations >= network.confirmationsRequired;
           
-          // Update order confirmations in database
+          // Updated order confirmations in database
           if (order.confirmations !== confirmations) {
             order.confirmations = confirmations;
             await order.save();
@@ -847,10 +896,10 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
         continue;
       }
 
-      // Check if amount matches with 2% tolerance
+      // This check determines whether amount matches with 2% tolerance
       const expectedAmount = order.cryptoAmount;
       const expectedUSD = order.priceUSD;
-      const matchResult = isUtxoAmountMatch(txRef.value, expectedAmount, expectedUSD, crypto);
+      const matchResult = isUtxoAmountMatch(txRef.value, expectedAmount, expectedUSD, crypto, network);
 
       if (txHash) {
         const existingOrder = await PassOrder.findOne({
@@ -870,7 +919,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
         const confirmations = txRef.confirmations || 0;
         const fromAddress = getUtxoFromAddress(txDetails);
         const networkFee = getUtxoNetworkFee(txDetails);
-        const explorerLink = getBlockCypherTxLink(txHash, crypto);
+        const explorerLink = getBlockCypherTxLink(txHash, crypto, network);
         
         console.log(`${network.symbol} payment found for pass order ${orderId}`);
         console.log(`   User: ${order.user.username}`);
@@ -919,7 +968,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
             console.log(`${network.symbol} pass order ${orderId} completed successfully`);
           }
         } else {
-          // Mark as confirmed, waiting for more confirmations
+          // Marks as confirmed, waiting for more confirmations
           order.confirmations = confirmations;
           order.status = 'confirmed';
           await order.save();
@@ -937,7 +986,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
         const receivedCrypto = txRef.value / 100000000;
         const isUnderpayment = receivedCrypto < matchResult.expectedCrypto;
         const isOverpayment = receivedCrypto > matchResult.expectedCrypto;
-        const explorerLink = getBlockCypherTxLink(txHash, crypto);
+        const explorerLink = getBlockCypherTxLink(txHash, crypto, network);
         
         if (isUnderpayment && Math.abs(matchResult.percentDiff) > 2) {
           console.log(`UNDERPAYMENT detected for ${network.symbol} order ${orderId}`);
@@ -946,7 +995,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
           console.log(`   Shortfall: ${(matchResult.expectedCrypto - receivedCrypto).toFixed(8)} ${network.symbol}`);
           console.log(`   Order will NOT be processed - payment insufficient`);
           
-          // Mark order as failed due to underpayment and save details
+          // Marks order as failed due to underpayment and save details
           if (order.status === 'pending') {
             const fromAddress = getUtxoFromAddress(txDetails);
             const networkFee = getUtxoNetworkFee(txDetails);
@@ -1083,9 +1132,9 @@ export const monitorBitcoinPassOrder = async (orderId, io = null) => {
 // ETHEREUM MONITORING FUNCTIONS (SEPOLIA TESTNET / MAINNET)
 // ============================================
 
-// Get Ethereum provider based on network mode
-const getEthProvider = () => {
-  const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+// Retrieves Ethereum provider based on network mode
+const getEthProvider = (networkMode = ETH_NETWORK_MODE) => {
+  const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG[ETH_NETWORK_MODE];
   if (!config || !config.rpcUrl || config.rpcUrl.includes('YOUR_INFURA_API_KEY')) {
     console.warn('âš ï¸  Ethereum RPC URL not configured. Set SEPOLIA_RPC_URL in .env file');
     return null;
@@ -1098,7 +1147,7 @@ const convertUSDToETH = (usdAmount, exchangeRate = getExchangeRate('ethereum')) 
   return (usdAmount / exchangeRate).toFixed(8);
 };
 
-// Check if Ethereum amount matches expected (with 2% tolerance)
+// This check determines whether Ethereum amount matches expected (with 2% tolerance)
 const isEthAmountMatch = (receivedWei, expectedETH, expectedUSD) => {
   const receivedETH = parseFloat(ethers.formatEther(receivedWei)); // Convert wei to ETH
   const expectedValue = parseFloat(expectedETH);
@@ -1182,7 +1231,7 @@ const refreshEthConfirmations = async (order, io, provider, config) => {
   return true;
 };
 
-// Monitor Ethereum pass order for payment
+// Monitors Ethereum pass order for payment
 export const monitorEthPassOrder = async (orderId, io = null) => {
   try {
     const order = await PassOrder.findOne({ orderId }).populate('user', 'username email');
@@ -1191,13 +1240,16 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       return;
     }
 
-    const provider = getEthProvider();
+    const runtimeConfig = await getRuntimeConfig();
+    const runtimeWithOrderMode = applyTicketModeOverride(runtimeConfig, 'ethereum', order.networkMode);
+    const ethRuntime = getEthereumRuntimeConfig(runtimeWithOrderMode);
+    const provider = getEthProvider(ethRuntime.mode);
     if (!provider) {
       console.error('âŒ Ethereum provider not available. Please configure RPC URL.');
       return;
     }
 
-    const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+    const config = ethRuntime.config;
     if (order.status === 'confirmed' && order.transactionHash) {
       await refreshEthConfirmations(order, io, provider, config);
       return;
@@ -1209,7 +1261,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // Check if 10-minute timeout has been reached (no transaction detected yet)
+    // This check determines whether 10-minute timeout has been reached (no transaction detected yet)
     if (order.timeoutDetails?.timeoutAt && !order.transactionHash && !order.timeoutDetails.timedOut) {
       const timeoutDate = new Date(order.timeoutDetails.timeoutAt);
       
@@ -1225,7 +1277,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       }
     }
 
-    // Check if order has expired (30 minutes total)
+    // This check determines whether order has expired (30 minutes total)
     if (now > order.expiresAt && order.status === 'pending') {
       console.log(`â° Ethereum pass order ${orderId} expired without payment (30 min expiry)`);
       order.status = 'expired';
@@ -1233,7 +1285,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       return;
     }
     
-    // Stop monitoring if already timed out
+    // This guard stops monitoring if already timed out
     if (order.status === 'timedout') {
       return;
     }
@@ -1241,7 +1293,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
     console.log(`ðŸ” Monitoring Ethereum pass order ${orderId} - Expecting ${order.cryptoAmount} ETH ($${order.priceUSD}) to ${order.paymentAddress}`);
     console.log(`   Network: ${config.name.toUpperCase()}, Explorer: ${config.blockExplorer}`);
 
-    // Get current block number
+    // Retrieves current block number
     const currentBlock = await provider.getBlockNumber();
     
     // Search last 100 blocks for transactions (about 20 minutes on Ethereum)
@@ -1298,14 +1350,14 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
     for (const tx of foundTransactions) {
       // Skip if we've already processed this transaction
       if (order.transactionHash === tx.hash) {
-        // Update confirmations if still confirming
+        // Updated confirmations if still confirming
         if (order.status === 'confirmed') {
           const receipt = await provider.getTransactionReceipt(tx.hash);
           if (receipt && receipt.blockNumber) {
             const confirmations = currentBlock - receipt.blockNumber + 1;
             const reachedRequired = confirmations >= config.confirmationsRequired;
             
-            // Update order confirmations in database
+            // Updated order confirmations in database
             if (order.confirmations !== confirmations) {
               order.confirmations = confirmations;
               await order.save();
@@ -1346,7 +1398,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
         continue;
       }
 
-      // Check if transaction was successful (not reverted)
+      // This check determines whether transaction was successful (not reverted)
       const receipt = await provider.getTransactionReceipt(tx.hash);
       if (!receipt || receipt.status !== 1) {
         console.log(`   âš ï¸  Transaction ${tx.hash.slice(0, 16)}... failed or reverted, skipping`);
@@ -1357,7 +1409,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       const expectedETH = order.cryptoAmount;
       const expectedUSD = order.priceUSD;
       
-      // Validate amount
+      // Validates amount
       const matchResult = isEthAmountMatch(tx.value, expectedETH, expectedUSD);
 
       if (tx.hash) {
@@ -1388,7 +1440,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
         console.log(`   Gas Price: ${ethers.formatUnits(tx.gasPrice || 0, 'gwei')} Gwei`);
         console.log(`   Etherscan: ${config.blockExplorer}/tx/${tx.hash}`);
         
-        // Calculate gas fee in ETH
+        // Calculates gas fee in ETH
         const gasFee = receipt.gasUsed * (tx.gasPrice || 0n);
         const gasFeeETH = parseFloat(ethers.formatEther(gasFee));
         
@@ -1432,7 +1484,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
             console.log(`ðŸŽ‰ Ethereum pass order ${orderId} completed successfully!\n`);
           }
         } else {
-          // Mark as confirmed, waiting for more confirmations
+          // Marks as confirmed, waiting for more confirmations
           order.confirmations = confirmations;
           order.status = 'confirmed';
           await order.save();
@@ -1588,24 +1640,27 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
 // Start monitoring all awaiting tickets
 export const startTransactionMonitoring = (io) => {
   console.log('Starting transaction monitoring service...');
-  console.log(`   Bitcoin: ${getUtxoNetworkMode('bitcoin').toUpperCase()} (BlockCypher API)`);
-  console.log(`   Litecoin: ${getUtxoNetworkMode('litecoin').toUpperCase()} (BlockCypher API)`);
-  console.log(`   Ethereum: ${ETH_NETWORK_MODE.toUpperCase()} (${ETH_RPC_CONFIG[ETH_NETWORK_MODE].name})`);
+  console.log(`   Bitcoin: ${getUtxoNetworkMode('bitcoin').toUpperCase()} (default)`);
+  console.log(`   Litecoin: ${getUtxoNetworkMode('litecoin').toUpperCase()} (default)`);
+  console.log(`   Ethereum: ${ETH_NETWORK_MODE.toUpperCase()} (default ${ETH_RPC_CONFIG[ETH_NETWORK_MODE].name})`);
   console.log('   Monitoring interval: Every 3 seconds\n');
   
   // Run every 3 seconds for faster confirmation updates
   cron.schedule('*/3 * * * * *', async () => {
     try {
-      // Find all tickets awaiting transactions
-      const awaitingTickets = await TradeTicket.find({
-        awaitingTransaction: true,
-        transactionConfirmed: false,
-        botWalletAddress: { $ne: null }
-      }).select('ticketId botWalletAddress expectedAmount transactionHash confirmationCount');
+      const ticketsPaused = await isTicketWorkflowPaused();
+      let awaitingTickets = [];
+      if (!ticketsPaused) {
+        awaitingTickets = await TradeTicket.find({
+          awaitingTransaction: true,
+          transactionConfirmed: false,
+          botWalletAddress: { $ne: null }
+        }).select('ticketId botWalletAddress expectedAmount transactionHash confirmationCount transactionNetworkMode');
+      }
 
       const now = new Date();
 
-      // Find all pending Litecoin pass orders (exclude completed/failed)
+      // This lookup finds all pending Litecoin pass orders (exclude completed/failed)
       const pendingLTCOrders = await PassOrder.find({
         cryptocurrency: 'litecoin',
         $or: [
@@ -1614,7 +1669,7 @@ export const startTransactionMonitoring = (io) => {
         ]
       }).select('orderId paymentAddress cryptoAmount priceUSD status timeoutDetails');
 
-      // Find all pending Bitcoin pass orders (exclude completed/failed)
+      // This lookup finds all pending Bitcoin pass orders (exclude completed/failed)
       const pendingBTCOrders = await PassOrder.find({
         cryptocurrency: 'bitcoin',
         $or: [
@@ -1623,7 +1678,7 @@ export const startTransactionMonitoring = (io) => {
         ]
       }).select('orderId paymentAddress cryptoAmount priceUSD status timeoutDetails');
 
-      // Find all pending Ethereum pass orders (exclude completed/failed)
+      // This lookup finds all pending Ethereum pass orders (exclude completed/failed)
       const pendingETHOrders = await PassOrder.find({
         cryptocurrency: 'ethereum',
         $or: [
@@ -1635,10 +1690,13 @@ export const startTransactionMonitoring = (io) => {
       const totalMonitoring = awaitingTickets.length + pendingLTCOrders.length + pendingBTCOrders.length + pendingETHOrders.length;
 
       if (totalMonitoring > 0) {
-        console.log(`Checking ${awaitingTickets.length} ticket(s), ${pendingLTCOrders.length} LTC order(s), ${pendingBTCOrders.length} BTC order(s), ${pendingETHOrders.length} ETH order(s)...`);
-        
-        for (const ticket of awaitingTickets) {
-          await monitorTicketTransaction(ticket.ticketId);
+        const ticketLabel = ticketsPaused ? '0 (paused)' : awaitingTickets.length;
+        console.log(`Checking ${ticketLabel} ticket(s), ${pendingLTCOrders.length} LTC order(s), ${pendingBTCOrders.length} BTC order(s), ${pendingETHOrders.length} ETH order(s)...`);
+
+        if (!ticketsPaused) {
+          for (const ticket of awaitingTickets) {
+            await monitorTicketTransaction(ticket.ticketId);
+          }
         }
 
         for (const order of pendingLTCOrders) {
@@ -1658,3 +1716,5 @@ export const startTransactionMonitoring = (io) => {
     }
   });
 };
+
+

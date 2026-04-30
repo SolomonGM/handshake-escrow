@@ -74,7 +74,7 @@ const formatDisplayName = (user, privacySelection) => {
   return `@${user.username || 'User'}`;
 };
 
-export const buildTransactionFeedItem = (ticket) => {
+export const buildTransactionFeedItem = (ticket, options = {}) => {
   if (!ticket) return null;
 
   const { senderUser, receiverUser } = resolveSenderReceiver(ticket);
@@ -95,6 +95,11 @@ export const buildTransactionFeedItem = (ticket) => {
     hour12: false
   });
 
+  const transactionHash = ticket.senderTransactionHash
+    || ticket.payoutTransactionHash
+    || ticket.receiverTransactionHash
+    || 'N/A';
+
   return {
     id: ticket.ticketId || ticket._id?.toString(),
     ticketId: ticket.ticketId,
@@ -103,8 +108,9 @@ export const buildTransactionFeedItem = (ticket) => {
     usdValue,
     sender,
     receiver,
-    transactionId: ticket.payoutTransactionHash || ticket.receiverTransactionHash || 'N/A',
+    transactionId: transactionHash,
     blockchain: ticket.cryptocurrency || 'N/A',
+    networkMode: ticket.transactionNetworkMode || options.networkMode || null,
     timestamp,
     status: 'completed',
     completedAt,

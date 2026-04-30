@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import { 
   getAllUsers, 
   updateUserRank, 
@@ -14,7 +14,11 @@ import {
   deleteTradeRequest,
   getTradeTickets,
   getModerationActions,
-  getActiveBans
+  getActiveBans,
+  getRuntimeConfiguration,
+  pauseTicketWorkflow,
+  resumeTicketWorkflow,
+  updateRuntimeConfiguration
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -36,5 +40,9 @@ router.delete('/trade-requests/:requestId', protect, deleteTradeRequest);
 router.get('/tickets', protect, getTradeTickets);
 router.get('/moderation-actions', protect, getModerationActions);
 router.get('/active-bans', protect, getActiveBans);
+router.get('/runtime-config', protect, getRuntimeConfiguration);
+router.post('/runtime-config/pause', protect, pauseTicketWorkflow);
+router.post('/runtime-config/resume', protect, resumeTicketWorkflow);
+router.put('/runtime-config', protect, updateRuntimeConfiguration);
 
 export default router;

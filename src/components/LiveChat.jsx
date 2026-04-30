@@ -267,8 +267,8 @@ const LiveChat = ({ isOpen, onClose }) => {
   }, [announcements]);
 
   // Auto scroll to bottom (only if user is not scrolling)
-  const scrollToBottom = (smooth = true) => {
-    if (messagesEndRef.current && !isUserScrolling) {
+  const scrollToBottom = (smooth = true, force = false) => {
+    if (messagesEndRef.current && (force || !isUserScrolling)) {
       messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     }
   };
@@ -882,7 +882,7 @@ const LiveChat = ({ isOpen, onClose }) => {
           <button
             onClick={() => {
               setIsUserScrolling(false);
-              scrollToBottom();
+              scrollToBottom(true, true);
             }}
             className="absolute bottom-24 right-6 z-10 bg-n-6 hover:bg-n-5 text-n-1 rounded-full p-3 shadow-lg transition-all duration-300 animate-bounce-subtle"
             title="Scroll to latest messages"

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 
 const passOrderSchema = new mongoose.Schema({
   orderId: {
@@ -31,6 +31,11 @@ const passOrderSchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20']
+  },
+  networkMode: {
+    type: String,
+    enum: ['mainnet', 'testnet'],
+    default: 'mainnet'
   },
   cryptoAmount: {
     type: Number,

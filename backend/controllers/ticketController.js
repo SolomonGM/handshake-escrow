@@ -1,27 +1,33 @@
-import TradeTicket from '../models/TradeTicket.js';
+﻿import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import { ethers } from 'ethers';
-import { BOT_WALLETS, calculateTotalAmount, EXCHANGE_RATES, ETH_RPC_CONFIG, ETH_NETWORK_MODE } from '../config/wallets.js';
+import { calculateTotalAmount, EXCHANGE_RATES, ETH_RPC_CONFIG } from '../config/wallets.js';
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
+import {
+  getActiveNetworkModeForCoin,
+  getBotWalletForCoin,
+  getRuntimeConfig,
+  getTicketPauseMetadata
+} from '../services/runtimeConfigService.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
 const ACTIVE_TICKET_LIMIT = 12;
 const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
 
-const getEthProvider = () => {
-  const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+const getEthProvider = (networkMode = 'mainnet') => {
+  const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG.mainnet;
   if (!config?.rpcUrl) {
     return null;
   }
   return new ethers.JsonRpcProvider(config.rpcUrl);
 };
 
-const getEthWallet = () => {
+const getEthWallet = (networkMode = 'mainnet') => {
   const privateKey = process.env.BOT_ETH_PRIVATE_KEY || process.env.ETH_BOT_PRIVATE_KEY;
   if (!privateKey) {
     return null;
   }
-  const provider = getEthProvider();
+  const provider = getEthProvider(networkMode);
   if (!provider) {
     return null;
   }
@@ -87,6 +93,15 @@ const addStaffActionMessage = (ticket, { title, description, color = 'blue' }) =
     },
     timestamp: new Date()
   });
+};
+
+const resolveTicketBotWallet = async (ticket, runtimeConfig = null) => {
+  const config = runtimeConfig || await getRuntimeConfig();
+  const { wallet, mode } = getBotWalletForCoin(ticket?.cryptocurrency, config);
+  return {
+    wallet,
+    mode
+  };
 };
 
 const buildActiveTicketLimitQuery = (userId) => ({
@@ -248,8 +263,8 @@ const buildPayoutDetails = (ticket) => {
   };
 };
 
-const sendEthPayout = async (ticket, toAddress) => {
-  const wallet = getEthWallet();
+const sendEthPayout = async (ticket, toAddress, networkMode = 'mainnet') => {
+  const wallet = getEthWallet(networkMode);
   if (!wallet) {
     throw new Error('Bot wallet private key not configured');
   }
@@ -289,9 +304,9 @@ const sendEthPayout = async (ticket, toAddress) => {
   };
 };
 
-const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName }) => {
-  const provider = getEthProvider();
-  const config = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networkMode = 'mainnet' }) => {
+  const provider = getEthProvider(networkMode);
+  const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG.mainnet;
   const requiredConfirmations = config?.confirmationsRequired || 2;
   if (!provider) {
     return;
@@ -354,24 +369,24 @@ const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName }) => {
 
       await ticket.save();
     } catch (error) {
-      console.error('❌ Payout confirmation watcher error:', error);
+      console.error('âŒ Payout confirmation watcher error:', error);
     }
   });
 };
 
-// Create a new trade ticket
+// Creates a new trade ticket
 export const createTicket = async (req, res) => {
   try {
     const { cryptocurrency } = req.body;
     const userId = req.user._id;
     
-    console.log('🎫 Creating ticket for user:', userId);
-    console.log('📦 Request body:', req.body);
-    console.log('💰 Cryptocurrency value:', cryptocurrency, 'Type:', typeof cryptocurrency);
+    console.log('ðŸŽ« Creating ticket for user:', userId);
+    console.log('ðŸ“¦ Request body:', req.body);
+    console.log('ðŸ’° Cryptocurrency value:', cryptocurrency, 'Type:', typeof cryptocurrency);
 
-    // Validate cryptocurrency parameter
+    // Validates cryptocurrency parameter
     if (!cryptocurrency || cryptocurrency.trim() === '') {
-      console.log('❌ Cryptocurrency validation failed');
+      console.log('âŒ Cryptocurrency validation failed');
       return res.status(400).json({
         success: false,
         message: 'Cryptocurrency is required'
@@ -388,14 +403,14 @@ export const createTicket = async (req, res) => {
       });
     }
 
-    // Generate unique ticket ID
+    // Generates unique ticket ID
     const ticketId = `#${Math.floor(Math.random() * 9000000) + 1000000}`;
 
-    // Validate and normalize cryptocurrency value
+    // Validates and normalizes cryptocurrency value
     const cryptoUpper = cryptocurrency ? cryptocurrency.toUpperCase() : 'CRYPTO';
     const cryptoCapitalized = cryptocurrency ? cryptocurrency.charAt(0).toUpperCase() + cryptocurrency.slice(1) : 'Crypto';
 
-    // Create initial bot messages
+    // Creates initial bot messages
     const initialMessages = [
       {
         isBot: true,
@@ -428,9 +443,9 @@ export const createTicket = async (req, res) => {
       status: 'open'
     });
 
-    console.log('✅ Ticket created:', ticketId, 'status:', ticket.status);
+    console.log('âœ… Ticket created:', ticketId, 'status:', ticket.status);
 
-    // Populate creator info
+    // Populates creator info
     await ticket.populate('creator', 'username userId avatar');
 
     res.status(201).json({
@@ -447,13 +462,13 @@ export const createTicket = async (req, res) => {
   }
 };
 
-// Get ticket by ID
+// Retrieves ticket by ID
 export const getTicket = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const userId = req.user._id;
     
-    console.log('🔍 Looking for ticket:', ticketId);
+    console.log('ðŸ” Looking for ticket:', ticketId);
 
     const ticket = await TradeTicket.findOne({ ticketId })
       .populate('creator', 'username userId avatar')
@@ -467,7 +482,7 @@ export const getTicket = async (req, res) => {
       });
     }
 
-    // Check if user has access to this ticket
+    // This check determines whether user has access to this ticket
     const isCreator = ticket.creator._id.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user && p.user._id.toString() === userId.toString() && p.status === 'accepted'
@@ -495,7 +510,7 @@ export const getTicket = async (req, res) => {
   }
 };
 
-// Add user to ticket
+// Adds user to ticket
 export const addUserToTicket = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -512,7 +527,7 @@ export const addUserToTicket = async (req, res) => {
       });
     }
 
-    // Check if requester is the creator
+    // This check determines whether requester is the creator
     if (ticket.creator._id.toString() !== requesterId.toString()) {
       return res.status(403).json({
         success: false,
@@ -520,15 +535,15 @@ export const addUserToTicket = async (req, res) => {
       });
     }
 
-    // Find user by userId (17-digit ID only)
+    // This lookup finds user by userId (17-digit ID only)
     let targetUser;
     
-    // Only accept 17-digit userId
+    // This validation accepts only 17-digit userId
     targetUser = await User.findOne({ userId: userIdentifier })
       .select('username userId avatar');
 
     if (!targetUser) {
-      // Add error message to ticket
+      // Added error message to ticket
       ticket.messages.push({
         isBot: true,
         content: 'Invalid User ID',
@@ -550,7 +565,7 @@ export const addUserToTicket = async (req, res) => {
       });
     }
 
-    // Check if user is trying to add themselves
+    // This check determines whether user is trying to add themselves
     if (targetUser._id.toString() === requesterId.toString()) {
       ticket.messages.push({
         isBot: true,
@@ -573,7 +588,7 @@ export const addUserToTicket = async (req, res) => {
       });
     }
 
-    // Check if user is already in ticket
+    // This check determines whether user is already in ticket
     const alreadyAdded = ticket.participants.some(
       p => p.user.toString() === targetUser._id.toString()
     );
@@ -586,13 +601,13 @@ export const addUserToTicket = async (req, res) => {
       });
     }
 
-    // Add user to participants
+    // Added user to participants
     ticket.participants.push({
       user: targetUser._id,
       status: 'pending'
     });
 
-    // Add system message
+    // Added system message
     ticket.messages.push({
       isBot: true,
       content: 'Invitation Sent',
@@ -622,7 +637,7 @@ export const addUserToTicket = async (req, res) => {
   }
 };
 
-// Send message in ticket
+// Sends message in ticket
 export const sendMessage = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -641,7 +656,7 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    // Check if user has access
+    // This check determines whether user has access
     const isCreator = ticket.creator.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user.toString() === userId.toString() && p.status === 'accepted'
@@ -658,6 +673,26 @@ export const sendMessage = async (req, res) => {
     if (isStaff && trimmedContent.startsWith('/staff')) {
       const parts = trimmedContent.split(' ').filter(Boolean);
       const staffCommand = (parts[1] || 'help').toLowerCase();
+      const pauseState = await getTicketPauseMetadata();
+      const commandMutatesTicket = new Set([
+        'rescan',
+        'cancel-transaction',
+        'close',
+        'cancel',
+        'dispute',
+        'refund'
+      ]);
+
+      if (pauseState.paused && commandMutatesTicket.has(staffCommand)) {
+        return res.status(423).json({
+          success: false,
+          code: 'TICKET_WORKFLOW_PAUSED',
+          message: pauseState.pauseReason
+            ? `Ticket workflow is paused: ${pauseState.pauseReason}`
+            : 'Ticket workflow is temporarily paused while runtime configuration is being updated.',
+          pauseChangedAt: pauseState.pauseChangedAt || null
+        });
+      }
 
       const sendStaffHelp = async () => {
         const description = [
@@ -846,13 +881,13 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Get user's tickets
+// Retrieves user's tickets
 export const getUserTickets = async (req, res) => {
   try {
     const userId = req.user._id;
-    console.log('📋 Fetching tickets for user:', userId);
+    console.log('ðŸ“‹ Fetching tickets for user:', userId);
 
-    // Get tickets where user is creator or participant
+    // Retrieves tickets where user is creator or participant
     const tickets = await TradeTicket.find({
       $or: [
         { creator: userId },
@@ -863,16 +898,16 @@ export const getUserTickets = async (req, res) => {
     .populate('participants.user', 'username userId avatar')
     .sort({ createdAt: -1 });
 
-    console.log(`📦 Found ${tickets.length} total tickets`);
+    console.log(`ðŸ“¦ Found ${tickets.length} total tickets`);
 
-    // Separate into different categories
+    // Separates into different categories
     
     // Invitations - tickets where user is invited but hasn't responded
     const invitations = tickets.filter(t => {
       const participant = t.participants.find(p => p.user && p.user._id.toString() === userId.toString());
       return participant && participant.status === 'pending';
     });
-    console.log(`📨 Invitations: ${invitations.length}`);
+    console.log(`ðŸ“¨ Invitations: ${invitations.length}`);
     
     // Active - tickets that are open or in-progress where user is creator or accepted participant
     const activeTickets = tickets.filter(t => {
@@ -887,11 +922,11 @@ export const getUserTickets = async (req, res) => {
         t.status === 'closing'
       );
       if (isActive) {
-        console.log(`🔥 Active ticket found: ${t.ticketId}, status: ${t.status}, isCreator: ${isCreator}`);
+        console.log(`ðŸ”¥ Active ticket found: ${t.ticketId}, status: ${t.status}, isCreator: ${isCreator}`);
       }
       return isActive;
     });
-    console.log(`🔥 Active Tickets: ${activeTickets.length}`);
+    console.log(`ðŸ”¥ Active Tickets: ${activeTickets.length}`);
     
     // My Tickets - ONLY finished tickets (completed, cancelled, refunded) where user is creator OR accepted participant
     const myTickets = tickets.filter(t => {
@@ -901,7 +936,7 @@ export const getUserTickets = async (req, res) => {
       const isFinished = ['completed', 'cancelled', 'refunded'].includes(t.status);
       return (isCreator || isAcceptedParticipant) && isFinished;
     });
-    console.log(`✅ My Tickets (finished): ${myTickets.length}`);
+    console.log(`âœ… My Tickets (finished): ${myTickets.length}`);
 
     res.json({
       success: true,
@@ -919,7 +954,7 @@ export const getUserTickets = async (req, res) => {
   }
 };
 
-// Respond to ticket invitation
+// Responds to ticket invitation
 export const respondToInvitation = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -946,10 +981,10 @@ export const respondToInvitation = async (req, res) => {
       });
     }
 
-    // Get user info
+    // Retrieves user info
     const user = await User.findById(userId).select('username userId');
 
-    // Add embed notification to ticket
+    // Added embed notification to ticket
     if (action === 'accept') {
       const activeTicketCount = await countUserActiveTickets(userId);
       if (activeTicketCount >= ACTIVE_TICKET_LIMIT) {
@@ -982,7 +1017,7 @@ export const respondToInvitation = async (req, res) => {
         });
       }
       
-      // Update ticket status to in-progress
+      // Updated ticket status to in-progress
       if (ticket.status === 'open') {
         ticket.status = 'in-progress';
       }
@@ -1047,7 +1082,7 @@ export const respondToInvitation = async (req, res) => {
   }
 };
 
-// Trigger user prompt after 10 seconds (only once)
+// Triggers user prompt after 10 seconds (only once)
 export const triggerUserPrompt = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -1070,7 +1105,7 @@ export const triggerUserPrompt = async (req, res) => {
       });
     }
 
-    // Check if prompt already shown
+    // This check determines whether prompt already shown
     if (ticket.hasShownPrompt) {
       return res.json({
         success: true,
@@ -1079,7 +1114,7 @@ export const triggerUserPrompt = async (req, res) => {
       });
     }
 
-    // Add prompt message to database
+    // Added prompt message to database
     ticket.messages.push({
       isBot: true,
       content: 'Add User to Ticket',
@@ -1097,7 +1132,7 @@ export const triggerUserPrompt = async (req, res) => {
 
     await ticket.save();
     
-    // Populate the ticket before sending response
+    // Populates the ticket before sending response
     await ticket.populate('creator', 'username userId avatar');
     await ticket.populate('participants.user', 'username userId avatar');
 
@@ -1117,7 +1152,7 @@ export const triggerUserPrompt = async (req, res) => {
   }
 };
 
-// Close ticket
+// Closes ticket
 export const closeTicket = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -1132,7 +1167,7 @@ export const closeTicket = async (req, res) => {
       });
     }
 
-    // Check if user has access to this ticket (creator or accepted participant)
+    // This check determines whether user has access to this ticket (creator or accepted participant)
     const isCreator = ticket.creator.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user.toString() === userId.toString() && p.status === 'accepted'
@@ -1228,7 +1263,7 @@ export const closeTicket = async (req, res) => {
   }
 };
 
-// Select broadcast privacy (anonymous or global)
+// Selects broadcast privacy (anonymous or global)
 export const selectPrivacy = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -1251,7 +1286,7 @@ export const selectPrivacy = async (req, res) => {
       });
     }
 
-    // Check if user has access to this ticket (creator or accepted participant)
+    // This check determines whether user has access to this ticket (creator or accepted participant)
     const isCreator = ticket.creator.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user.toString() === userId.toString() && p.status === 'accepted'
@@ -1305,14 +1340,14 @@ export const selectPrivacy = async (req, res) => {
   }
 };
 
-// Select role (sender or receiver)
+// Selects role (sender or receiver)
 export const selectRole = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { role } = req.body; // 'sender' or 'receiver'
     const userId = req.user._id;
 
-    console.log(`\n🎯 SELECT ROLE REQUEST:`);
+    console.log(`\nðŸŽ¯ SELECT ROLE REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Requested Role: ${role}`);
@@ -1337,12 +1372,12 @@ export const selectRole = async (req, res) => {
 
     const isCreator = ticket.creator._id.toString() === userId.toString();
     
-    // Find THIS user's participant entry (if they're a participant)
+    // This lookup finds THIS user's participant entry (if they're a participant)
     const thisUserParticipant = ticket.participants.find(
       p => p.user._id.toString() === userId.toString() && p.status === 'accepted'
     );
     
-    // Find the OTHER user's participant entry (the one who is NOT the current user)
+    // This lookup finds the OTHER user's participant entry (the one who is NOT the current user)
     const otherParticipant = ticket.participants.find(
       p => p.user._id.toString() !== userId.toString() && p.status === 'accepted'
     );
@@ -1354,19 +1389,19 @@ export const selectRole = async (req, res) => {
       });
     }
 
-    // Get user info
+    // Retrieves user info
     const user = await User.findById(userId).select('username');
     const currentUserRole = isCreator ? ticket.creatorRole : thisUserParticipant?.role;
     const otherUserRole = isCreator ? otherParticipant?.role : ticket.creatorRole;
     
-    console.log(`📊 CURRENT STATE:`);
+    console.log(`ðŸ“Š CURRENT STATE:`);
     console.log(`   This User (${user.username}): ${currentUserRole || 'null'}`);
     console.log(`   Other User: ${otherUserRole || 'null'}`);
     console.log(`   Wants to select: ${role}`);
 
-    // Check if other user has already selected this role
+    // This check determines whether other user has already selected this role
     if (otherUserRole && otherUserRole === role) {
-      console.log(`❌ Cannot select ${role} - already taken by other user`);
+      console.log(`âŒ Cannot select ${role} - already taken by other user`);
       return res.status(400).json({
         success: false,
         message: `The ${role} role has already been selected by the other user. Please select ${role === 'sender' ? 'receiver' : 'sender'}.`,
@@ -1374,9 +1409,9 @@ export const selectRole = async (req, res) => {
       });
     }
 
-    // If selecting same role they already have, just return current state (no changes needed)
+    // This branch handles when selecting same role they already have, just return current state (no changes needed)
     if (currentUserRole === role) {
-      console.log(`✅ User already has ${role} selected - no changes needed`);
+      console.log(`âœ… User already has ${role} selected - no changes needed`);
       return res.json({
         success: true,
         message: 'Role already selected',
@@ -1384,7 +1419,7 @@ export const selectRole = async (req, res) => {
       });
     }
 
-    // Update this user's role selection (switching or first-time selection)
+    // Updated this user's role selection (switching or first-time selection)
     if (isCreator) {
       ticket.creatorRole = role;
     } else {
@@ -1398,9 +1433,9 @@ export const selectRole = async (req, res) => {
       }
     }
 
-    console.log(`✅ ${user.username} role updated to: ${role}`);
+    console.log(`âœ… ${user.username} role updated to: ${role}`);
 
-    // Remove this user's previous "selected their role" message if it exists
+    // Removed this user's previous "selected their role" message if it exists
     const messageCountBefore = ticket.messages.length;
     ticket.messages = ticket.messages.filter(msg => 
       !(msg.embedData?.title?.includes('selected their role') &&
@@ -1408,7 +1443,7 @@ export const selectRole = async (req, res) => {
     );
     
     if (messageCountBefore !== ticket.messages.length) {
-      console.log(`🧹 Removed previous role selection message for ${user.username}`);
+      console.log(`ðŸ§¹ Removed previous role selection message for ${user.username}`);
     }
 
     // Also remove any old confirmation prompts (user switched roles, so old confirmation is invalid)
@@ -1416,7 +1451,7 @@ export const selectRole = async (req, res) => {
       !(msg.embedData?.actionType === 'role-confirmation')
     );
 
-    // Add this user's new role selection message
+    // Added this user's new role selection message
     ticket.messages.push({
       isBot: true,
       content: 'Role Selected',
@@ -1428,32 +1463,32 @@ export const selectRole = async (req, res) => {
       },
       timestamp: new Date()
     });
-    console.log(`💬 Added "@${user.username} selected their role" message`);
+    console.log(`ðŸ’¬ Added "@${user.username} selected their role" message`);
 
-    // Check if BOTH users have now selected roles AND they're DIFFERENT
+    // This check determines whether BOTH users have now selected roles AND they're DIFFERENT
     const finalCreatorRole = isCreator ? role : ticket.creatorRole;
     const finalParticipantRole = isCreator ? otherParticipant?.role : role;
     
-    console.log(`🔍 Final Role Check:`);
+    console.log(`ðŸ” Final Role Check:`);
     console.log(`   Creator role: ${finalCreatorRole}`);
     console.log(`   Participant role: ${finalParticipantRole}`);
 
     if (finalCreatorRole && finalParticipantRole && finalCreatorRole !== finalParticipantRole) {
-      console.log(`🎉 BOTH USERS SELECTED DIFFERENT ROLES - Adding confirmation prompt`);
+      console.log(`ðŸŽ‰ BOTH USERS SELECTED DIFFERENT ROLES - Adding confirmation prompt`);
       
-      // Remove the "Select Your Role" prompt (no longer needed)
+      // Removed the "Select Your Role" prompt (no longer needed)
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.actionType === 'role-selection')
       );
 
       const creatorUser = ticket.creator;
-      // Use the accepted participant (the "other user" if creator is making selection, or thisUserParticipant if participant is making selection)
+      // Uses the accepted participant (the "other user" if creator is making selection, or thisUserParticipant if participant is making selection)
       const participantUser = isCreator ? otherParticipant.user : thisUserParticipant.user;
       
       const senderUser = finalCreatorRole === 'sender' ? creatorUser : participantUser;
       const receiverUser = finalCreatorRole === 'receiver' ? creatorUser : participantUser;
 
-      // Add confirmation prompt
+      // Added confirmation prompt
       ticket.messages.push({
         isBot: true,
         content: 'Role Confirmation',
@@ -1467,9 +1502,9 @@ export const selectRole = async (req, res) => {
         },
         timestamp: new Date()
       });
-      console.log(`✅ Confirmation prompt added`);
+      console.log(`âœ… Confirmation prompt added`);
     } else {
-      console.log(`⏳ Waiting for other user to select (or both to select different roles)`);
+      console.log(`â³ Waiting for other user to select (or both to select different roles)`);
     }
 
     // Save ticket
@@ -1479,7 +1514,7 @@ export const selectRole = async (req, res) => {
     await ticket.populate('creator', 'username userId avatar');
     await ticket.populate('participants.user', 'username userId avatar');
     
-    console.log(`💾 Ticket saved - ${ticket.messages.length} messages total\n`);
+    console.log(`ðŸ’¾ Ticket saved - ${ticket.messages.length} messages total\n`);
 
     res.json({
       success: true,
@@ -1487,7 +1522,7 @@ export const selectRole = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Select role error:', error);
+    console.error('âŒ Select role error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to select role',
@@ -1496,14 +1531,14 @@ export const selectRole = async (req, res) => {
   }
 };
 
-// Confirm or reject role selection
+// Confirms or rejects role selection
 export const confirmRoles = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { confirmed } = req.body; // true or false
     const userId = req.user._id;
 
-    console.log(`\n🎯 CONFIRM ROLES REQUEST:`);
+    console.log(`\nðŸŽ¯ CONFIRM ROLES REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Confirmed: ${confirmed}`);
@@ -1525,7 +1560,7 @@ export const confirmRoles = async (req, res) => {
       p => p.user && p.status === 'accepted'
     );
 
-    // Find THIS user's participant entry
+    // This lookup finds THIS user's participant entry
     const thisUserParticipant = acceptedParticipants.find(
       p => p.user._id.toString() === userId.toString()
     );
@@ -1549,11 +1584,11 @@ export const confirmRoles = async (req, res) => {
         });
       }
 
-      // Mark user as confirmed
+      // Marks user as confirmed
       ticket.roleConfirmations.set(userId.toString(), true);
-      console.log(`✅ User ${user.username} confirmed roles`);
+      console.log(`âœ… User ${user.username} confirmed roles`);
 
-      // Check if both users confirmed (works regardless of who confirms first)
+      // This check determines whether both users confirmed (works regardless of who confirms first)
       const creatorId = ticket.creator._id.toString();
       const participantIds = acceptedParticipants.map(p => p.user._id.toString());
       const creatorConfirmed = ticket.roleConfirmations.get(creatorId);
@@ -1561,26 +1596,26 @@ export const confirmRoles = async (req, res) => {
         ? participantIds.every(id => ticket.roleConfirmations.get(id) === true)
         : false;
       
-      console.log(`📊 Confirmation status:`);
+      console.log(`ðŸ“Š Confirmation status:`);
       console.log(`   Creator confirmed: ${creatorConfirmed}`);
       console.log(`   Participant confirmed: ${participantConfirmed}`);
 
       if (creatorConfirmed && participantConfirmed) {
         // BOTH CONFIRMED - Finalize roles and save to database
         ticket.rolesConfirmed = true;
-        console.log(`🎉 BOTH USERS CONFIRMED! Finalizing roles in database...`);
+        console.log(`ðŸŽ‰ BOTH USERS CONFIRMED! Finalizing roles in database...`);
         console.log(`   Sender: ${ticket.creatorRole === 'sender' ? 'Creator' : 'Participant'}`);
         console.log(`   Receiver: ${ticket.creatorRole === 'receiver' ? 'Creator' : 'Participant'}`);
 
-        // Remove ALL role-related prompts including confirmations
+        // Removed ALL role-related prompts including confirmations
         const messageCountBefore = ticket.messages.length;
         ticket.messages = ticket.messages.filter(msg => 
           !(msg.embedData?.actionType === 'role-confirmation' ||
             msg.embedData?.title?.includes('confirmed their role'))
         );
-        console.log(`🧹 Cleaned up ${messageCountBefore - ticket.messages.length} confirmation messages`);
+        console.log(`ðŸ§¹ Cleaned up ${messageCountBefore - ticket.messages.length} confirmation messages`);
 
-        // Add final success message
+        // Added final success message
         const creatorUser = ticket.creator;
         const participantUser = acceptedParticipants[0]?.user;
         
@@ -1600,10 +1635,10 @@ export const confirmRoles = async (req, res) => {
         });
 
         await ticket.save();
-        console.log(`💾 ✅ ROLES FINALIZED AND SAVED TO DATABASE`);
+        console.log(`ðŸ’¾ âœ… ROLES FINALIZED AND SAVED TO DATABASE`);
         console.log(`   Ticket ${ticket.ticketId} - Roles are now permanent\n`);
 
-        // Schedule amount prompt to show after 3-5 seconds
+        // Schedules amount prompt to show after 3-5 seconds
         const delay = 3000 + Math.random() * 2000; // 3-5 seconds
         setTimeout(async () => {
           try {
@@ -1631,7 +1666,7 @@ export const confirmRoles = async (req, res) => {
               
               updatedTicket.amountPromptShown = true;
               await updatedTicket.save();
-              console.log(`💰 Amount prompt shown for ticket ${ticketId}`);
+              console.log(`ðŸ’° Amount prompt shown for ticket ${ticketId}`);
             }
           } catch (error) {
             console.error('Error showing amount prompt:', error);
@@ -1645,9 +1680,9 @@ export const confirmRoles = async (req, res) => {
         });
       } else {
         // Waiting for other user to confirm
-        console.log(`⏳ Waiting for other user to confirm...`);
+        console.log(`â³ Waiting for other user to confirm...`);
         
-        // Remove previous "confirmed their role" messages to avoid spam
+        // Removed previous "confirmed their role" messages to avoid spam
         ticket.messages = ticket.messages.filter(msg => 
           !msg.embedData?.title?.includes('confirmed their role')
         );
@@ -1665,7 +1700,7 @@ export const confirmRoles = async (req, res) => {
         });
 
         await ticket.save();
-        console.log(`💾 Saved confirmation status (waiting for other user)\n`);
+        console.log(`ðŸ’¾ Saved confirmation status (waiting for other user)\n`);
 
         res.json({
           success: true,
@@ -1675,11 +1710,11 @@ export const confirmRoles = async (req, res) => {
       }
     } else {
       // REJECTED - Reset everything and start over
-      console.log(`❌ User ${user.username} rejected roles - RESETTING EVERYTHING`);
+      console.log(`âŒ User ${user.username} rejected roles - RESETTING EVERYTHING`);
       
-      // Reset roles completely
+      // Resets roles completely
       ticket.creatorRole = null;
-      // Reset ALL participant roles (in case there are multiple)
+      // Resets ALL participant roles (in case there are multiple)
       ticket.participants.forEach(p => {
         if (p.status === 'accepted') {
           p.role = null;
@@ -1689,9 +1724,9 @@ export const confirmRoles = async (req, res) => {
       ticket.roleConfirmations = new Map();
       ticket.rolesConfirmed = false;
 
-      console.log(`🔄 All roles cleared`);
+      console.log(`ðŸ”„ All roles cleared`);
 
-      // Remove ALL role-related messages (clean slate)
+      // Removed ALL role-related messages (clean slate)
       const messageCountBefore = ticket.messages.length;
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.title?.includes('Select Your Role') || 
@@ -1702,9 +1737,9 @@ export const confirmRoles = async (req, res) => {
           msg.embedData?.actionType === 'role-confirmation' ||
           msg.embedData?.actionType === 'role-selection')
       );
-      console.log(`🧹 Deleted ${messageCountBefore - ticket.messages.length} role-related messages`);
+      console.log(`ðŸ§¹ Deleted ${messageCountBefore - ticket.messages.length} role-related messages`);
 
-      // Add rejection message
+      // Added rejection message
       ticket.messages.push({
         isBot: true,
         content: 'Roles Rejected',
@@ -1717,7 +1752,7 @@ export const confirmRoles = async (req, res) => {
         timestamp: new Date()
       });
 
-      // Add fresh role selection prompt
+      // Added fresh role selection prompt
       ticket.messages.push({
         isBot: true,
         content: 'Select Your Role',
@@ -1733,7 +1768,7 @@ export const confirmRoles = async (req, res) => {
       });
 
       await ticket.save();
-      console.log(`💾 Ticket reset complete - starting fresh\n`);
+      console.log(`ðŸ’¾ Ticket reset complete - starting fresh\n`);
 
       res.json({
         success: true,
@@ -1742,7 +1777,7 @@ export const confirmRoles = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Confirm roles error:', error);
+    console.error('âŒ Confirm roles error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to confirm roles',
@@ -1751,7 +1786,7 @@ export const confirmRoles = async (req, res) => {
   }
 };
 
-// Trigger role selection prompt
+// Triggers role selection prompt
 export const triggerRoleSelection = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -1768,7 +1803,7 @@ export const triggerRoleSelection = async (req, res) => {
       });
     }
 
-    // Check if user has access
+    // This check determines whether user has access
     const isCreator = ticket.creator._id.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user._id.toString() === userId.toString() && p.status === 'accepted'
@@ -1781,15 +1816,15 @@ export const triggerRoleSelection = async (req, res) => {
       });
     }
 
-    // Check if role selection should be shown
+    // This check determines whether role selection should be shown
     if (ticket.status === 'in-progress' && 
         ticket.roleSelectionTriggeredAt && 
         !ticket.roleSelectionShown &&
         !ticket.rolesConfirmed) {
       
-      console.log('🎯 Adding role selection prompt to ticket:', ticketId);
+      console.log('ðŸŽ¯ Adding role selection prompt to ticket:', ticketId);
       
-      // Add role selection prompt
+      // Added role selection prompt
       ticket.messages.push({
         isBot: true,
         content: 'Select Your Role',
@@ -1807,7 +1842,7 @@ export const triggerRoleSelection = async (req, res) => {
       ticket.roleSelectionShown = true;
       await ticket.save();
 
-      console.log('✅ Role selection prompt added, requiresAction:', true, 'actionType:', 'role-selection');
+      console.log('âœ… Role selection prompt added, requiresAction:', true, 'actionType:', 'role-selection');
 
       res.json({
         success: true,
@@ -1831,14 +1866,14 @@ export const triggerRoleSelection = async (req, res) => {
   }
 };
 
-// Detect and process amount from sender
+// Detects and processes amount from sender
 export const detectAmount = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { message } = req.body;
     const userId = req.user._id;
 
-    console.log(`\n💰 DETECT AMOUNT REQUEST:`);
+    console.log(`\nðŸ’° DETECT AMOUNT REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Message: ${message}`);
@@ -1854,7 +1889,7 @@ export const detectAmount = async (req, res) => {
       });
     }
 
-    // Check if roles are confirmed but amount not yet confirmed
+    // This check determines whether roles are confirmed but amount not yet confirmed
     if (!ticket.rolesConfirmed || ticket.dealAmountConfirmed) {
       return res.json({
         success: false,
@@ -1862,67 +1897,67 @@ export const detectAmount = async (req, res) => {
       });
     }
 
-    // Determine who is the sender
+    // Determines who is the sender
     const senderIsCreator = ticket.creatorRole === 'sender';
     const senderId = senderIsCreator ? ticket.creator._id.toString() : ticket.participants.find(p => p.status === 'accepted')?.user._id.toString();
     
-    // Check if this message is from the sender
+    // This check determines whether this message is from the sender
     if (userId.toString() !== senderId) {
-      console.log(`⏭️ Ignoring message - not from sender`);
+      console.log(`â­ï¸ Ignoring message - not from sender`);
       return res.json({
         success: false,
         message: 'Only sender can enter amount'
       });
     }
 
-    // Extract amount from message using regex
+    // Extracts amount from message using regex
     // Matches: 100, $100, 100.00, $100.00, etc.
     const amountRegex = /\$?\s*(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/;
     const match = message.match(amountRegex);
 
     if (!match) {
-      console.log(`❌ No amount detected in message`);
+      console.log(`âŒ No amount detected in message`);
       return res.json({
         success: false,
         message: 'No amount detected'
       });
     }
 
-    // Parse the amount (remove commas)
+    // Parses the amount (remove commas)
     const amountStr = match[1].replace(/,/g, '');
     const amount = parseFloat(amountStr);
 
     if (isNaN(amount) || amount <= 0) {
-      console.log(`❌ Invalid amount: ${amountStr}`);
+      console.log(`âŒ Invalid amount: ${amountStr}`);
       return res.json({
         success: false,
         message: 'Invalid amount'
       });
     }
 
-    console.log(`✅ Amount detected: $${amount.toFixed(2)}`);
+    console.log(`âœ… Amount detected: $${amount.toFixed(2)}`);
 
-    // Update the amount entry prompt to orange
+    // Updated the amount entry prompt to orange
     const amountPromptIndex = ticket.messages.findIndex(msg => 
       msg.embedData?.actionType === 'amount-entry'
     );
     
     if (amountPromptIndex !== -1) {
       ticket.messages[amountPromptIndex].embedData.color = 'orange';
-      ticket.messages[amountPromptIndex].embedData.description += `\n\n✅ Amount detected: **$${amount.toFixed(2)} USD**`;
+      ticket.messages[amountPromptIndex].embedData.description += `\n\nâœ… Amount detected: **$${amount.toFixed(2)} USD**`;
     }
 
-    // Remove any previous amount confirmation prompts
+    // Removed any previous amount confirmation prompts
     ticket.messages = ticket.messages.filter(msg => 
       msg.embedData?.actionType !== 'amount-confirmation'
     );
 
-    // Reset confirmations for new amount
+    // Resets confirmations for new amount
     ticket.amountConfirmations = new Map();
     ticket.dealAmountConfirmed = false;
     ticket.markModified('amountConfirmations');
 
-    // Add confirmation prompt
+    // Added confirmation prompt
     ticket.messages.push({
       isBot: true,
       content: 'Confirm Amount',
@@ -1937,12 +1972,12 @@ export const detectAmount = async (req, res) => {
       timestamp: new Date()
     });
 
-    // Store the amount temporarily (not confirmed yet)
+    // Stores the amount temporarily (not confirmed yet)
     ticket.dealAmount = amount;
     ticket.markModified('messages');
     await ticket.save();
 
-    console.log(`💾 Amount saved temporarily: $${amount.toFixed(2)}\n`);
+    console.log(`ðŸ’¾ Amount saved temporarily: $${amount.toFixed(2)}\n`);
 
     res.json({
       success: true,
@@ -1951,7 +1986,7 @@ export const detectAmount = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Detect amount error:', error);
+    console.error('âŒ Detect amount error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to detect amount',
@@ -1960,14 +1995,14 @@ export const detectAmount = async (req, res) => {
   }
 };
 
-// Confirm deal amount
+// Confirms deal amount
 export const confirmAmount = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { confirmed } = req.body;
     const userId = req.user._id;
 
-    console.log(`\n💰 CONFIRM AMOUNT REQUEST:`);
+    console.log(`\nðŸ’° CONFIRM AMOUNT REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Confirmed: ${confirmed}`);
@@ -2020,36 +2055,36 @@ export const confirmAmount = async (req, res) => {
         });
       }
 
-      // Mark user as confirmed
+      // Marks user as confirmed
       ticket.amountConfirmations.set(userId.toString(), true);
-      console.log(`✅ User ${user.username} confirmed amount`);
+      console.log(`âœ… User ${user.username} confirmed amount`);
 
-      // Check if both users confirmed
+      // This check determines whether both users confirmed
       const creatorConfirmed = ticket.amountConfirmations.get(ticket.creator._id.toString());
       const participantIds = acceptedParticipants.map(p => p.user._id.toString());
       const participantConfirmed = participantIds.length > 0
         ? participantIds.every(id => ticket.amountConfirmations.get(id) === true)
         : false;
       
-      console.log(`📊 Amount confirmation status:`);
+      console.log(`ðŸ“Š Amount confirmation status:`);
       console.log(`   Creator confirmed: ${creatorConfirmed}`);
       console.log(`   Participant confirmed: ${participantConfirmed}`);
 
       if (creatorConfirmed && participantConfirmed) {
         // BOTH CONFIRMED
         ticket.dealAmountConfirmed = true;
-        console.log(`🎉 BOTH USERS CONFIRMED AMOUNT!`);
+        console.log(`ðŸŽ‰ BOTH USERS CONFIRMED AMOUNT!`);
 
-        // Remove ALL amount-related prompts including confirmations
+        // Removed ALL amount-related prompts including confirmations
         const messageCountBefore = ticket.messages.length;
         ticket.messages = ticket.messages.filter(msg => 
           !(msg.embedData?.actionType === 'amount-entry' ||
             msg.embedData?.actionType === 'amount-confirmation' ||
             msg.embedData?.title?.includes('confirmed the amount'))
         );
-        console.log(`🧹 Cleaned up ${messageCountBefore - ticket.messages.length} amount messages`);
+        console.log(`ðŸ§¹ Cleaned up ${messageCountBefore - ticket.messages.length} amount messages`);
 
-        // Add final success message
+        // Added final success message
         ticket.addUniqueMessage({
           isBot: true,
           content: 'Amount Confirmed',
@@ -2062,7 +2097,7 @@ export const confirmAmount = async (req, res) => {
           timestamp: new Date()
         });
 
-        // Schedule fee prompt to show after 2 seconds (only once)
+        // Schedules fee prompt to show after 2 seconds (only once)
         setTimeout(async () => {
           try {
             const feeTicket = await TradeTicket.findOne({ ticketId })
@@ -2081,7 +2116,7 @@ export const confirmAmount = async (req, res) => {
                 type: 'embed',
                 embedData: {
                   title: 'Use a Pass?',
-                  description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\n\n<strong>Fee Structure:</strong>\n• Deals $250+: 1%\n• Deals under $250: $2\n• Deals under $50: $0.50\n• Deals under $10: FREE\n• USDT & USDC: $1 surcharge\n\nPasses allow you to skip these fees entirely.`,
+                  description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\n\n<strong>Fee Structure:</strong>\nâ€¢ Deals $250+: 1%\nâ€¢ Deals under $250: $2\nâ€¢ Deals under $50: $0.50\nâ€¢ Deals under $10: FREE\nâ€¢ USDT & USDC: $1 surcharge\n\nPasses allow you to skip these fees entirely.`,
                   color: 'blue',
                   requiresAction: true,
                   actionType: 'fee-selection'
@@ -2090,7 +2125,7 @@ export const confirmAmount = async (req, res) => {
               });
               
               await feeTicket.save();
-              console.log(`💳 Fee prompt shown for ticket ${ticketId}`);
+              console.log(`ðŸ’³ Fee prompt shown for ticket ${ticketId}`);
             }
           } catch (error) {
             console.error('Error showing fee prompt:', error);
@@ -2098,7 +2133,7 @@ export const confirmAmount = async (req, res) => {
         }, 2000);
 
         await ticket.save();
-        console.log(`💾 ✅ AMOUNT FINALIZED AND SAVED TO DATABASE`);
+        console.log(`ðŸ’¾ âœ… AMOUNT FINALIZED AND SAVED TO DATABASE`);
         console.log(`   Ticket ${ticket.ticketId} - Amount: $${ticket.dealAmount.toFixed(2)}\n`);
 
         res.json({
@@ -2108,9 +2143,9 @@ export const confirmAmount = async (req, res) => {
         });
       } else {
         // Waiting for other user to confirm
-        console.log(`⏳ Waiting for other user to confirm amount...`);
+        console.log(`â³ Waiting for other user to confirm amount...`);
         
-        // Remove previous "confirmed the amount" messages to avoid spam
+        // Removed previous "confirmed the amount" messages to avoid spam
         ticket.messages = ticket.messages.filter(msg => 
           !msg.embedData?.title?.includes('confirmed the amount')
         );
@@ -2128,7 +2163,7 @@ export const confirmAmount = async (req, res) => {
         });
 
         await ticket.save();
-        console.log(`💾 Saved amount confirmation status (waiting for other user)\n`);
+        console.log(`ðŸ’¾ Saved amount confirmation status (waiting for other user)\n`);
 
         res.json({
           success: true,
@@ -2138,26 +2173,26 @@ export const confirmAmount = async (req, res) => {
       }
     } else {
       // REJECTED - Reset and re-prompt
-      console.log(`❌ User ${user.username} rejected amount - RESETTING`);
+      console.log(`âŒ User ${user.username} rejected amount - RESETTING`);
       
-      // Reset amount
+      // Resets amount
       ticket.dealAmount = null;
       ticket.amountConfirmations = new Map();
       ticket.dealAmountConfirmed = false;
       ticket.markModified('amountConfirmations');
 
-      console.log(`🔄 Amount cleared`);
+      console.log(`ðŸ”„ Amount cleared`);
 
-      // Remove ALL amount-related messages
+      // Removed ALL amount-related messages
       const messageCountBefore = ticket.messages.length;
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.actionType === 'amount-entry' || 
           msg.embedData?.actionType === 'amount-confirmation' ||
           msg.embedData?.title?.includes('confirmed the amount'))
       );
-      console.log(`🧹 Deleted ${messageCountBefore - ticket.messages.length} amount-related messages`);
+      console.log(`ðŸ§¹ Deleted ${messageCountBefore - ticket.messages.length} amount-related messages`);
 
-      // Add rejection message and re-prompt
+      // Added rejection message and re-prompt
       const senderIsCreator = ticket.creatorRole === 'sender';
       const senderUser = senderIsCreator
         ? ticket.creator
@@ -2191,7 +2226,7 @@ export const confirmAmount = async (req, res) => {
       });
 
       await ticket.save();
-      console.log(`💾 Amount entry reset - ready for new amount\n`);
+      console.log(`ðŸ’¾ Amount entry reset - ready for new amount\n`);
 
       res.json({
         success: true,
@@ -2200,7 +2235,7 @@ export const confirmAmount = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Confirm amount error:', error);
+    console.error('âŒ Confirm amount error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to confirm amount',
@@ -2209,14 +2244,14 @@ export const confirmAmount = async (req, res) => {
   }
 };
 
-// Select fee option (proceed with fees or use pass)
+// Selects fee option (proceed with fees or use pass)
 export const selectFeeOption = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { option } = req.body; // 'with-fees' or 'use-pass'
     const userId = req.user._id;
 
-    console.log(`\n💳 FEE OPTION REQUEST:`);
+    console.log(`\nðŸ’³ FEE OPTION REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Option: ${option}`);
@@ -2251,7 +2286,7 @@ export const selectFeeOption = async (req, res) => {
 
     if (option === 'use-pass') {
       // Show private pass prompt to this user only
-      console.log(`🎫 User ${user.username} wants to use a pass. Available passes: ${user.passes}`);
+      console.log(`ðŸŽ« User ${user.username} wants to use a pass. Available passes: ${user.passes}`);
       
       if (user.passes <= 0) {
         return res.status(400).json({
@@ -2268,19 +2303,19 @@ export const selectFeeOption = async (req, res) => {
       });
     } else if (option === 'with-fees') {
       // User wants to proceed with fees - need other user to confirm
-      console.log(`💰 User ${user.username} selected to proceed with fees`);
+      console.log(`ðŸ’° User ${user.username} selected to proceed with fees`);
 
-      // Remove previous fee-related messages
+      // Removed previous fee-related messages
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.actionType === 'fee-selection' ||
           msg.embedData?.actionType === 'fee-confirmation')
       );
 
-      // Mark this user's choice and track who initiated it
+      // Marks this user's choice and track who initiated it
       ticket.feeDecision = 'with-fees';
       ticket.feeInitiatedBy = userId; // Track who clicked "Proceed with Fees"
 
-      // Add confirmation prompt for OTHER user only
+      // Added confirmation prompt for OTHER user only
       const otherUser = isCreator ? otherParticipant.user : ticket.creator;
       
       ticket.messages.push({
@@ -2298,7 +2333,7 @@ export const selectFeeOption = async (req, res) => {
       });
 
       await ticket.save();
-      console.log(`💾 Fee decision saved - awaiting confirmation\n`);
+      console.log(`ðŸ’¾ Fee decision saved - awaiting confirmation\n`);
 
       res.json({
         success: true,
@@ -2312,7 +2347,7 @@ export const selectFeeOption = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Select fee option error:', error);
+    console.error('âŒ Select fee option error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to select fee option',
@@ -2321,13 +2356,13 @@ export const selectFeeOption = async (req, res) => {
   }
 };
 
-// Confirm using a pass
+// Confirms using a pass
 export const confirmPassUse = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const userId = req.user._id;
 
-    console.log(`\n🎫 CONFIRM PASS USE:`);
+    console.log(`\nðŸŽ« CONFIRM PASS USE:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
 
@@ -2342,6 +2377,25 @@ export const confirmPassUse = async (req, res) => {
       });
     }
 
+    const isCreator = ticket.creator._id.toString() === userId.toString();
+    const isParticipant = ticket.participants.some(
+      p => p.user?._id?.toString() === userId.toString() && p.status === 'accepted'
+    );
+
+    if (!isCreator && !isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    if (!ticket.dealAmountConfirmed || ticket.feesConfirmed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ticket is not in fee selection stage'
+      });
+    }
+
     const user = await User.findById(userId).select('username passes');
 
     if (user.passes <= 0) {
@@ -2351,7 +2405,7 @@ export const confirmPassUse = async (req, res) => {
       });
     }
 
-    // Check if pass already used (race condition protection)
+    // This check determines whether a pass is already used (race condition protection)
     if (ticket.passUsedBy) {
       return res.status(400).json({
         success: false,
@@ -2363,18 +2417,18 @@ export const confirmPassUse = async (req, res) => {
     user.passes -= 1;
     await user.save();
 
-    // Update ticket
+    // Updated ticket
     ticket.feeDecision = 'with-pass';
     ticket.passUsedBy = userId;
     ticket.feesConfirmed = true;
 
-    // Remove all fee-related prompts
+    // Removed all fee-related prompts
     ticket.messages = ticket.messages.filter(msg => 
       !(msg.embedData?.actionType === 'fee-selection' ||
         msg.embedData?.actionType === 'fee-confirmation')
     );
 
-    // Add success message
+    // Added success message
     ticket.addUniqueMessage({
       isBot: true,
       content: 'Pass Used',
@@ -2387,7 +2441,7 @@ export const confirmPassUse = async (req, res) => {
       timestamp: new Date()
     });
 
-    // Add transaction prompt immediately
+    // Added transaction prompt immediately
     const senderUser = ticket.creatorRole === 'sender'
       ? ticket.creator
       : ticket.participants.find(p => p.status === 'accepted' && p.role === 'sender')?.user
@@ -2399,7 +2453,7 @@ export const confirmPassUse = async (req, res) => {
         ticket.cryptocurrency,
         true // Pass was used
       );
-      const botWallet = BOT_WALLETS[ticket.cryptocurrency];
+      const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
       const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
       const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
 
@@ -2410,7 +2464,7 @@ export const confirmPassUse = async (req, res) => {
           type: 'embed',
           embedData: {
             title: 'Wallet Not Configured',
-            description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for this network. Please contact staff.`,
+            description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for ${transactionNetworkMode}. Please contact staff.`,
             color: 'red'
           },
           timestamp: new Date()
@@ -2430,7 +2484,7 @@ export const confirmPassUse = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Send Funds to Handshake',
-          description: `@${senderUser.username} (Sender), please send the <strong>EXACT</strong> amount to the Handshake bot wallet address below.\n\n<strong>Amount to Send:</strong> ${cryptoAmount} ${ticket.cryptocurrency.toUpperCase()}\n<strong>USD Value:</strong> $${totalAmount.toFixed(2)}\n\n<strong>Bot Wallet Address:</strong>\n${botWallet}\n\n⚠️ <strong>Important:</strong> Send the EXACT amount to ensure the bot can detect your transaction. If you experience issues, type /ping in chat to alert staff.`,
+          description: `@${senderUser.username} (Sender), please send the <strong>EXACT</strong> amount to the Handshake bot wallet address below.\n\n<strong>Amount to Send:</strong> ${cryptoAmount} ${ticket.cryptocurrency.toUpperCase()}\n<strong>USD Value:</strong> $${totalAmount.toFixed(2)}\n\n<strong>Bot Wallet Address:</strong>\n${botWallet}\n\nâš ï¸ <strong>Important:</strong> Send the EXACT amount to ensure the bot can detect your transaction. If you experience issues, type /ping in chat to alert staff.`,
           color: 'blue',
           requiresAction: true,
           actionType: 'transaction-send',
@@ -2447,12 +2501,13 @@ export const confirmPassUse = async (req, res) => {
       ticket.transactionPromptShown = true;
       ticket.awaitingTransaction = true;
       ticket.botWalletAddress = botWallet;
+      ticket.transactionNetworkMode = transactionNetworkMode;
       ticket.expectedAmount = totalAmount;
-      console.log(`📤 Transaction prompt added for ${senderUser.username}`);
+      console.log(`ðŸ“¤ Transaction prompt added for ${senderUser.username}`);
     }
 
     await ticket.save();
-    console.log(`✅ Pass used by ${user.username}. Fees confirmed.\n`);
+    console.log(`âœ… Pass used by ${user.username}. Fees confirmed.\n`);
 
     res.json({
       success: true,
@@ -2461,7 +2516,7 @@ export const confirmPassUse = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Confirm pass use error:', error);
+    console.error('âŒ Confirm pass use error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to use pass',
@@ -2470,14 +2525,14 @@ export const confirmPassUse = async (req, res) => {
   }
 };
 
-// Confirm fee decision
+// Confirms fee decision
 export const confirmFees = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const { confirmed } = req.body;
     const userId = req.user._id;
 
-    console.log(`\n💳 CONFIRM FEES REQUEST:`);
+    console.log(`\nðŸ’³ CONFIRM FEES REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
     console.log(`   Confirmed: ${confirmed}`);
@@ -2493,9 +2548,28 @@ export const confirmFees = async (req, res) => {
       });
     }
 
+    const isCreator = ticket.creator._id.toString() === userId.toString();
+    const isParticipant = ticket.participants.some(
+      p => p.user?._id?.toString() === userId.toString() && p.status === 'accepted'
+    );
+
+    if (!isCreator && !isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    if (ticket.feeDecision !== 'with-fees' || !ticket.feeInitiatedBy) {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending fee decision to confirm'
+      });
+    }
+
     const user = await User.findById(userId).select('username');
 
-    // Check if this user is allowed to confirm (must be the OTHER user, not the one who clicked "Proceed with Fees")
+    // This check determines whether this user is allowed to confirm (must be the OTHER user, not the one who clicked "Proceed with Fees")
     if (ticket.feeInitiatedBy && ticket.feeInitiatedBy.toString() === userId.toString()) {
       return res.status(400).json({
         success: false,
@@ -2506,15 +2580,15 @@ export const confirmFees = async (req, res) => {
     if (confirmed) {
       // Confirmed - finalize with fees
       ticket.feesConfirmed = true;
-      console.log(`✅ Fees confirmed`);
+      console.log(`âœ… Fees confirmed`);
 
-      // Remove fee prompts
+      // Removed fee prompts
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.actionType === 'fee-selection' ||
           msg.embedData?.actionType === 'fee-confirmation')
       );
 
-      // Add confirmation message
+      // Added confirmation message
       ticket.addUniqueMessage({
         isBot: true,
         content: 'Fees Confirmed',
@@ -2527,7 +2601,7 @@ export const confirmFees = async (req, res) => {
         timestamp: new Date()
       });
 
-    // Add transaction prompt immediately
+    // Added transaction prompt immediately
     const senderUser = ticket.creatorRole === 'sender'
       ? ticket.creator
       : ticket.participants.find(p => p.status === 'accepted' && p.role === 'sender')?.user
@@ -2539,7 +2613,7 @@ export const confirmFees = async (req, res) => {
           ticket.cryptocurrency,
           false // Fees are being charged
         );
-        const botWallet = BOT_WALLETS[ticket.cryptocurrency];
+        const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
         const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
         const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
 
@@ -2550,7 +2624,7 @@ export const confirmFees = async (req, res) => {
             type: 'embed',
             embedData: {
               title: 'Wallet Not Configured',
-              description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for this network. Please contact staff.`,
+              description: `Handshake does not have a ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} wallet configured for ${transactionNetworkMode}. Please contact staff.`,
               color: 'red'
             },
             timestamp: new Date()
@@ -2570,7 +2644,7 @@ export const confirmFees = async (req, res) => {
           type: 'embed',
           embedData: {
             title: 'Send Funds to Handshake',
-            description: `@${senderUser.username} (Sender), please send the <strong>EXACT</strong> amount to the Handshake bot wallet address below.\n\n<strong>Amount to Send:</strong> ${cryptoAmount} ${ticket.cryptocurrency.toUpperCase()}\n<strong>USD Value:</strong> $${totalAmount.toFixed(2)}\n\n<strong>Bot Wallet Address:</strong>\n${botWallet}\n\n⚠️ <strong>Important:</strong> Send the EXACT amount to ensure the bot can detect your transaction. If you experience issues, type /ping in chat to alert staff.`,
+            description: `@${senderUser.username} (Sender), please send the <strong>EXACT</strong> amount to the Handshake bot wallet address below.\n\n<strong>Amount to Send:</strong> ${cryptoAmount} ${ticket.cryptocurrency.toUpperCase()}\n<strong>USD Value:</strong> $${totalAmount.toFixed(2)}\n\n<strong>Bot Wallet Address:</strong>\n${botWallet}\n\nâš ï¸ <strong>Important:</strong> Send the EXACT amount to ensure the bot can detect your transaction. If you experience issues, type /ping in chat to alert staff.`,
             color: 'blue',
             requiresAction: true,
             actionType: 'transaction-send',
@@ -2587,12 +2661,13 @@ export const confirmFees = async (req, res) => {
         ticket.transactionPromptShown = true;
         ticket.awaitingTransaction = true;
         ticket.botWalletAddress = botWallet;
+        ticket.transactionNetworkMode = transactionNetworkMode;
         ticket.expectedAmount = totalAmount;
-        console.log(`📤 Transaction prompt added for ${senderUser.username}`);
+        console.log(`ðŸ“¤ Transaction prompt added for ${senderUser.username}`);
       }
 
       await ticket.save();
-      console.log(`💾 Fees confirmed for ticket ${ticketId}\n`);
+      console.log(`ðŸ’¾ Fees confirmed for ticket ${ticketId}\n`);
 
       res.json({
         success: true,
@@ -2601,18 +2676,18 @@ export const confirmFees = async (req, res) => {
       });
     } else {
       // Rejected - re-prompt
-      console.log(`❌ User ${user.username} rejected fee decision - RESETTING`);
+      console.log(`âŒ User ${user.username} rejected fee decision - RESETTING`);
       
       ticket.feeDecision = null;
       ticket.feeInitiatedBy = null;
 
-      // Remove fee messages
+      // Removed fee messages
       ticket.messages = ticket.messages.filter(msg => 
         !(msg.embedData?.actionType === 'fee-selection' ||
           msg.embedData?.actionType === 'fee-confirmation')
       );
 
-      // Add rejection message
+      // Added rejection message
       ticket.messages.push({
         isBot: true,
         content: 'Fee Decision Restarted',
@@ -2632,7 +2707,7 @@ export const confirmFees = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Use a Pass?',
-          description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\\n\\n<strong>Fee Structure:</strong>\\n• Deals $250+: 1%\\n• Deals under $250: $2\\n• Deals under $50: $0.50\\n• Deals under $10: FREE\\n• USDT & USDC: $1 surcharge\\n\\nPasses allow you to skip these fees entirely.`,
+          description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\\n\\n<strong>Fee Structure:</strong>\\nâ€¢ Deals $250+: 1%\\nâ€¢ Deals under $250: $2\\nâ€¢ Deals under $50: $0.50\\nâ€¢ Deals under $10: FREE\\nâ€¢ USDT & USDC: $1 surcharge\\n\\nPasses allow you to skip these fees entirely.`,
           color: 'blue',
           requiresAction: true,
           actionType: 'fee-selection'
@@ -2641,7 +2716,7 @@ export const confirmFees = async (req, res) => {
       });
 
       await ticket.save();
-      console.log(`💾 Fee selection reset\n`);
+      console.log(`ðŸ’¾ Fee selection reset\n`);
 
       res.json({
         success: true,
@@ -2650,7 +2725,7 @@ export const confirmFees = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Confirm fees error:', error);
+    console.error('âŒ Confirm fees error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to confirm fees',
@@ -2659,13 +2734,13 @@ export const confirmFees = async (req, res) => {
   }
 };
 
-// Copy transaction details to chat (limited to 3 times)
+// Copies transaction details to chat (limited to 3 times)
 export const copyTransactionDetails = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const userId = req.user._id;
 
-    console.log(`\n📋 COPY TRANSACTION DETAILS:`);
+    console.log(`\nðŸ“‹ COPY TRANSACTION DETAILS:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
 
@@ -2680,7 +2755,7 @@ export const copyTransactionDetails = async (req, res) => {
       });
     }
 
-    // Check if user has access
+    // This check determines whether user has access
     const isCreator = ticket.creator._id.toString() === userId.toString();
     const isParticipant = ticket.participants.some(
       p => p.user._id.toString() === userId.toString() && p.status === 'accepted'
@@ -2693,7 +2768,7 @@ export const copyTransactionDetails = async (req, res) => {
       });
     }
 
-    // Check copy limit
+    // This check determines whether the copy limit has been reached
     if (ticket.copyDetailsClickCount >= 3) {
       return res.status(400).json({
         success: false,
@@ -2701,13 +2776,13 @@ export const copyTransactionDetails = async (req, res) => {
       });
     }
 
-    // Get transaction details
+    // Retrieves transaction details
     const totalAmount = calculateTotalAmount(
       ticket.dealAmount,
       ticket.cryptocurrency,
       ticket.feeDecision === 'with-pass'
     );
-    const botWallet = BOT_WALLETS[ticket.cryptocurrency];
+    const botWallet = String(ticket.botWalletAddress || '').trim() || (await resolveTicketBotWallet(ticket)).wallet;
     const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
     const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
 
@@ -2721,7 +2796,7 @@ export const copyTransactionDetails = async (req, res) => {
     // Increment copy count
     ticket.copyDetailsClickCount += 1;
 
-    // Add wallet address message to chat only
+    // Added wallet address message to chat only
     ticket.messages.push({
       isBot: true,
       content: `${botWallet}`,
@@ -2731,7 +2806,7 @@ export const copyTransactionDetails = async (req, res) => {
     });
 
     await ticket.save();
-    console.log(`✅ Transaction details copied (${ticket.copyDetailsClickCount}/3)\n`);
+    console.log(`âœ… Transaction details copied (${ticket.copyDetailsClickCount}/3)\n`);
 
     res.json({
       success: true,
@@ -2740,7 +2815,7 @@ export const copyTransactionDetails = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Copy transaction details error:', error);
+    console.error('âŒ Copy transaction details error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to copy transaction details',
@@ -2749,13 +2824,13 @@ export const copyTransactionDetails = async (req, res) => {
   }
 };
 
-// Release funds (sender only)
+// Releases funds (sender only)
 export const releaseFunds = async (req, res) => {
   try {
     const { ticketId } = req.params;
     const userId = req.user._id;
 
-    console.log(`\n💰 RELEASE FUNDS REQUEST:`);
+    console.log(`\nðŸ’° RELEASE FUNDS REQUEST:`);
     console.log(`   Ticket: ${ticketId}`);
     console.log(`   User ID: ${userId}`);
 
@@ -2770,7 +2845,7 @@ export const releaseFunds = async (req, res) => {
       });
     }
 
-    // Check if transaction is confirmed
+    // This check determines whether transaction is confirmed
     if (!ticket.transactionConfirmed) {
       return res.status(400).json({
         success: false,
@@ -2778,7 +2853,7 @@ export const releaseFunds = async (req, res) => {
       });
     }
 
-    // Check if funds already released
+    // This check determines whether funds are already released
     if (ticket.fundsReleased) {
       return res.status(400).json({
         success: false,
@@ -2793,7 +2868,7 @@ export const releaseFunds = async (req, res) => {
       });
     }
 
-    // Find sender participant
+    // This lookup finds sender participant
     const senderParticipant = ticket.participants.find(p => p.role === 'sender');
     if (!senderParticipant && ticket.creatorRole !== 'sender') {
       return res.status(400).json({
@@ -2828,14 +2903,19 @@ export const releaseFunds = async (req, res) => {
     const senderUser = ticket.creatorRole === 'sender'
       ? ticket.creator
       : senderParticipant?.user || ticket.creator;
+    const runtimeConfig = await getRuntimeConfig();
+    const payoutNetworkMode = ticket.payoutNetworkMode
+      || ticket.transactionNetworkMode
+      || getActiveNetworkModeForCoin('ethereum', runtimeConfig);
 
     ticket.releaseInitiated = true;
     ticket.releaseInitiatedBy = userId;
     ticket.awaitingPayoutAddress = true;
     ticket.awaitingPayoutConfirmation = false;
     ticket.pendingPayoutAddress = null;
+    ticket.payoutNetworkMode = payoutNetworkMode;
 
-    // Remove release button message
+    // Removed release button message
     ticket.messages = ticket.messages.filter(msg => 
       msg.embedData?.actionType !== 'release-funds'
     );
@@ -2855,7 +2935,7 @@ export const releaseFunds = async (req, res) => {
     });
 
     await ticket.save();
-    console.log(`✅ Release initiated for ticket ${ticketId} by ${user.username}\n`);
+    console.log(`âœ… Release initiated for ticket ${ticketId} by ${user.username}\n`);
 
     res.json({
       success: true,
@@ -2863,7 +2943,7 @@ export const releaseFunds = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Release funds error:', error);
+    console.error('âŒ Release funds error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to release funds',
@@ -2872,7 +2952,7 @@ export const releaseFunds = async (req, res) => {
   }
 };
 
-// Submit receiver payout address
+// Submits receiver payout address
 export const submitPayoutAddress = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -2972,7 +3052,7 @@ export const submitPayoutAddress = async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('❌ Submit payout address error:', error);
+    console.error('âŒ Submit payout address error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to submit payout address',
@@ -2981,7 +3061,7 @@ export const submitPayoutAddress = async (req, res) => {
   }
 };
 
-// Confirm payout address and send funds
+// Confirms payout address and sends funds
 export const confirmPayoutAddress = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -3018,7 +3098,7 @@ export const confirmPayoutAddress = async (req, res) => {
       });
     }
 
-    // Remove existing confirmation prompt
+    // Removed existing confirmation prompt
     ticket.messages = ticket.messages.filter(msg => 
       msg.embedData?.actionType !== 'payout-address-confirmation'
     );
@@ -3063,16 +3143,21 @@ export const confirmPayoutAddress = async (req, res) => {
 
     try {
       const payoutAddress = ticket.pendingPayoutAddress;
-      const { txHash, payoutEth, payoutUsd } = await sendEthPayout(ticket, payoutAddress);
+      const runtimeConfig = await getRuntimeConfig();
+      const payoutNetworkMode = ticket.payoutNetworkMode
+        || ticket.transactionNetworkMode
+        || getActiveNetworkModeForCoin('ethereum', runtimeConfig);
+      const { txHash, payoutEth, payoutUsd } = await sendEthPayout(ticket, payoutAddress, payoutNetworkMode);
 
       ticket.payoutAddress = payoutAddress;
       ticket.payoutAddressConfirmed = true;
       ticket.payoutTransactionHash = txHash;
+      ticket.payoutNetworkMode = payoutNetworkMode;
       ticket.pendingPayoutAddress = null;
       ticket.awaitingPayoutConfirmation = false;
       ticket.awaitingPayoutAddress = false;
 
-      const payoutConfig = ETH_RPC_CONFIG[ETH_NETWORK_MODE];
+      const payoutConfig = ETH_RPC_CONFIG[payoutNetworkMode] || ETH_RPC_CONFIG.mainnet;
       const requiredConfirmations = payoutConfig?.confirmationsRequired || 2;
 
       ticket.messages.push({
@@ -3103,7 +3188,8 @@ export const confirmPayoutAddress = async (req, res) => {
       startPayoutConfirmationWatcher({
         ticketId,
         txHash,
-        receiverName
+        receiverName,
+        networkMode: payoutNetworkMode
       });
 
       return res.json({
@@ -3112,7 +3198,7 @@ export const confirmPayoutAddress = async (req, res) => {
         ticket
       });
     } catch (error) {
-      console.error('❌ Payout send error:', error);
+      console.error('âŒ Payout send error:', error);
       ticket.pendingPayoutAddress = null;
       ticket.awaitingPayoutConfirmation = false;
       ticket.awaitingPayoutAddress = true;
@@ -3143,7 +3229,7 @@ export const confirmPayoutAddress = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Confirm payout address error:', error);
+    console.error('âŒ Confirm payout address error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to confirm payout address',
@@ -3152,14 +3238,30 @@ export const confirmPayoutAddress = async (req, res) => {
   }
 };
 
-// Rescan for transaction
+// Rescans for transaction
 export const rescanTransaction = async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const ticket = await TradeTicket.findById(ticketId);
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
 
     if (!ticket) {
       return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const isCreator = ticket.creator._id.toString() === userId.toString();
+    const isParticipant = ticket.participants.some(
+      p => p.user?._id?.toString() === userId.toString() && p.status === 'accepted'
+    );
+    const isStaff = isStaffUser(req.user);
+
+    if (!isCreator && !isParticipant && !isStaff) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
     }
 
     const { maxAttemptsReached } = applyRescanTransaction(ticket);
@@ -3172,14 +3274,30 @@ export const rescanTransaction = async (req, res) => {
   }
 };
 
-// Cancel transaction
+// Cancels transaction
 export const cancelTransaction = async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const ticket = await TradeTicket.findById(ticketId);
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
 
     if (!ticket) {
       return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const isCreator = ticket.creator._id.toString() === userId.toString();
+    const isParticipant = ticket.participants.some(
+      p => p.user?._id?.toString() === userId.toString() && p.status === 'accepted'
+    );
+    const isStaff = isStaffUser(req.user);
+
+    if (!isCreator && !isParticipant && !isStaff) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
     }
 
     applyCancelTransaction(ticket);
@@ -3192,3 +3310,6 @@ export const cancelTransaction = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+
+

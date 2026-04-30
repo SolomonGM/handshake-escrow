@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { ETH_NETWORK_MODE, ETH_RPC_CONFIG, getUtxoNetwork } from '../config/wallets.js';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DEFAULT_COMPLETED_TICKET_CHANNEL_ID = '1439533047480586310';
@@ -88,17 +87,24 @@ const normalizeBlockchainForExplorer = (value) => {
   return blockchain;
 };
 
-const getExplorerMeta = ({ blockchain, transactionId }) => {
+const normalizeNetworkMode = (value, fallback = 'mainnet') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'mainnet' || normalized === 'testnet' ? normalized : fallback;
+};
+
+const getExplorerMeta = ({ blockchain, transactionId, networkMode }) => {
   const hash = String(transactionId || '').trim();
   if (!hash) {
     return null;
   }
 
   const normalizedBlockchain = normalizeBlockchainForExplorer(blockchain);
+  const mode = normalizeNetworkMode(networkMode, normalizedBlockchain === 'bitcoin' ? 'testnet' : 'mainnet');
 
   if (normalizedBlockchain === 'bitcoin') {
-    const network = getUtxoNetwork('bitcoin');
-    const explorerBase = String(network?.explorer || 'https://live.blockcypher.com/btc-testnet').replace(/\/$/, '');
+    const explorerBase = mode === 'mainnet'
+      ? 'https://live.blockcypher.com/btc'
+      : 'https://live.blockcypher.com/btc-testnet';
     return {
       label: 'BlockCypher',
       url: `${explorerBase}/tx/${hash}/`
@@ -106,8 +112,7 @@ const getExplorerMeta = ({ blockchain, transactionId }) => {
   }
 
   if (normalizedBlockchain === 'litecoin') {
-    const network = getUtxoNetwork('litecoin');
-    const explorerBase = String(network?.explorer || 'https://live.blockcypher.com/ltc').replace(/\/$/, '');
+    const explorerBase = 'https://live.blockcypher.com/ltc';
     return {
       label: 'BlockCypher',
       url: `${explorerBase}/tx/${hash}/`
@@ -115,9 +120,9 @@ const getExplorerMeta = ({ blockchain, transactionId }) => {
   }
 
   if (normalizedBlockchain === 'ethereum') {
-    const explorerBase = String(
-      ETH_RPC_CONFIG?.[ETH_NETWORK_MODE]?.blockExplorer || 'https://etherscan.io'
-    ).replace(/\/$/, '');
+    const explorerBase = mode === 'mainnet'
+      ? 'https://etherscan.io'
+      : 'https://sepolia.etherscan.io';
     return {
       label: 'Etherscan',
       url: `${explorerBase}/tx/${hash}`
@@ -160,7 +165,11 @@ const resolveCoinMeta = ({ coinSymbol, blockchain }) => {
 const buildCompletedTicketEmbedPayload = ({ ticket, transaction }) => {
   const transactionId = String(transaction?.transactionId || '').trim();
   const blockchain = String(transaction?.blockchain || ticket?.cryptocurrency || '').trim().toLowerCase();
-  const explorerMeta = getExplorerMeta({ blockchain, transactionId });
+  const explorerMeta = getExplorerMeta({
+    blockchain,
+    transactionId,
+    networkMode: transaction?.networkMode
+  });
   const handshakeUrl = buildHandshakeTransactionsUrl({
     ticketId: transaction?.ticketId || ticket?.ticketId,
     transactionId
@@ -291,4 +300,3 @@ export const postCompletedTicketDiscordEmbed = async ({ ticket, transaction }) =
     };
   }
 };
-

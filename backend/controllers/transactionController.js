@@ -1,5 +1,6 @@
 import TradeTicket from '../models/TradeTicket.js';
 import { buildTransactionFeedItem, ensureMinimumTransactions } from '../services/transactionFeedService.js';
+import { getActiveNetworkModeForCoin, getRuntimeConfig } from '../services/runtimeConfigService.js';
 
 const parseBoolean = (value) => value === 'true' || value === '1';
 const SUPPORTED_COIN_FILTERS = new Set([
@@ -62,6 +63,7 @@ export const getRecentTransactions = async (req, res) => {
     const minItemsRaw = Number(req.query.minItems);
     const minItems = Number.isFinite(minItemsRaw) ? Math.max(minItemsRaw, 0) : 0;
 
+    const runtimeConfig = await getRuntimeConfig();
     const tickets = await TradeTicket.find({ status: 'completed' })
       .sort({ transactionCompletedAt: -1, closedAt: -1, updatedAt: -1 })
       .limit(limit)
@@ -69,7 +71,9 @@ export const getRecentTransactions = async (req, res) => {
       .populate('participants.user', 'username userId avatar');
 
     const transactions = tickets
-      .map(buildTransactionFeedItem)
+      .map((ticket) => buildTransactionFeedItem(ticket, {
+        networkMode: getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig)
+      }))
       .filter(Boolean);
 
     const result = includePlaceholders
@@ -101,6 +105,7 @@ export const getAllTransactions = async (req, res) => {
     const search = String(req.query.search || '').trim().toLowerCase();
     const coinFilter = resolveCoinFilter(req.query.coin);
 
+    const runtimeConfig = await getRuntimeConfig();
     const baseQuery = { status: 'completed' };
     if (coinFilter) {
       baseQuery.cryptocurrency = coinFilter;
@@ -117,7 +122,9 @@ export const getAllTransactions = async (req, res) => {
         .populate('participants.user', 'username userId avatar');
 
       const filtered = matchingTickets
-        .map(buildTransactionFeedItem)
+        .map((ticket) => buildTransactionFeedItem(ticket, {
+          networkMode: getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig)
+        }))
         .filter(Boolean)
         .filter((transaction) => buildSearchableText(transaction).includes(search));
 
@@ -134,7 +141,9 @@ export const getAllTransactions = async (req, res) => {
         .populate('participants.user', 'username userId avatar');
 
       transactions = tickets
-        .map(buildTransactionFeedItem)
+        .map((ticket) => buildTransactionFeedItem(ticket, {
+          networkMode: getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig)
+        }))
         .filter(Boolean);
     }
 

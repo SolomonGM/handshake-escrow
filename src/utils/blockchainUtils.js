@@ -4,14 +4,31 @@
  * @param {string} transactionId - The full transaction ID/hash
  * @returns {string} The complete explorer URL
  */
-export const getExplorerUrl = (blockchain, transactionId) => {
+export const getExplorerUrl = (blockchain, transactionId, networkMode = null) => {
   const normalizeNetworkMode = (value, fallback) => {
     const mode = String(value || '').trim().toLowerCase();
     return mode === 'mainnet' || mode === 'testnet' ? mode : fallback;
   };
 
-  const btcMode = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
-  const ltcMode = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
+  const normalizedBlockchain = String(blockchain || '').trim().toLowerCase();
+  const normalizedMode = normalizeNetworkMode(networkMode, null);
+
+  const btcMode = normalizedBlockchain === 'bitcoin'
+    ? normalizeNetworkMode(normalizedMode, normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet'))
+    : normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
+
+  const ltcMode = normalizedBlockchain === 'litecoin'
+    ? normalizeNetworkMode(normalizedMode, normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet'))
+    : normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
+
+  const ethMode = (
+    normalizedBlockchain === 'ethereum'
+    || normalizedBlockchain === 'usdt-erc20'
+    || normalizedBlockchain === 'usdc-erc20'
+  )
+    ? normalizeNetworkMode(normalizedMode, normalizeNetworkMode(import.meta.env.VITE_ETH_NETWORK_MODE, 'testnet'))
+    : normalizeNetworkMode(import.meta.env.VITE_ETH_NETWORK_MODE, 'testnet');
+
   const resolvedLtcMode = ltcMode === 'testnet' ? 'mainnet' : ltcMode;
 
   const btcExplorerBase = btcMode === 'mainnet'
@@ -22,10 +39,16 @@ export const getExplorerUrl = (blockchain, transactionId) => {
     ? 'https://live.blockcypher.com/ltc'
     : 'https://live.blockcypher.com/ltc-testnet';
 
+  const ethExplorerBase = ethMode === 'mainnet'
+    ? 'https://etherscan.io'
+    : 'https://sepolia.etherscan.io';
+
   const explorerMap = {
     litecoin: `${ltcExplorerBase}/tx/${transactionId}/`,
     bitcoin: `${btcExplorerBase}/tx/${transactionId}/`,
-    ethereum: `https://etherscan.io/tx/${transactionId}`,
+    ethereum: `${ethExplorerBase}/tx/${transactionId}`,
+    'usdt-erc20': `${ethExplorerBase}/tx/${transactionId}`,
+    'usdc-erc20': `${ethExplorerBase}/tx/${transactionId}`,
     solana: `https://solscan.io/tx/${transactionId}`,
     polygon: `https://polygonscan.com/tx/${transactionId}`,
     bsc: `https://bscscan.com/tx/${transactionId}`,
@@ -34,7 +57,7 @@ export const getExplorerUrl = (blockchain, transactionId) => {
     optimism: `https://optimistic.etherscan.io/tx/${transactionId}`,
   };
 
-  return explorerMap[blockchain.toLowerCase()] || `#`;
+  return explorerMap[normalizedBlockchain] || `#`;
 };
 
 /**
@@ -64,6 +87,8 @@ export const getExplorerName = (blockchain) => {
     litecoin: 'BlockCypher',
     bitcoin: 'BlockCypher',
     ethereum: 'Etherscan',
+    'usdt-erc20': 'Etherscan',
+    'usdc-erc20': 'Etherscan',
     solana: 'Solscan',
     polygon: 'Polygonscan',
     bsc: 'BscScan',

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+﻿import mongoose from 'mongoose';
 import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
 import TradeTicket from '../models/TradeTicket.js';
@@ -6,6 +6,12 @@ import ModerationAction from '../models/ModerationAction.js';
 import { refreshLeaderboard } from '../services/leaderboardService.js';
 import { syncDiscordRoleForUserDocument } from '../services/discordIntegrationService.js';
 import { getBanResetUpdate } from '../services/moderationService.js';
+import {
+  getPublicRuntimeConfig,
+  getTicketPauseMetadata,
+  setTicketWorkflowPaused,
+  updateRuntimeConfig as applyRuntimeConfigUpdate
+} from '../services/runtimeConfigService.js';
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
@@ -38,10 +44,18 @@ const buildSort = (field, order) => {
 
 const toTrimmedString = (value, fallback = '') => String(value || fallback).trim();
 
-// Get all users (Admin only)
+const requireDeveloper = (req, res) => {
+  if (req.user.rank !== 'developer') {
+    res.status(403).json({ message: 'Access denied. Developer rank required.' });
+    return false;
+  }
+  return true;
+};
+
+// Retrieves all users (Admin only)
 export const getAllUsers = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -130,10 +144,10 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-// Update user rank (Admin only)
+// Updated user rank (Admin only)
 export const updateUserRank = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -174,10 +188,10 @@ export const updateUserRank = async (req, res) => {
   }
 };
 
-// Update user role (Admin only)
+// Updated user role (Admin only)
 export const updateUserRole = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -215,10 +229,10 @@ export const updateUserRole = async (req, res) => {
   }
 };
 
-// Update user XP (Admin only)
+// Updated user XP (Admin only)
 export const updateUserXP = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -251,10 +265,10 @@ export const updateUserXP = async (req, res) => {
   }
 };
 
-// Update user passes (Admin only)
+// Updated user passes (Admin only)
 export const updateUserPasses = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -282,10 +296,10 @@ export const updateUserPasses = async (req, res) => {
   }
 };
 
-// Update user total USD value (Admin only)
+// Updated user total USD value (Admin only)
 export const updateUserTotalUSDValue = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -333,10 +347,10 @@ export const updateUserTotalUSDValue = async (req, res) => {
   }
 };
 
-// Update user total deals (Admin only)
+// Updated user total deals (Admin only)
 export const updateUserTotalDeals = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -368,7 +382,7 @@ export const updateUserTotalDeals = async (req, res) => {
 // Delete user (Admin only)
 export const deleteUser = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -393,10 +407,10 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-// Get site statistics (Admin only)
+// Retrieves site statistics (Admin only)
 export const getSiteStats = async (req, res) => {
   try {
-    // Check if user is admin with developer rank
+    // This check ensures user is admin with developer rank
     if (req.user.rank !== 'developer') {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
@@ -421,7 +435,7 @@ export const getSiteStats = async (req, res) => {
   }
 };
 
-// Get all trade requests (Admin only)
+// Retrieves all trade requests (Admin only)
 export const getTradeRequests = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {
@@ -516,7 +530,7 @@ export const getTradeRequests = async (req, res) => {
   }
 };
 
-// Update trade request (Admin only)
+// Updated trade request (Admin only)
 export const updateTradeRequest = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {
@@ -608,7 +622,7 @@ const formatTicketUser = (user) => {
   };
 };
 
-// Get all trade tickets (Staff only - admin/moderator/developer)
+// Retrieves all trade tickets (Staff only - admin/moderator/developer)
 export const getTradeTickets = async (req, res) => {
   try {
     if (!isStaffUser(req.user)) {
@@ -728,7 +742,7 @@ export const getTradeTickets = async (req, res) => {
   }
 };
 
-// Get moderation action history (Developer only)
+// Retrieves moderation action history (Developer only)
 export const getModerationActions = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {
@@ -820,7 +834,7 @@ export const getModerationActions = async (req, res) => {
   }
 };
 
-// Get active site bans (Developer only)
+// Retrieves active site bans (Developer only)
 export const getActiveBans = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {
@@ -945,5 +959,116 @@ export const getActiveBans = async (req, res) => {
   } catch (error) {
     console.error('Get active bans error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const getRuntimeConfiguration = async (req, res) => {
+  try {
+    if (!requireDeveloper(req, res)) {
+      return;
+    }
+
+    const runtimeConfig = await getPublicRuntimeConfig();
+    res.json({ runtimeConfig });
+  } catch (error) {
+    console.error('Get runtime configuration error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const pauseTicketWorkflow = async (req, res) => {
+  try {
+    if (!requireDeveloper(req, res)) {
+      return;
+    }
+
+    const existingState = await getTicketPauseMetadata();
+    if (existingState.paused) {
+      const runtimeConfig = await getPublicRuntimeConfig();
+      return res.json({
+        message: 'Ticket workflow is already paused.',
+        runtimeConfig
+      });
+    }
+
+    const reason = toTrimmedString(req.body?.reason, 'Runtime configuration update in progress');
+    const runtimeConfig = await setTicketWorkflowPaused({
+      paused: true,
+      reason,
+      actorId: req.user._id
+    });
+
+    res.json({
+      message: 'Ticket workflow paused.',
+      runtimeConfig
+    });
+  } catch (error) {
+    console.error('Pause ticket workflow error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const resumeTicketWorkflow = async (req, res) => {
+  try {
+    if (!requireDeveloper(req, res)) {
+      return;
+    }
+
+    const existingState = await getTicketPauseMetadata();
+    if (!existingState.paused) {
+      const runtimeConfig = await getPublicRuntimeConfig();
+      return res.json({
+        message: 'Ticket workflow is already active.',
+        runtimeConfig
+      });
+    }
+
+    const runtimeConfig = await setTicketWorkflowPaused({
+      paused: false,
+      reason: null,
+      actorId: req.user._id
+    });
+
+    res.json({
+      message: 'Ticket workflow resumed.',
+      runtimeConfig
+    });
+  } catch (error) {
+    console.error('Resume ticket workflow error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const updateRuntimeConfiguration = async (req, res) => {
+  try {
+    if (!requireDeveloper(req, res)) {
+      return;
+    }
+
+    const pauseState = await getTicketPauseMetadata();
+    if (!pauseState.paused) {
+      return res.status(409).json({
+        message: 'Pause ticket workflow before updating runtime configuration.'
+      });
+    }
+
+    const runtimeConfig = await applyRuntimeConfigUpdate({
+      networkModes: req.body?.networkModes,
+      wallets: req.body?.wallets,
+      actorId: req.user._id
+    });
+
+    res.json({
+      message: 'Runtime configuration updated.',
+      runtimeConfig
+    });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
+    if (statusCode >= 500) {
+      console.error('Update runtime configuration error:', error);
+    }
+    res.status(statusCode).json({
+      message: error?.message || 'Server error'
+    });
   }
 };
