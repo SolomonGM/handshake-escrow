@@ -496,9 +496,16 @@ export const getTicket = async (req, res) => {
       });
     }
 
+    const pauseState = await getTicketPauseMetadata();
+
     res.json({
       success: true,
-      ticket
+      ticket,
+      workflow: {
+        paused: Boolean(pauseState.paused),
+        pauseReason: pauseState.pauseReason || null,
+        pauseChangedAt: pauseState.pauseChangedAt || null
+      }
     });
   } catch (error) {
     console.error('Get ticket error:', error);

@@ -331,6 +331,11 @@ export const chatAPI = {
     const response = await api.get('/chat/stats');
     return response.data;
   },
+
+  getTicketWorkflowStatus: async () => {
+    const response = await api.get('/chat/ticket-workflow-status');
+    return response.data;
+  },
 };
 
 // Discord profile API calls

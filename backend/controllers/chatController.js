@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 import { checkRapidMessageSpam } from '../utils/chatSpamGuard.js';
 import { getBanResetUpdate } from '../services/moderationService.js';
+import { getTicketPauseMetadata } from '../services/runtimeConfigService.js';
 
 const resolveChatModerationBlock = async (user) => {
   const moderation = user?.chatModeration || {};
@@ -240,6 +241,28 @@ export const getChatStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch chat statistics'
+    });
+  }
+};
+
+// This retrieves ticket workflow pause status for user-facing maintenance banners.
+export const getTicketWorkflowStatus = async (req, res) => {
+  try {
+    const pauseState = await getTicketPauseMetadata();
+
+    res.json({
+      success: true,
+      workflow: {
+        paused: Boolean(pauseState.paused),
+        pauseReason: pauseState.pauseReason || null,
+        pauseChangedAt: pauseState.pauseChangedAt || null
+      }
+    });
+  } catch (error) {
+    console.error('Get ticket workflow status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch workflow status'
     });
   }
 };

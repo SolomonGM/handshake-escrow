@@ -27,6 +27,11 @@ const TradeTicket = () => {
   const [showPassModal, setShowPassModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [availablePasses, setAvailablePasses] = useState(0);
+  const [ticketWorkflowStatus, setTicketWorkflowStatus] = useState({
+    paused: false,
+    pauseReason: null,
+    pauseChangedAt: null
+  });
   const [pendingImages, setPendingImages] = useState([]);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
@@ -330,6 +335,11 @@ const TradeTicket = () => {
 
   const isAwaitingPayoutAddress = Boolean(ticket?.awaitingPayoutAddress && isUserReceiver());
   const isActiveChat = ['in-progress', 'awaiting-close', 'closing', 'completed'].includes(ticket?.status);
+  const isWorkflowPaused = Boolean(ticketWorkflowStatus?.paused);
+  const workflowPauseReason = ticketWorkflowStatus?.pauseReason || 'Runtime maintenance is active. Ticket actions are temporarily unavailable.';
+  const workflowPauseChangedAt = ticketWorkflowStatus?.pauseChangedAt
+    ? new Date(ticketWorkflowStatus.pauseChangedAt).toLocaleString()
+    : null;
   const inputPlaceholder = isStaffViewer
     ? 'Send staff message...'
     : (isAwaitingPayoutAddress
@@ -396,6 +406,13 @@ const TradeTicket = () => {
         console.log('Ticket loaded:', response.data);
         setTicket(response.data.ticket);
         setMessages(response.data.ticket.messages);
+        if (response.data.workflow) {
+          setTicketWorkflowStatus({
+            paused: Boolean(response.data.workflow.paused),
+            pauseReason: response.data.workflow.pauseReason || null,
+            pauseChangedAt: response.data.workflow.pauseChangedAt || null
+          });
+        }
         lastUpdatedAtRef.current = response.data.ticket.updatedAt || null;
         setError(null);
       } catch (err) {
@@ -439,6 +456,14 @@ const TradeTicket = () => {
           const nextTicket = response.data.ticket;
           const nextUpdatedAt = nextTicket?.updatedAt || null;
           const lastUpdatedAt = lastUpdatedAtRef.current;
+
+          if (response.data.workflow) {
+            setTicketWorkflowStatus({
+              paused: Boolean(response.data.workflow.paused),
+              pauseReason: response.data.workflow.pauseReason || null,
+              pauseChangedAt: response.data.workflow.pauseChangedAt || null
+            });
+          }
 
           if (!lastUpdatedAt || nextUpdatedAt !== lastUpdatedAt) {
             setTicket(nextTicket);
@@ -1049,6 +1074,36 @@ const TradeTicket = () => {
             </div>
           </div>
         </div>
+
+        {isWorkflowPaused && (
+          <div className="max-w-5xl mx-auto mb-6 rounded-2xl border border-red-500/40 bg-gradient-to-br from-red-500/20 via-[#381017]/85 to-n-8 px-4 py-4 sm:px-6 shadow-[0_16px_45px_-30px_rgba(239,68,68,0.95)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-400/45 bg-red-500/20 text-red-200">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-red-200/85">Maintenance Status</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-red-100">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-300 animate-pulse" />
+                      Ticket Workflow Paused
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-red-100/90">{workflowPauseReason}</p>
+                </div>
+              </div>
+              {workflowPauseChangedAt && (
+                <div className="rounded-lg border border-red-400/25 bg-black/20 px-3 py-2 text-xs text-red-200/75 sm:text-right">
+                  Last update
+                  <div className="font-medium text-red-100/90">{workflowPauseChangedAt}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Chat Interface */}
         <div className="max-w-5xl mx-auto">

@@ -14,6 +14,7 @@ import {
 } from '../services/runtimeConfigService.js';
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
+import { getIo } from '../utils/socketRegistry.js';
 
 const MAX_RECENT_PAGES = 10;
 
@@ -50,6 +51,19 @@ const requireDeveloper = (req, res) => {
     return false;
   }
   return true;
+};
+
+const broadcastTicketWorkflowState = (runtimeConfig) => {
+  const io = getIo();
+  if (!io || !runtimeConfig) {
+    return;
+  }
+
+  io.emit('ticket_workflow_state', {
+    paused: Boolean(runtimeConfig.ticketWorkflowPaused),
+    pauseReason: runtimeConfig.pauseReason || null,
+    pauseChangedAt: runtimeConfig.pauseChangedAt || null
+  });
 };
 
 // Retrieves all users (Admin only)
@@ -997,6 +1011,7 @@ export const pauseTicketWorkflow = async (req, res) => {
       reason,
       actorId: req.user._id
     });
+    broadcastTicketWorkflowState(runtimeConfig);
 
     res.json({
       message: 'Ticket workflow paused.',
@@ -1028,6 +1043,7 @@ export const resumeTicketWorkflow = async (req, res) => {
       reason: null,
       actorId: req.user._id
     });
+    broadcastTicketWorkflowState(runtimeConfig);
 
     res.json({
       message: 'Ticket workflow resumed.',
@@ -1057,6 +1073,7 @@ export const updateRuntimeConfiguration = async (req, res) => {
       wallets: req.body?.wallets,
       actorId: req.user._id
     });
+    broadcastTicketWorkflowState(runtimeConfig);
 
     res.json({
       message: 'Runtime configuration updated.',

@@ -4,13 +4,15 @@ import {
   getMessages,
   sendMessage,
   deleteMessage,
-  getChatStats
+  getChatStats,
+  getTicketWorkflowStatus
 } from '../controllers/chatController.js';
 
 const router = express.Router();
 
 // Public route - anyone can view messages
 router.get('/messages', getMessages);
+router.get('/ticket-workflow-status', getTicketWorkflowStatus);
 
 // Protected routes - require authentication
 router.post('/messages', protect, sendMessage);

@@ -31,6 +31,11 @@ const LiveChat = ({ isOpen, onClose }) => {
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
   const [chatCooldownSeconds, setChatCooldownSeconds] = useState(0);
   const [announcementNow, setAnnouncementNow] = useState(Date.now());
+  const [ticketWorkflowStatus, setTicketWorkflowStatus] = useState({
+    paused: false,
+    pauseReason: null,
+    pauseChangedAt: null
+  });
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -198,6 +203,14 @@ const LiveChat = ({ isOpen, onClose }) => {
       }
     });
 
+    socketService.on('ticket_workflow_state', (workflow) => {
+      setTicketWorkflowStatus({
+        paused: Boolean(workflow?.paused),
+        pauseReason: workflow?.pauseReason || null,
+        pauseChangedAt: workflow?.pauseChangedAt || null
+      });
+    });
+
     // This listens for help command response.
     socketService.on('chat_help', (data) => {
       console.log('Received help data:', data);
@@ -265,6 +278,37 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     return () => clearInterval(timer);
   }, [announcements]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncWorkflowStatus = async () => {
+      try {
+        const response = await chatAPI.getTicketWorkflowStatus();
+        if (!isMounted || !response?.success || !response?.workflow) {
+          return;
+        }
+
+        setTicketWorkflowStatus({
+          paused: Boolean(response.workflow.paused),
+          pauseReason: response.workflow.pauseReason || null,
+          pauseChangedAt: response.workflow.pauseChangedAt || null
+        });
+      } catch (statusError) {
+        if (isMounted) {
+          console.warn('Failed to load ticket workflow status:', statusError?.message || statusError);
+        }
+      }
+    };
+
+    syncWorkflowStatus();
+    const statusInterval = setInterval(syncWorkflowStatus, 15000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(statusInterval);
+    };
+  }, []);
 
   // Auto scroll to bottom (only if user is not scrolling)
   const scrollToBottom = (smooth = true, force = false) => {
@@ -488,6 +532,11 @@ const LiveChat = ({ isOpen, onClose }) => {
   const helpTitle = helpData?.title || 'Commands';
   const helpSubtitle = helpData?.subtitle || 'Available chat commands';
   const helpFooter = helpData?.footer || null;
+  const isWorkflowPaused = Boolean(ticketWorkflowStatus?.paused);
+  const workflowPauseReason = ticketWorkflowStatus?.pauseReason || 'Runtime maintenance is active. Ticket actions are temporarily unavailable.';
+  const workflowPauseChangedAt = ticketWorkflowStatus?.pauseChangedAt
+    ? new Date(ticketWorkflowStatus.pauseChangedAt).toLocaleString()
+    : null;
 
   return (
     <>
@@ -537,6 +586,31 @@ const LiveChat = ({ isOpen, onClose }) => {
         {error?.showToUser && (
           <div className="m-4 p-3 bg-yellow-500/10 border border-yellow-500/40 rounded text-yellow-300 text-xs">
             <span className="font-semibold">Notice:</span> {error.message}
+          </div>
+        )}
+
+        {isWorkflowPaused && (
+          <div className="mx-4 mt-3 rounded-xl border border-red-500/35 bg-gradient-to-br from-red-500/20 via-[#3a1318]/80 to-n-8 px-4 py-3 shadow-[0_10px_30px_-20px_rgba(239,68,68,0.9)]">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-red-400/40 bg-red-500/20 text-red-200">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200/85">Maintenance Mode</span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-red-400/35 bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-100">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-300 animate-pulse" />
+                    Paused
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-red-100/90">{workflowPauseReason}</p>
+                {workflowPauseChangedAt && (
+                  <p className="mt-1 text-[11px] text-red-200/70">Updated: {workflowPauseChangedAt}</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

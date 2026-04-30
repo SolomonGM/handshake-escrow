@@ -78,6 +78,44 @@ const AdminPanel = () => {
     { key: 'usdt-erc20', label: 'USDT (ERC-20)' },
     { key: 'usdc-erc20', label: 'USDC (ERC-20)' }
   ];
+  const runtimeNetworkModes = [
+    {
+      key: 'bitcoin',
+      label: 'Bitcoin',
+      code: 'BTC',
+      options: [
+        { value: 'mainnet', label: 'Mainnet' },
+        { value: 'testnet', label: 'Testnet' }
+      ]
+    },
+    {
+      key: 'litecoin',
+      label: 'Litecoin',
+      code: 'LTC',
+      options: [
+        { value: 'mainnet', label: 'Mainnet' },
+        { value: 'testnet', label: 'Testnet (limited)' }
+      ]
+    },
+    {
+      key: 'ethereum',
+      label: 'Ethereum + ERC20',
+      code: 'ETH',
+      options: [
+        { value: 'mainnet', label: 'Mainnet' },
+        { value: 'testnet', label: 'Testnet' }
+      ]
+    },
+    {
+      key: 'solana',
+      label: 'Solana',
+      code: 'SOL',
+      options: [
+        { value: 'mainnet', label: 'Mainnet' },
+        { value: 'testnet', label: 'Testnet' }
+      ]
+    }
+  ];
 
   useEffect(() => {
     loadUsersAndStats();
@@ -791,29 +829,35 @@ const AdminPanel = () => {
       )}
 
       {/* Runtime Config Section */}
-      <div className="mb-10 bg-n-6 rounded-lg border border-n-5 p-5">
+      <div className="mb-10 rounded-2xl border border-n-5 bg-gradient-to-br from-n-6 via-n-7/95 to-n-8/95 p-5 sm:p-6 shadow-[0_16px_44px_-32px_rgba(16,185,129,0.45)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="max-w-2xl">
             <h3 className="h4 text-n-1">Runtime Network & Wallet Config</h3>
-            <p className="text-n-4 text-sm mt-1">
-              Developer-only live network switch and wallet map. Pause workflow before saving changes.
+            <p className="mt-1 text-sm text-n-4">
+              Live network switch and wallet mapping for production/testnet operation. Pause workflow before saving to protect in-flight tickets.
             </p>
+            {runtimeConfig?.pauseChangedAt && (
+              <p className="mt-2 text-xs text-n-4">
+                Last maintenance update: {new Date(runtimeConfig.pauseChangedAt).toLocaleString()}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
                 runtimeConfig?.ticketWorkflowPaused
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
-                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                  ? 'border-amber-400/35 bg-amber-500/20 text-amber-200'
+                  : 'border-emerald-400/35 bg-emerald-500/20 text-emerald-200'
               }`}
             >
+              <span className={`h-1.5 w-1.5 rounded-full ${runtimeConfig?.ticketWorkflowPaused ? 'bg-amber-300 animate-pulse' : 'bg-emerald-300'}`} />
               {runtimeConfig?.ticketWorkflowPaused ? 'Workflow Paused' : 'Workflow Active'}
             </span>
             {runtimeConfig?.ticketWorkflowPaused ? (
               <button
                 onClick={handleResumeTicketWorkflow}
                 disabled={runtimeWorkflowBusy}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg border border-emerald-400/35 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {runtimeWorkflowBusy ? 'Resuming...' : 'Resume Workflow'}
               </button>
@@ -821,7 +865,7 @@ const AdminPanel = () => {
               <button
                 onClick={handlePauseTicketWorkflow}
                 disabled={runtimeWorkflowBusy}
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg border border-amber-400/35 bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {runtimeWorkflowBusy ? 'Pausing...' : 'Pause Workflow'}
               </button>
@@ -829,7 +873,7 @@ const AdminPanel = () => {
             <button
               onClick={loadRuntimeConfig}
               disabled={runtimeLoading}
-              className="px-3 py-2 rounded-lg text-xs font-semibold bg-n-7 text-n-2 hover:bg-n-5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg border border-n-5 bg-n-7 px-3 py-2 text-xs font-semibold text-n-2 transition-colors hover:bg-n-6 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {runtimeLoading ? 'Loading...' : 'Reload'}
             </button>
@@ -837,74 +881,74 @@ const AdminPanel = () => {
         </div>
 
         {runtimeLoading ? (
-          <div className="mt-4 text-sm text-n-3">Loading runtime configuration...</div>
+          <div className="mt-5 rounded-xl border border-n-5 bg-n-7/70 px-4 py-3 text-sm text-n-3">
+            Loading runtime configuration...
+          </div>
         ) : runtimeDraft ? (
           <>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <select
-                value={runtimeDraft.networkModes.bitcoin}
-                onChange={(e) => updateRuntimeDraftMode('bitcoin', e.target.value)}
-                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
-              >
-                <option value="mainnet">BTC: Mainnet</option>
-                <option value="testnet">BTC: Testnet</option>
-              </select>
-              <select
-                value={runtimeDraft.networkModes.litecoin}
-                onChange={(e) => updateRuntimeDraftMode('litecoin', e.target.value)}
-                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
-              >
-                <option value="mainnet">LTC: Mainnet</option>
-                <option value="testnet">LTC: Testnet (limited)</option>
-              </select>
-              <select
-                value={runtimeDraft.networkModes.ethereum}
-                onChange={(e) => updateRuntimeDraftMode('ethereum', e.target.value)}
-                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
-              >
-                <option value="mainnet">ETH/ERC20: Mainnet</option>
-                <option value="testnet">ETH/ERC20: Testnet</option>
-              </select>
-              <select
-                value={runtimeDraft.networkModes.solana}
-                onChange={(e) => updateRuntimeDraftMode('solana', e.target.value)}
-                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981]"
-              >
-                <option value="mainnet">SOL: Mainnet</option>
-                <option value="testnet">SOL: Testnet</option>
-              </select>
-              <input
-                type="text"
-                value={runtimePauseReason}
-                onChange={(e) => setRuntimePauseReason(e.target.value)}
-                placeholder="Pause reason shown to users"
-                className="w-full px-4 py-3 bg-n-7 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981]"
-              />
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.45fr_1fr]">
+              <div className="rounded-xl border border-n-5 bg-n-7/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-n-4">Network Modes</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {runtimeNetworkModes.map((network) => (
+                    <label key={network.key} className="rounded-lg border border-n-5 bg-n-8/90 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-n-2">{network.label}</span>
+                        <span className="rounded bg-n-7 px-2 py-0.5 text-[10px] font-semibold text-n-4">{network.code}</span>
+                      </div>
+                      <select
+                        value={runtimeDraft.networkModes[network.key]}
+                        onChange={(e) => updateRuntimeDraftMode(network.key, e.target.value)}
+                        className="w-full rounded-lg border border-n-6 bg-n-7 px-3 py-2 text-sm text-n-1 focus:border-[#10B981] focus:outline-none"
+                      >
+                        {network.options.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-red-500/35 bg-gradient-to-br from-red-500/15 via-[#3a1318]/75 to-n-8 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-red-200/90">Maintenance Reason</p>
+                <p className="mt-1 text-xs text-red-100/75">
+                  This message is displayed in live chat and active trade tickets while workflow is paused.
+                </p>
+                <textarea
+                  rows={4}
+                  value={runtimePauseReason}
+                  onChange={(e) => setRuntimePauseReason(e.target.value)}
+                  placeholder="Example: Wallet rotation in progress. Ticket actions resume in 10 minutes."
+                  className="mt-3 w-full resize-none rounded-lg border border-red-400/30 bg-[#1f0c10]/80 px-3 py-2 text-sm text-red-50 placeholder-red-200/40 focus:border-red-300/60 focus:outline-none"
+                />
+              </div>
             </div>
 
-            <div className="mt-4 rounded-lg border border-n-5 overflow-hidden">
-              <div className="px-4 py-2 border-b border-n-5 bg-n-7/50 text-xs text-n-4">
-                Wallets by coin and network mode. Keep active-mode addresses valid.
+            <div className="mt-4 overflow-hidden rounded-xl border border-n-5 bg-n-7/70">
+              <div className="border-b border-n-5 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-n-4">Wallet Matrix</p>
+                <p className="mt-1 text-xs text-n-4">Keep the active wallet for each selected network valid before saving.</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px]">
-                  <thead className="bg-n-7 border-b border-n-5">
+                <table className="w-full min-w-[900px]">
+                  <thead className="bg-n-8/80">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Coin</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Mainnet Wallet</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Testnet Wallet</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Coin</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Mainnet Wallet</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Testnet Wallet</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-n-5">
                     {runtimeWalletCoins.map((coin) => (
-                      <tr key={coin.key} className="hover:bg-n-7/40 transition-colors">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-n-2 font-semibold">{coin.label}</td>
+                      <tr key={coin.key} className="transition-colors hover:bg-n-8/70">
+                        <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-n-2">{coin.label}</td>
                         <td className="px-4 py-3">
                           <input
                             type="text"
                             value={runtimeDraft.wallets?.[coin.key]?.mainnet || ''}
                             onChange={(e) => updateRuntimeDraftWallet(coin.key, 'mainnet', e.target.value)}
-                            className="w-full px-3 py-2 bg-n-8 border border-n-6 rounded text-sm text-n-1 focus:outline-none focus:border-[#10B981]"
+                            className="w-full rounded-lg border border-n-6 bg-n-8 px-3 py-2 text-sm text-n-1 placeholder-n-4 focus:border-[#10B981] focus:outline-none"
                             placeholder="Mainnet wallet address"
                           />
                         </td>
@@ -913,7 +957,7 @@ const AdminPanel = () => {
                             type="text"
                             value={runtimeDraft.wallets?.[coin.key]?.testnet || ''}
                             onChange={(e) => updateRuntimeDraftWallet(coin.key, 'testnet', e.target.value)}
-                            className="w-full px-3 py-2 bg-n-8 border border-n-6 rounded text-sm text-n-1 focus:outline-none focus:border-[#10B981]"
+                            className="w-full rounded-lg border border-n-6 bg-n-8 px-3 py-2 text-sm text-n-1 placeholder-n-4 focus:border-[#10B981] focus:outline-none"
                             placeholder="Testnet wallet address"
                           />
                         </td>
@@ -924,23 +968,25 @@ const AdminPanel = () => {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className={`text-xs ${runtimeConfig?.ticketWorkflowPaused ? 'text-amber-300' : 'text-n-4'}`}>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-n-5 bg-n-7/70 px-4 py-3">
+              <p className={`text-xs ${runtimeConfig?.ticketWorkflowPaused ? 'text-amber-200' : 'text-n-4'}`}>
                 {runtimeConfig?.ticketWorkflowPaused
-                  ? 'Workflow is paused. Save config, then resume to continue tickets from current state.'
-                  : 'Pause workflow first to prevent in-flight ticket state issues while changing runtime config.'}
+                  ? 'Workflow is paused. Save this config, then resume to continue existing tickets from current state.'
+                  : 'Pause workflow first to avoid state conflicts while applying runtime wallet or network changes.'}
               </p>
               <button
                 onClick={handleSaveRuntimeConfig}
                 disabled={runtimeSaving || !runtimeConfig?.ticketWorkflowPaused}
-                className="px-4 py-2 rounded-lg text-sm font-semibold bg-[#10B981]/20 text-[#A7F3D0] hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="rounded-lg border border-[#10B981]/40 bg-[#10B981]/20 px-4 py-2 text-sm font-semibold text-[#A7F3D0] transition-colors hover:bg-[#10B981]/30 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {runtimeSaving ? 'Saving...' : 'Save Runtime Config'}
               </button>
             </div>
           </>
         ) : (
-          <div className="mt-4 text-sm text-n-4">Runtime configuration unavailable.</div>
+          <div className="mt-5 rounded-xl border border-n-5 bg-n-7/70 px-4 py-3 text-sm text-n-4">
+            Runtime configuration unavailable.
+          </div>
         )}
       </div>
 
