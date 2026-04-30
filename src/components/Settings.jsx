@@ -850,7 +850,7 @@ const Settings = () => {
   // Calculate total passes used (1 per transaction)
 
   return (
-    <div className="pt-[4.75rem] lg:pt-[5.25rem] overflow-hidden">
+    <div className="pt-[4.75rem] lg:pt-[5.25rem] overflow-x-hidden">
       <Header />
       
       <div className="container mx-auto px-4 py-12">
@@ -944,8 +944,8 @@ const Settings = () => {
           </div>
 
           {/* Main Content */}
-          <div className="flex-1">
-            <div className="bg-n-7 border border-n-6 rounded-xl p-6">
+          <div className="flex-1 min-w-0">
+            <div className="bg-n-7 border border-n-6 rounded-xl p-4 sm:p-6">
               
               {/* Profile Tab */}
               {activeTab === 'profile' && (
