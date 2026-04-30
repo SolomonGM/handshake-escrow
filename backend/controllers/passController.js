@@ -1,4 +1,4 @@
-﻿import PassOrder from '../models/PassOrder.js';
+import PassOrder from '../models/PassOrder.js';
 import PassTransaction from '../models/PassTransaction.js';
 import User from '../models/User.js';
 import axios from 'axios';
@@ -128,7 +128,7 @@ export const createPassOrder = async (req, res) => {
       const orderWithPayment = activeOrders.find(order => order.transactionHash);
       
       if (orderWithPayment) {
-        console.log(`âš ï¸  User ${userId} has active order with payment detected: ${orderWithPayment.orderId}`);
+        console.log(`⚠️  User ${userId} has active order with payment detected: ${orderWithPayment.orderId}`);
         return res.status(400).json({
           success: false,
           message: 'You already have an active payment in progress. Please complete or wait for it to expire.',
@@ -151,7 +151,7 @@ export const createPassOrder = async (req, res) => {
       
       // This branch handles when no payment detected yet, cancel all old orders and create new one
       // This allows user to switch payment methods before sending funds
-      console.log(`ðŸ—‘ï¸  Cancelling ${activeOrders.length} previous order(s) for user ${userId} (no payment detected)`);
+      console.log(`🗑️  Cancelling ${activeOrders.length} previous order(s) for user ${userId} (no payment detected)`);
       await PassOrder.updateMany(
         { 
           user: userId, 
@@ -227,7 +227,7 @@ export const createPassOrder = async (req, res) => {
 
     await order.save();
     
-    console.log(`ðŸ“ Created pass order ${orderId} for user ${userId}`);
+    console.log(`📝 Created pass order ${orderId} for user ${userId}`);
     console.log(`   Amount: ${cryptoAmount} ${cryptocurrency.toUpperCase()} ($${priceUSD})`);
     console.log(`   Payment Address: ${paymentAddressData.address}`);
     console.log(`   Expires: ${expiresAt.toISOString()}`);
@@ -333,7 +333,7 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
     }
 
     if (order.status === 'completed') {
-      console.log('âš ï¸  Order already completed - preventing duplicate pass credit:', orderId);
+      console.log('⚠️  Order already completed - preventing duplicate pass credit:', orderId);
       try {
         await upsertPassTransactionHistory(order, 'completed');
       } catch (historyError) {
@@ -372,9 +372,9 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
       };
       await order.save();
 
-      console.log(`âœ… Added ${order.passCount} passes to ${user.username}. Balance: ${previousBalance} â†’ ${user.passes}`);
+      console.log(`✅ Added ${order.passCount} passes to ${user.username}. Balance: ${previousBalance} → ${user.passes}`);
       
-      // Emit Socket.IO event for live frontend update
+      // This emits Socket.IO event for live frontend update.
       if (io) {
         io.emit(`pass_order_update:${orderId}`, {
           orderId,
@@ -434,7 +434,7 @@ export const cancelPassOrder = async (req, res) => {
     order.cancelReason = 'User manually cancelled order';
     await order.save();
 
-    console.log(`ðŸ—‘ï¸  Order ${orderId} cancelled by user ${userId}`);
+    console.log(`🗑️  Order ${orderId} cancelled by user ${userId}`);
 
     res.json({
       success: true,

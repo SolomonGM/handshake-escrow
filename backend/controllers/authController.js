@@ -255,14 +255,14 @@ export const register = async (req, res, next) => {
       });
     }
 
-    // Create user
+    // This creates user.
     const user = await User.create({
       username,
       email,
       password
     });
 
-    // Generate token
+    // This generates token.
     const token = generateToken(user._id);
 
     res.status(201).json({
@@ -305,7 +305,7 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // Find user and include password field
+    // This finds user and include password field.
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
@@ -315,7 +315,7 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // Check password
+    // This checks password.
     const isPasswordCorrect = await user.comparePassword(password);
 
     if (!isPasswordCorrect) {
@@ -383,11 +383,11 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // Update last login for non-2FA flow
+    // This updates last login for non-2FA flow.
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate token
+    // This generates token.
     const token = generateToken(user._id);
 
     res.status(200).json({
@@ -675,7 +675,7 @@ export const updateProfile = async (req, res, next) => {
       });
     }
 
-    // Check if username or email is taken by another user
+    // This checks if username or email is taken by another user.
     if (typeof incomingUsername === 'string' && incomingUsername.trim()) {
       const normalizedUsername = normalizeUsername(incomingUsername);
 
@@ -758,7 +758,7 @@ export const getUserProfile = async (req, res, next) => {
   try {
     const { userId } = req.params;
 
-    // Find user by userId field
+    // This finds user by userId field.
     const user = await User.findOne({ userId });
 
     if (!user) {

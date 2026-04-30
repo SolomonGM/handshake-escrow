@@ -1,4 +1,4 @@
-﻿import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
@@ -13,7 +13,7 @@ const TradeTicket = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, token } = useAuth();
-  // Decode the ticketId since it's URL encoded (contains # symbol)
+  // This decodes the ticketId since it's URL encoded (contains # symbol).
   const ticketIdParam = searchParams.get('ticketId') ? decodeURIComponent(searchParams.get('ticketId')) : null;
   const isReadOnly = searchParams.get('readonly') === 'true';
   
@@ -230,7 +230,7 @@ const TradeTicket = () => {
     }
   };
 
-  // Map crypto values to display names and colors
+  // This maps crypto values to display names and colors.
   const cryptoInfo = {
     'bitcoin': { name: 'Bitcoin', symbol: 'BTC', color: '#F7931A' },
     'ethereum': { name: 'Ethereum', symbol: 'ETH', color: '#627EEA' },
@@ -343,7 +343,7 @@ const TradeTicket = () => {
         ? 'Send a message to the other party here.'
         : 'Click on a user\'s profile picture in the live chat to copy their User ID, then paste it here'));
 
-  // Scroll to bottom of messages
+  // This scrolls to bottom of messages.
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -367,7 +367,7 @@ const TradeTicket = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewerImage]);
 
-  // Create or load ticket
+  // This creates or load ticket.
   useEffect(() => {
     const initializeTicket = async () => {
       lastUpdatedAtRef.current = null;
@@ -388,7 +388,7 @@ const TradeTicket = () => {
         setIsLoading(true);
         console.log('Loading ticket:', ticketIdParam);
         
-        // Load existing ticket (URL-encode to handle # symbol)
+        // This loads existing ticket (URL-encode to handle # symbol).
         const response = await axios.get(
           `${API_URL}/tickets/${encodeURIComponent(ticketIdParam)}`,
           { headers: { Authorization: `Bearer ${token}` } }
@@ -464,7 +464,7 @@ const TradeTicket = () => {
     };
   }, [ticketIdParam, ticket?.status, token]);
 
-  // Redirect once ticket closure countdown finishes
+  // This redirects once ticket closure countdown finishes.
   useEffect(() => {
     if (!ticket?.closeScheduledAt) {
       return;
@@ -492,7 +492,7 @@ const TradeTicket = () => {
     };
   }, [ticket?.closeScheduledAt]);
 
-  // Trigger bot prompt after 5 seconds (persistent, stored in database)
+  // This triggers bot prompt after 5 seconds (persistent, stored in database).
   useEffect(() => {
     if (ticket && !ticket.hasShownPrompt && ticket.status === 'open' && !isStaffViewer) {
       const timer = setTimeout(async () => {
@@ -504,7 +504,7 @@ const TradeTicket = () => {
           );
           
           if (response.data.success && response.data.ticket) {
-            // Update entire ticket with latest messages from backend
+            // This updates entire ticket with latest messages from backend.
             setTicket(response.data.ticket);
             setMessages(response.data.ticket.messages);
           }
@@ -574,9 +574,9 @@ const TradeTicket = () => {
       }
     }
 
-    // Check if we're in amount entry phase and this could be an amount
+    // This checks if we're in amount entry phase and this could be an amount.
     if (!isStaffViewer && ticket.rolesConfirmed && !ticket.dealAmountConfirmed) {
-      // Try to detect amount in the message
+      // This tries to detect amount in the message.
       try {
         const amountResponse = await axios.post(
           `${API_URL}/tickets/${encodeURIComponent(ticket.ticketId)}/detect-amount`,
@@ -596,7 +596,7 @@ const TradeTicket = () => {
       }
     }
 
-    // Check if message is a 17-digit user ID (no @mentions)
+    // This checks if message is a 17-digit user ID (no @mentions).
     if (!isStaffViewer && /^\d{17}$/.test(content)) {
       try {
         const response = await axios.post(
@@ -662,12 +662,12 @@ const TradeTicket = () => {
       console.log('[ok] Role selection response:', response.data);
       
       if (response.data.success) {
-        // Update state with fresh ticket data
+        // This updates state with fresh ticket data.
         setTicket(response.data.ticket);
         setMessages(response.data.ticket.messages);
         console.log('[sync] Ticket state updated');
       } else {
-        // Handle role already taken error
+        // This handles role already taken error.
         if (response.data.error === 'role_taken') {
           toast.error(response.data.message);
           console.log('[warn] Role taken error:', response.data.message);

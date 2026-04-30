@@ -47,7 +47,7 @@ const resolveChatModerationBlock = async (user) => {
   return { blocked: false };
 };
 
-// Get chat messages with pagination
+// This gets chat messages with pagination.
 export const getMessages = async (req, res) => {
   try {
     const { limit = 50, before } = req.query;
@@ -64,7 +64,7 @@ export const getMessages = async (req, res) => {
       .populate('replyTo', 'username message avatar rank')
       .lean();
 
-    // Reverse to get chronological order and map to include userId string
+    // This reverses to get chronological order and map to include userId string.
     const formattedMessages = messages.reverse().map(msg => ({
       ...msg,
       userId: msg.userId?.userId || null // Extract the userId string field
@@ -84,7 +84,7 @@ export const getMessages = async (req, res) => {
   }
 };
 
-// Send a message (via HTTP, WebSocket is preferred)
+// This sends a message (via HTTP, WebSocket is preferred).
 export const sendMessage = async (req, res) => {
   try {
     const { message = '', mentions, replyTo, sticker } = req.body;
@@ -124,7 +124,7 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    // Create message
+    // This creates message.
     const newMessage = await Message.create({
       userId: user._id,
       username: user.username,
@@ -137,7 +137,7 @@ export const sendMessage = async (req, res) => {
       sticker: sticker || null
     });
 
-    // Populate replyTo if exists
+    // This populates replyTo if exists.
     await newMessage.populate('replyTo', 'username message avatar rank');
 
     res.status(201).json({
@@ -153,7 +153,7 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Delete a message (admin/developer only or own message)
+// This deletes a message (admin/developer only or own message).
 export const deleteMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -168,7 +168,7 @@ export const deleteMessage = async (req, res) => {
       });
     }
 
-    // Check permissions
+    // This checks permissions.
     const canDelete = 
       isStaffUser(user) || 
       message.userId.toString() === user._id.toString();
@@ -198,7 +198,7 @@ export const deleteMessage = async (req, res) => {
   }
 };
 
-// Get chat statistics (admin only)
+// This gets chat statistics (admin only).
 export const getChatStats = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {

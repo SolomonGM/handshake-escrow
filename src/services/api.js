@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Create axios instance with default config
+// This creates axios instance with default config.
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -10,7 +10,7 @@ const api = axios.create({
   },
 });
 
-// Add token to requests if it exists
+// This adds token to requests if it exists.
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -24,7 +24,7 @@ api.interceptors.request.use(
   }
 );
 
-// Handle response errors
+// This handles response errors.
 api.interceptors.response.use(
   (response) => response,
   (error) => {

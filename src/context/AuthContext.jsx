@@ -35,7 +35,7 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
-  // Check if user is logged in on mount
+  // This checks if user is logged in on mount.
   useEffect(() => {
     const initializeAuth = async () => {
       const token = localStorage.getItem('token');
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
 
       if (token && storedUser) {
         try {
-          // Verify token is still valid
+          // This verifies token is still valid.
           const response = await authAPI.getMe();
           localStorage.setItem('user', JSON.stringify(response.user));
           setUser(response.user);

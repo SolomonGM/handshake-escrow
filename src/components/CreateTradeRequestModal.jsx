@@ -76,7 +76,7 @@ const CreateTradeRequestModal = ({ isOpen, onClose, onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate
+    // This validates.
     if (!formData.itemOffered || !formData.priceAmount) {
       toast.error('Please fill in all required fields');
       return;
@@ -99,7 +99,7 @@ const CreateTradeRequestModal = ({ isOpen, onClose, onSuccess }) => {
         onSuccess();
         onClose();
         
-        // Reset form
+        // This resets form.
         setFormData({
           type: 'selling',
           itemOffered: '',

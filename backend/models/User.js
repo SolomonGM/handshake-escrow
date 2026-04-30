@@ -306,17 +306,17 @@ userSchema.index(
 
 userSchema.index({ 'chatModeration.isBanned': 1, 'chatModeration.bannedUntil': 1 });
 
-// Generate unique user ID before saving
+// This generates unique user ID before saving.
 userSchema.pre('save', async function(next) {
   // Only generate userId if it doesn't exist (for new users)
   if (!this.userId) {
-    // Generate a unique 17-digit numeric ID
+    // This generates a unique 17-digit numeric ID.
     this.userId = Math.floor(Math.random() * 90000000000000000) + 10000000000000000;
   }
   next();
 });
 
-// Hash password before saving
+// This hashes password before saving.
 userSchema.pre('save', async function(next) {
   // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) {

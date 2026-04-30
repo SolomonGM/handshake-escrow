@@ -80,7 +80,7 @@ const TurnstileWidget = ({ siteKey, onTokenChange, onError, className }) => {
 
         widgetIdRef.current = turnstile.render(widgetContainerRef.current, {
           sitekey: siteKey,
-          // Keep widget visible so users can see the verification control.
+          // This keeps widget visible so users can see the verification control.
           appearance: 'always',
           callback: (token) => {
             onTokenChangeRef.current(String(token || ''));

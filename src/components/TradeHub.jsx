@@ -193,7 +193,7 @@ const TradeHub = () => {
     }
   ];
 
-  // Load trade requests on component mount
+  // This loads trade requests on component mount.
   useEffect(() => {
     fetchTradeRequests();
   }, [token]);
@@ -224,7 +224,7 @@ const TradeHub = () => {
     }
   };
 
-  // Fetch pending invitations count
+  // This fetches pending invitations count.
   useEffect(() => {
     const fetchPendingInvitations = async () => {
       if (!token || !user) return;
@@ -236,7 +236,7 @@ const TradeHub = () => {
         );
 
         if (response.data.success) {
-          // Count pending invitations
+          // This counts pending invitations.
           const pendingCount = response.data.invitations?.filter(
             ticket => ticket.participants?.some(
               p => p.user._id === user.id && p.status === 'pending'
@@ -252,7 +252,7 @@ const TradeHub = () => {
 
     fetchPendingInvitations();
 
-    // Refresh every 10 seconds to check for new invitations
+    // This refreshes every 10 seconds to check for new invitations.
     const interval = setInterval(fetchPendingInvitations, 10000);
 
     return () => clearInterval(interval);
@@ -262,7 +262,7 @@ const TradeHub = () => {
   useEffect(() => {
     let result = [...tradeRequests];
     
-    // Filter by my requests only
+    // This filters by my requests only.
     if (activeFilters.myRequestsOnly && user) {
       result = result.filter(req => req.creator._id === user.id);
     }

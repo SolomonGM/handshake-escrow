@@ -87,14 +87,14 @@ const UserProfileModal = ({ userId, onClose }) => {
   };
 
 
-  // Close on backdrop click
+  // This closes on backdrop click.
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
       onClose();
     }
   };
 
-  // Close on Escape key
+  // This closes on Escape key.
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {

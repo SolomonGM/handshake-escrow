@@ -1,7 +1,7 @@
 import TradeRequest from '../models/TradeRequest.js';
 import User from '../models/User.js';
 
-// Create a new trade request
+// This creates a new trade request.
 export const createTradeRequest = async (req, res) => {
   try {
     const {
@@ -19,12 +19,12 @@ export const createTradeRequest = async (req, res) => {
 
     const userId = req.user._id;
 
-    // Validate required fields
+    // This validates required fields.
     if (!type || !itemOffered || !priceAmount || !priceCurrency || !paymentMethods || paymentMethods.length === 0) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Check if user already has 5 active trade requests
+    // This checks if user already has 5 active trade requests.
     const activeRequestsCount = await TradeRequest.countDocuments({
       creator: userId,
       status: 'active',
@@ -38,7 +38,7 @@ export const createTradeRequest = async (req, res) => {
       });
     }
 
-    // Calculate expiry date
+    // This calculates expiry date.
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + (expiryHours || 24));
 
@@ -58,7 +58,7 @@ export const createTradeRequest = async (req, res) => {
 
     await tradeRequest.save();
 
-    // Populate creator details
+    // This populates creator details.
     await tradeRequest.populate('creator', 'username avatar badges totalTrades completedTrades');
 
     res.status(201).json({
@@ -71,12 +71,12 @@ export const createTradeRequest = async (req, res) => {
   }
 };
 
-// Get all active trade requests
+// This gets all active trade requests.
 export const getTradeRequests = async (req, res) => {
   try {
     const { type, crypto, minAmount, maxAmount, paymentMethod, search } = req.query;
 
-    // Build filter
+    // This builds filter.
     const filter = { status: 'active', expiresAt: { $gt: new Date() } };
 
     if (type) filter.type = type;
@@ -107,7 +107,7 @@ export const getTradeRequests = async (req, res) => {
   }
 };
 
-// Get single trade request
+// This gets single trade request.
 export const getTradeRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -119,7 +119,7 @@ export const getTradeRequest = async (req, res) => {
       return res.status(404).json({ message: 'Trade request not found' });
     }
 
-    // Increment view count
+    // This increments view count.
     tradeRequest.totalViews += 1;
     await tradeRequest.save();
 
@@ -133,7 +133,7 @@ export const getTradeRequest = async (req, res) => {
   }
 };
 
-// Delete trade request
+// This deletes trade request.
 export const deleteTradeRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -163,7 +163,7 @@ export const deleteTradeRequest = async (req, res) => {
   }
 };
 
-// Update trade request
+// This updates trade request.
 export const updateTradeRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -181,7 +181,7 @@ export const updateTradeRequest = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to update this request' });
     }
 
-    // Update allowed fields
+    // This updates allowed fields.
     const allowedUpdates = [
       'itemOffered',
       'itemDescription',
@@ -214,7 +214,7 @@ export const updateTradeRequest = async (req, res) => {
   }
 };
 
-// Mark trade request as sold
+// This marks trade request as sold.
 export const markAsSold = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -238,7 +238,7 @@ export const markAsSold = async (req, res) => {
   }
 };
 
-// Pause/Resume trade request
+// This pauses/Resume trade request.
 export const toggleTradeRequest = async (req, res) => {
   try {
     const { requestId } = req.params;

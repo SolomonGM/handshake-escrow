@@ -21,12 +21,12 @@ const StickerPicker = ({ onSelect, onClose }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Load default stickers from assets folder
+  // This loads default stickers from assets folder.
   useEffect(() => {
     setDefaultStickers(defaultStickerUrls);
   }, []);
 
-  // Load uploaded stickers from backend
+  // This loads uploaded stickers from backend.
   useEffect(() => {
     const fetchUserStickers = async () => {
       const token = localStorage.getItem('token');
@@ -51,7 +51,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     fetchUserStickers();
   }, []);
 
-  // Save uploaded sticker to backend
+  // This saves uploaded sticker to backend.
   const saveUploadedSticker = async (sticker) => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -85,7 +85,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     }
   };
 
-  // Resize image to fit chat dimensions (120x120)
+  // This resizes image to fit chat dimensions (120x120).
   const resizeImage = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -93,30 +93,30 @@ const StickerPicker = ({ onSelect, onClose }) => {
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          // Create canvas
+          // This creates canvas.
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Set dimensions (120x120)
+          // This sets dimensions (120x120).
           const maxSize = 120;
           canvas.width = maxSize;
           canvas.height = maxSize;
           
-          // Calculate scaling to maintain aspect ratio
+          // This calculates scaling to maintain aspect ratio.
           const scale = Math.min(maxSize / img.width, maxSize / img.height);
           const scaledWidth = img.width * scale;
           const scaledHeight = img.height * scale;
           
-          // Center image on canvas
+          // This centers image on canvas.
           const x = (maxSize - scaledWidth) / 2;
           const y = (maxSize - scaledHeight) / 2;
           
-          // Draw image
+          // This draws image.
           ctx.fillStyle = 'transparent';
           ctx.fillRect(0, 0, maxSize, maxSize);
           ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
           
-          // Convert to data URL
+          // This converts to data URL.
           canvas.toBlob((blob) => {
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -135,7 +135,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     });
   };
 
-  // Handle file upload
+  // This handles file upload.
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
     
@@ -145,19 +145,19 @@ const StickerPicker = ({ onSelect, onClose }) => {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         
-        // Validate file type
+        // This validates file type.
         if (!file.type.startsWith('image/')) {
           toast.warning(`${file.name} is not an image file`);
           continue;
         }
         
-        // Validate file size (max 5MB)
+        // This validates file size (max 5MB).
         if (file.size > 5 * 1024 * 1024) {
           toast.warning(`${file.name} is too large (max 5MB)`);
           continue;
         }
         
-        // Resize and convert to data URL
+        // This resizes and convert to data URL.
         const resizedImage = await resizeImage(file);
         const newSticker = {
           id: `${Date.now()}_${i}`,
@@ -165,7 +165,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
           data: resizedImage
         };
 
-        // Save to backend
+        // This saves to backend.
         const success = await saveUploadedSticker(newSticker);
         if (!success) {
           break; // Stop if one fails
@@ -201,7 +201,7 @@ const StickerPicker = ({ onSelect, onClose }) => {
     await handleFileUpload(files);
   };
 
-  // Delete uploaded sticker
+  // This deletes uploaded sticker.
   const deleteSticker = async (id) => {
     const token = localStorage.getItem('token');
     if (!token) return;

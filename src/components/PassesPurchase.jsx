@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Section from "./Section";
@@ -96,7 +96,7 @@ const PassesPurchase = () => {
     return () => clearInterval(interval);
   }, [step, purchaseData, transactionStatus.detected]);
 
-  // Get pass from URL or default to first pass
+  // This gets pass from URL or default to first pass.
   useEffect(() => {
     const passId = searchParams.get('passId');
     if (passId) {
@@ -107,7 +107,7 @@ const PassesPurchase = () => {
     }
   }, [searchParams]);
 
-  // Check for active order on mount and restore payment state
+  // This checks for active order on mount and restore payment state.
   useEffect(() => {
     const checkActiveOrder = async () => {
       if (!user || !token) {
@@ -117,7 +117,7 @@ const PassesPurchase = () => {
       }
 
       try {
-        // Check backend for any active orders for this user
+        // This checks backend for any active orders for this user.
         const ordersResponse = await axios.get(
           `${API_URL}/passes/my-orders`,
           { headers: { Authorization: `Bearer ${token}` } }
@@ -125,20 +125,20 @@ const PassesPurchase = () => {
 
         if (ordersResponse.data.success && ordersResponse.data.orders) {
           const orders = ordersResponse.data.orders;
-          // Find any pending or confirmed order
+          // This finds any pending or confirmed order.
           const activeOrder = ordersResponse.data.orders.find(
             order => (order.status === 'pending' || order.status === 'confirmed') && 
                      new Date(order.expiresAt) > new Date()
           );
 
           if (activeOrder) {
-            // Restore the active order
+            // This restores the active order.
             setPurchaseData(activeOrder);
             setSelectedCrypto(activeOrder.cryptocurrency);
             setStep('payment');
             setPaymentIssue(null);
             
-            // Restore transaction status if payment detected
+            // This restores transaction status if payment detected.
             if (activeOrder.transactionHash) {
               const required = getConfirmationsRequired(activeOrder.cryptocurrency);
               const explorerLink = getExplorerLink(activeOrder.transactionHash, activeOrder.cryptocurrency);
@@ -217,7 +217,7 @@ const PassesPurchase = () => {
   useEffect(() => {
     if (!purchaseData || !purchaseData.orderId) return;
 
-    // Connect socket if not connected
+    // This connects socket if not connected.
     if (!socketService.isConnected()) {
       socketService.connect(token);
     }
@@ -322,10 +322,10 @@ const PassesPurchase = () => {
       }
     };
 
-    // Listen for updates
+    // This listens for updates.
     socketService.on(eventName, handleOrderUpdate);
 
-    // Cleanup
+    // This cleans up.
     return () => {
       if (socketService.socket) {
         socketService.socket.off(eventName, handleOrderUpdate);
@@ -422,7 +422,7 @@ const PassesPurchase = () => {
     setPaymentIssue(null);
 
     try {
-      // Create pass purchase order
+      // This creates pass purchase order.
       const response = await axios.post(
         `${API_URL}/passes/create-order`,
         {
@@ -449,7 +449,7 @@ const PassesPurchase = () => {
         setSelectedCrypto(activeOrder.cryptocurrency);
         setStep('payment');
         
-        // Restore transaction status if exists
+        // This restores transaction status if exists.
         if (activeOrder.transactionHash) {
           const required = getConfirmationsRequired(activeOrder.cryptocurrency);
           const explorerLink = getExplorerLink(activeOrder.transactionHash, activeOrder.cryptocurrency);

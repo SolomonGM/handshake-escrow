@@ -5,7 +5,7 @@ const BitcoinConfetti = ({ direction = "up", type = "buy" }) => {
 
   useEffect(() => {
     console.log('BitcoinConfetti rendered with:', { direction, type });
-    // Create particles - mix of crypto symbols and +/- signs
+    // This creates particles - mix of crypto symbols and +/- signs.
     const newParticles = Array.from({ length: 30 }, (_, i) => {
       let particleType;
       let cryptoVariant = null;

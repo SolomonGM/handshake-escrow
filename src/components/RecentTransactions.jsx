@@ -19,7 +19,7 @@ const RecentTransactions = () => {
     return currencyFlags[coinKey] || currencyFlags.btc;
   };
 
-  // Get unique coins from transactions
+  // This gets unique coins from transactions.
   const availableCoins = useMemo(() => {
     const dynamicCoins = transactions
       .map((transaction) => String(transaction.coinReceived || "").toUpperCase())
@@ -36,18 +36,18 @@ const RecentTransactions = () => {
     });
   }, [transactions]);
 
-  // Filter and sort transactions
+  // This filters and sort transactions.
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
 
-    // Filter by coin
+    // This filters by coin.
     if (filterCoin !== "all") {
       filtered = filtered.filter(
         (transaction) => String(transaction.coinReceived || "").toUpperCase() === filterCoin
       );
     }
 
-    // Sort by price or recent
+    // This sorts by price or recent.
     if (sortBy === "price") {
       filtered.sort((a, b) => b.usdValue - a.usdValue);
     }

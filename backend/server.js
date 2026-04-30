@@ -25,10 +25,10 @@ import { scheduleLeaderboardRefresh, warmLeaderboardCache } from './services/lea
 import { setIo } from './utils/socketRegistry.js';
 import { backfillCompletedTickets, startTicketClosureMonitor } from './services/ticketClosureService.js';
 
-// Load environment variables
+// This loads environment variables.
 dotenv.config();
 
-// Initialize Express app
+// This initializes Express app.
 const app = express();
 const httpServer = createServer(app);
 
@@ -112,7 +112,7 @@ const cspDirectives = {
   ...(isProduction ? { upgradeInsecureRequests: [] } : {})
 };
 
-// Initialize Socket.io
+// This initializes Socket.io.
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
@@ -122,7 +122,7 @@ const io = new Server(httpServer, {
 });
 setIo(io);
 
-// Connect to MongoDB
+// This connects to MongoDB.
 connectDB();
 
 // Middleware
@@ -177,7 +177,7 @@ app.use((req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-// Start server
+// This starts server.
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -193,7 +193,7 @@ httpServer.listen(PORT, () => {
     console.warn('[discord] DISCORD_APPLICATION_PUBLIC_KEY is missing; slash command verification will fail.');
   }
 
-  // Start background services
+  // This starts background services.
   startTransactionMonitoring(io);
   scheduleDiscordProfileRefresh();
   warmDiscordProfileCache();

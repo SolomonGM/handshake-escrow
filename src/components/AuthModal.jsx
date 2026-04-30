@@ -53,7 +53,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
   const prefillEmailRef = useRef('');
   const prefillResetEmailRef = useRef('');
   const [stars] = useState(() => 
-    // Generate stars once and keep them consistent
+    // This generates stars once and keep them consistent.
     [...Array(50)].map(() => ({
       left: Math.random() * 100,
       top: Math.random() * 100,
@@ -76,7 +76,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     return () => clearInterval(shootingStarInterval);
   }, [isOpen]);
 
-  // Reset form when mode changes
+  // This resets form when mode changes.
   useEffect(() => {
     setLoginStep('credentials');
     setLoginTwoFactorData({
@@ -110,7 +110,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
     setIsSubmitting(false);
   }, [mode]);
 
-  // Update mode when prop changes
+  // This updates mode when prop changes.
   useEffect(() => {
     if (initialMode) {
       setMode(initialMode);
@@ -403,7 +403,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
       return false;
     }
     
-    // Prevent multiple submissions
+    // This prevents multiple submissions.
     if (isSubmitting) {
       console.log('Already submitting, ignoring...');
       return;
@@ -468,7 +468,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           handleClose();
           navigate('/settings?tab=security&setup2fa=1');
         } else {
-          // Clear password on error
+          // This clears password on error.
           setFormData(prev => ({
             ...prev,
             password: '',
@@ -479,7 +479,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
             setCaptchaResetKey((prev) => prev + 1);
           }
           setLocalError(result.error || 'Registration failed. Please try again.');
-          // Keep modal open so user can try again
+          // This keeps modal open so user can try again.
         }
       } else {
         if (loginStep === 'twoFactor') {
@@ -531,18 +531,18 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
           if (result.success) {
             handleClose();
           } else {
-            // Clear password on error and show error message
+            // This clears password on error and show error message.
             setFormData(prev => ({
               ...prev,
               password: ''
             }));
             setLocalError(result.error || 'Invalid password. Please try again.');
-            // Keep modal open so user can try again
+            // This keeps modal open so user can try again.
           }
         }
       }
     } catch (error) {
-      // Handle any unexpected errors
+      // This handles any unexpected errors.
       console.error('Unexpected error during submission:', error);
       setFormData(prev => ({
         ...prev,
@@ -557,7 +557,7 @@ const AuthModal = ({ isOpen, onClose, mode: initialMode }) => {
       setIsSubmitting(false);
     }
     
-    // Return false to prevent any default behavior
+    // This returns false to prevent any default behavior.
     return false;
   };
 

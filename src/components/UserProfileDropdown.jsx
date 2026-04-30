@@ -9,7 +9,7 @@ const UserProfileDropdown = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Close dropdown when clicking outside
+  // This closes dropdown when clicking outside.
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -31,7 +31,7 @@ const UserProfileDropdown = () => {
   const rankBgClass = getRankBgClass(user?.rank);
   const rankGradientClass = getRankGradientClass(user?.rank);
 
-  // Calculate XP progress (max 1000 XP per level)
+  // This calculates XP progress (max 1000 XP per level).
   const maxXP = 1000;
   const currentXP = Number.isFinite(user?.xp) ? user.xp : 0;
   const xpProgress = Math.min(100, Math.max(0, (currentXP / maxXP) * 100));
@@ -48,7 +48,7 @@ const UserProfileDropdown = () => {
     navigate('/');
   };
 
-  // Get user initials for avatar fallback
+  // This gets user initials for avatar fallback.
   const getInitials = (username) => {
     return username?.charAt(0).toUpperCase() || 'U';
   };

@@ -116,7 +116,7 @@ const createToast = (message, type = 'info', duration = 3000) => {
   return { element: toastElement, duration };
 };
 
-// Add CSS animations if not already present
+// This adds CSS animations if not already present.
 const addToastStyles = () => {
   if (document.getElementById('toast-styles')) return;
   

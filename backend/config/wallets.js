@@ -94,7 +94,7 @@ export const ETH_RPC_CONFIG = {
   testnet: {
     name: 'sepolia',
     get rpcUrl() {
-      // Use Alchemy URL from env, or fallback (but Alchemy should always be set)
+      // This uses Alchemy URL from env, or fallback (but Alchemy should always be set).
       return process.env.SEPOLIA_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/xen1YQcatm8HLMVKERM9Z';
     },
     chainId: 11155111,
@@ -114,7 +114,7 @@ export const ETH_RPC_CONFIG = {
 // Current network mode (change to 'mainnet' when going to production)
 export const ETH_NETWORK_MODE = process.env.ETH_NETWORK_MODE || 'testnet';
 
-// Calculate total amount to send (deal amount + fees)
+// This calculates total amount to send (deal amount + fees).
 export const calculateTotalAmount = (dealAmount, cryptocurrency, usedPass) => {
   if (usedPass) {
     return dealAmount; // No fees with pass
@@ -141,7 +141,7 @@ export const calculateTotalAmount = (dealAmount, cryptocurrency, usedPass) => {
   return dealAmount + fee;
 };
 
-// Get exchange rate placeholder (this will be replaced with real API later)
+// This gets exchange rate placeholder (this will be replaced with real API later).
 // WARNING: These are EXAMPLE rates. In production, use a live API like CoinGecko
 // TESTING: Set ETH = $240 so Rhino Pass ($12) costs exactly 0.05 ETH
 export const EXCHANGE_RATES = {

@@ -143,7 +143,7 @@ const Settings = () => {
     }
   };
 
-  // Handle tab query parameter
+  // This handles tab query parameter.
   useEffect(() => {
     const tab = searchParams.get('tab');
     if (tab === 'transactions') {
@@ -719,7 +719,7 @@ const Settings = () => {
     }
   };
 
-  // Handle file upload
+  // This handles file upload.
   const handleFileUpload = (file) => {
     setUploadError('');
     setMessage('');
@@ -729,21 +729,21 @@ const Settings = () => {
       return;
     }
     
-    // Validate file type
+    // This validates file type.
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
     if (!validTypes.includes(file.type)) {
       setUploadError(`That file type isn't supported. Please upload JPG, PNG, GIF, WEBP, or SVG under ${MAX_AVATAR_SIZE_MB}MB.`);
       return;
     }
 
-    // Validate file size (max 5MB)
+    // This validates file size (max 5MB).
     if (file.size > MAX_AVATAR_SIZE_BYTES) {
       const readableSize = formatFileSize(file.size);
       setUploadError(`That image is ${readableSize} and exceeds the ${MAX_AVATAR_SIZE_MB}MB limit. Please choose a smaller image or resize it and try again.`);
       return;
     }
 
-    // Create a preview URL
+    // This creates a preview URL.
     const reader = new FileReader();
     reader.onerror = () => {
       setUploadError('We could not read that image. Please try a different file.');
@@ -758,7 +758,7 @@ const Settings = () => {
     reader.readAsDataURL(file);
   };
 
-  // Handle drag and drop
+  // This handles drag and drop.
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -787,7 +787,7 @@ const Settings = () => {
     }
   };
 
-  // Handle file input change
+  // This handles file input change.
   const handleFileInputChange = (e) => {
     const files = e.target.files;
     if (files && files.length > 0) {
@@ -795,7 +795,7 @@ const Settings = () => {
     }
   };
 
-  // Trigger file input click
+  // This triggers file input click.
   const handleSelectFile = () => {
     fileInputRef.current?.click();
   };
@@ -847,7 +847,7 @@ const Settings = () => {
   };
   const discordSyncChipClass = discordSyncChipClassMap[discordStatus?.syncStatus] || 'bg-n-5/80 text-n-3 border border-n-5';
 
-  // Calculate total passes used (1 per transaction)
+  // This calculates total passes used (1 per transaction).
 
   return (
     <div className="pt-[4.75rem] lg:pt-[5.25rem] overflow-x-hidden">

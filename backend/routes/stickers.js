@@ -4,7 +4,7 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Get user's custom stickers
+// This gets user's custom stickers.
 router.get('/', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('customStickers');
@@ -15,34 +15,34 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// Add custom sticker
+// This adds custom sticker.
 router.post('/', protect, async (req, res) => {
   try {
     const { id, name, data } = req.body;
 
-    // Validate data
+    // This validates data.
     if (!id || !name || !data) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Validate base64 data URL
+    // This validates base64 data URL.
     if (!data.startsWith('data:image/')) {
       return res.status(400).json({ message: 'Invalid image data' });
     }
 
-    // Check data size (max 1MB for base64 string)
+    // This checks data size (max 1MB for base64 string).
     if (data.length > 1024 * 1024) {
       return res.status(400).json({ message: 'Image too large (max 1MB)' });
     }
 
     const user = await User.findById(req.user._id);
 
-    // Check sticker limit (max 50 custom stickers per user)
+    // This checks sticker limit (max 50 custom stickers per user).
     if (user.customStickers && user.customStickers.length >= 50) {
       return res.status(400).json({ message: 'Maximum 50 custom stickers allowed' });
     }
 
-    // Add sticker
+    // This adds sticker.
     user.customStickers = user.customStickers || [];
     user.customStickers.push({
       id,
@@ -60,7 +60,7 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// Delete custom sticker
+// This deletes custom sticker.
 router.delete('/:stickerId', protect, async (req, res) => {
   try {
     const { stickerId } = req.params;
@@ -71,7 +71,7 @@ router.delete('/:stickerId', protect, async (req, res) => {
       return res.status(404).json({ message: 'No stickers found' });
     }
 
-    // Remove sticker
+    // This removes sticker.
     user.customStickers = user.customStickers.filter(s => s.id !== stickerId);
     await user.save();
 
@@ -82,7 +82,7 @@ router.delete('/:stickerId', protect, async (req, res) => {
   }
 });
 
-// Clear all custom stickers
+// This clears all custom stickers.
 router.delete('/', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);

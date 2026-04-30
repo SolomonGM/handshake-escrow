@@ -13,13 +13,13 @@ import BitcoinConfetti from "./BitcoinConfetti";
 const Hero = () => {
   const parallaxRef = useRef(null);
   
-  // Initialize dark mode from localStorage, default to true (dark mode)
+  // This initializes dark mode from localStorage, default to true (dark mode).
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('coinGeckoDarkMode');
     return saved !== null ? JSON.parse(saved) : true;
   });
   
-  // Initialize currency from localStorage, default to "gbp"
+  // This initializes currency from localStorage, default to "gbp".
   const [selectedCurrency, setSelectedCurrency] = useState(() => {
     const saved = localStorage.getItem('selectedCurrency');
     return saved || "gbp";
@@ -49,11 +49,11 @@ const Hero = () => {
     console.log('Triggering confetti:', { direction, type });
     setIsAnimating(true);
     
-    // Create unique confetti instance
+    // This creates unique confetti instance.
     const confettiId = confettiIdRef.current++;
     setActiveConfetti({ id: confettiId, direction, type });
     
-    // Clear after animation completes
+    // This clears after animation completes.
     setTimeout(() => {
       setActiveConfetti(null);
       setIsAnimating(false);
@@ -61,25 +61,25 @@ const Hero = () => {
     }, 2200);
   };
 
-  // Save dark mode preference to localStorage whenever it changes
+  // This saves dark mode preference to localStorage whenever it changes.
   useEffect(() => {
     localStorage.setItem('coinGeckoDarkMode', JSON.stringify(isDarkMode));
   }, [isDarkMode]);
 
-  // Save currency preference to localStorage whenever it changes
+  // This saves currency preference to localStorage whenever it changes.
   useEffect(() => {
     localStorage.setItem('selectedCurrency', selectedCurrency);
   }, [selectedCurrency]);
 
   useEffect(() => {
-    // Load CoinGecko coin list widget script
+    // This loads CoinGecko coin list widget script.
     const script = document.createElement('script');
     script.src = 'https://widgets.coingecko.com/gecko-coin-list-widget.js';
     script.async = true;
     document.body.appendChild(script);
 
     return () => {
-      // Cleanup script on unmount
+      // This cleans up script on unmount.
       if (document.body.contains(script)) {
         document.body.removeChild(script);
       }

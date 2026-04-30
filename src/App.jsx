@@ -161,7 +161,7 @@ const AppShell = () => {
     return saved ? JSON.parse(saved) : false;
   });
 
-  // Update localStorage when chat state changes
+  // This updates localStorage when chat state changes.
   const toggleChat = () => {
     setIsChatOpen(prev => {
       const newState = !prev;

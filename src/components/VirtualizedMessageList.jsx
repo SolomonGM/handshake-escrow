@@ -11,7 +11,7 @@ const VirtualizedMessageList = ({
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef(null);
 
-  // Calculate visible range
+  // This calculates visible range.
   const visibleRange = useMemo(() => {
     const visibleStart = Math.floor(scrollTop / itemHeight);
     const visibleEnd = Math.ceil((scrollTop + containerHeight) / itemHeight);
@@ -22,7 +22,7 @@ const VirtualizedMessageList = ({
     };
   }, [scrollTop, containerHeight, itemHeight, messages.length, overscan]);
 
-  // Get visible messages
+  // This gets visible messages.
   const visibleMessages = useMemo(() => {
     return messages.slice(visibleRange.start, visibleRange.end);
   }, [messages, visibleRange]);
@@ -33,7 +33,7 @@ const VirtualizedMessageList = ({
   // Offset for visible messages
   const offsetY = visibleRange.start * itemHeight;
 
-  // Handle scroll
+  // This handles scroll.
   const handleScroll = (e) => {
     setScrollTop(e.target.scrollTop);
     // Pass scroll event to parent if needed

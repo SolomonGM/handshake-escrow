@@ -61,146 +61,146 @@ class SocketService {
     }
   }
 
-  // Join chat room
+  // This joins chat room.
   joinChat() {
     if (this.socket) {
       this.socket.emit('join_chat');
     }
   }
 
-  // Send message
+  // This sends message.
   sendMessage(messageData) {
     if (this.socket) {
       this.socket.emit('send_message', messageData);
     }
   }
 
-  // Listen for new messages
+  // This listens for new messages.
   onNewMessage(callback) {
     if (this.socket) {
       this.socket.on('new_message', callback);
     }
   }
 
-  // Listen for message deletion
+  // This listens for message deletion.
   onMessageDeleted(callback) {
     if (this.socket) {
       this.socket.on('message_deleted', callback);
     }
   }
 
-  // Listen for active users update
+  // This listens for active users update.
   onActiveUsers(callback) {
     if (this.socket) {
       this.socket.on('active_users', callback);
     }
   }
 
-  // Listen for typing indicator
+  // This listens for typing indicator.
   onUserTyping(callback) {
     if (this.socket) {
       this.socket.on('user_typing', callback);
     }
   }
 
-  // Listen for stop typing
+  // This listens for stop typing.
   onUserStopTyping(callback) {
     if (this.socket) {
       this.socket.on('user_stop_typing', callback);
     }
   }
 
-  // Send typing indicator
+  // This sends typing indicator.
   typing() {
     if (this.socket) {
       this.socket.emit('typing');
     }
   }
 
-  // Stop typing indicator
+  // This stops typing indicator.
   stopTyping() {
     if (this.socket) {
       this.socket.emit('stop_typing');
     }
   }
 
-  // Delete message
+  // This deletes message.
   deleteMessage(messageId) {
     if (this.socket) {
       this.socket.emit('delete_message', { messageId });
     }
   }
 
-  // Listen for errors
+  // This listens for errors.
   onError(callback) {
     if (this.socket) {
       this.socket.on('error', callback);
     }
   }
 
-  // Listen for announcements
+  // This listens for announcements.
   onAnnouncement(callback) {
     if (this.socket) {
       this.socket.on('chat_announcement', callback);
     }
   }
 
-  // Listen for announcement list
+  // This listens for announcement list.
   onAnnouncements(callback) {
     if (this.socket) {
       this.socket.on('chat_announcements', callback);
     }
   }
 
-  // Listen for high-priority alerts
+  // This listens for high-priority alerts.
   onAlert(callback) {
     if (this.socket) {
       this.socket.on('chat_alert', callback);
     }
   }
 
-  // Listen for private bot command feedback
+  // This listens for private bot command feedback.
   onCommandFeedback(callback) {
     if (this.socket) {
       this.socket.on('command_feedback', callback);
     }
   }
 
-  // Enter a giveaway announcement
+  // This enters a giveaway announcement.
   enterGiveaway(giveawayId) {
     if (this.socket) {
       this.socket.emit('enter_giveaway', { giveawayId });
     }
   }
 
-  // Emit custom event
+  // This emits custom event.
   emit(event, data) {
     if (this.socket) {
       this.socket.emit(event, data);
     }
   }
 
-  // Listen for custom event
+  // This listens for custom event.
   on(event, callback) {
     if (this.socket) {
       this.socket.on(event, callback);
     }
   }
 
-  // Remove all listeners
+  // This removes all listeners.
   removeAllListeners() {
     if (this.socket) {
       this.socket.removeAllListeners();
     }
   }
 
-  // Get connection status
+  // This gets connection status.
   isConnected() {
     return this.connected && this.socket?.connected;
   }
 }
 
-// Create singleton instance
+// This creates singleton instance.
 const socketService = new SocketService();
 
 export default socketService;

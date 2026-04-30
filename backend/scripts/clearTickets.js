@@ -10,15 +10,15 @@ const clearAllTickets = async () => {
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB');
 
-    // Count before deletion
+    // This counts before deletion.
     const countBefore = await mongoose.connection.db.collection('tradetickets').countDocuments();
     console.log(`📊 Tickets before deletion: ${countBefore}`);
 
-    // Delete all
+    // This deletes all.
     const result = await mongoose.connection.db.collection('tradetickets').deleteMany({});
     console.log(`🗑️  Delete operation result: ${result.deletedCount} documents deleted`);
 
-    // Count after deletion
+    // This counts after deletion.
     const countAfter = await mongoose.connection.db.collection('tradetickets').countDocuments();
     console.log(`📊 Tickets after deletion: ${countAfter}`);
 

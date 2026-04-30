@@ -18,7 +18,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
 
   const isCreator = currentUser && request.creator._id === currentUser.id;
 
-  // Calculate time remaining
+  // This calculates time remaining.
   const getTimeRemaining = (expiresAt) => {
     const now = new Date();
     const expires = new Date(expiresAt);
@@ -36,7 +36,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     return `${hours}h ${minutes}m`;
   };
 
-  // Get crypto info (only used if cryptoOffered exists)
+  // This gets crypto info (only used if cryptoOffered exists).
   const cryptoInfo = {
     'bitcoin': { symbol: 'BTC', color: '#F7931A' },
     'ethereum': { symbol: 'ETH', color: '#627EEA' },
@@ -48,7 +48,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
 
   const crypto = request.cryptoOffered ? cryptoInfo[request.cryptoOffered] : null;
 
-  // Get currency symbol for price display
+  // This gets currency symbol for price display.
   const getCurrencySymbol = (currency) => {
     const symbols = {
       'USD': '$',
@@ -64,7 +64,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     return symbols[currency] || currency.toUpperCase();
   };
 
-  // Calculate reputation score from completed trades
+  // This calculates reputation score from completed trades.
   const getReputationScore = () => {
     if (!request.creator.totalTrades) return 0;
     const completionRate = (request.creator.completedTrades / request.creator.totalTrades) * 100;
@@ -73,7 +73,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
 
   const reputation = getReputationScore();
 
-  // Handle buying/selling from this user
+  // This handles buying/selling from this user.
   const handleTrade = async () => {
     if (!user || !token) {
       toast.error('Please login to trade');
@@ -81,7 +81,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
       return;
     }
 
-    // Prevent user from trading with themselves
+    // This prevents user from trading with themselves.
     if (request.creator._id === user._id) {
       toast.error('You cannot trade with yourself');
       return;
@@ -97,12 +97,12 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     await createTicket(selectedPaymentMethod);
   };
 
-  // Create ticket with selected payment method
+  // This creates ticket with selected payment method.
   const createTicket = async (paymentMethod) => {
     try {
       setIsCreatingTicket(true);
 
-      // Map payment method to cryptocurrency
+      // This maps payment method to cryptocurrency.
       const cryptoMapping = {
         'bitcoin': 'bitcoin',
         'ethereum': 'ethereum',
@@ -135,7 +135,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
         const encodedTicketId = encodeURIComponent(response.data.ticket.ticketId);
         toast.success('Ticket created! Opening trade...');
         
-        // Mark trade request as sold
+        // This marks trade request as sold.
         await markAsSold();
         
         navigate(`/trade-ticket?ticketId=${encodedTicketId}`);
@@ -148,7 +148,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     }
   };
 
-  // Mark trade request as sold
+  // This marks trade request as sold.
   const markAsSold = async () => {
     try {
       await axios.patch(
@@ -157,14 +157,14 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Refresh the list
+      // This refreshes the list.
       if (onUpdate) onUpdate();
     } catch (err) {
       console.error('Error marking as sold:', err);
     }
   };
 
-  // Delete trade request
+  // This deletes trade request.
   const handleDelete = async () => {
     try {
       await axios.delete(
@@ -181,7 +181,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     }
   };
 
-  // Get trade type styling
+  // This gets trade type styling.
   const getTypeStyle = (type) => {
     return type === "buying" 
       ? { bg: "bg-[#10B981]/10", text: "text-[#10B981]", border: "border-[#10B981]/30", label: "BUYING" }

@@ -78,19 +78,19 @@ const LiveChat = ({ isOpen, onClose }) => {
     };
   };
 
-  // Connect to WebSocket and load message history
+  // This connects to WebSocket and load message history.
   useEffect(() => {
-    // Disconnect previous connection if exists
+    // This disconnects previous connection if exists.
     socketService.disconnect();
 
-    // Get current token
+    // This gets current token.
     const token = localStorage.getItem('token');
     
-    // Connect to socket with token
+    // This connects to socket with token.
     socketService.connect(token);
     setIsConnected(socketService.isConnected());
 
-    // Load message history from API
+    // This loads message history from API.
     const loadMessages = async () => {
       try {
         const response = await chatAPI.getMessages(50);
@@ -121,35 +121,35 @@ const LiveChat = ({ isOpen, onClose }) => {
 
     loadMessages();
 
-    // Join chat room
+    // This joins chat room.
     socketService.joinChat();
 
-    // Listen for unread count from server
+    // This listens for unread count from server.
     socketService.on('unread_count', ({ count }) => {
       if (count > 0 && !isOpen) {
         setHasNewMessages(true);
       }
     });
 
-    // Listen for new message notifications (when chat is closed)
+    // This listens for new message notifications (when chat is closed).
     socketService.on('new_message_notification', () => {
       console.log('New message notification received');
       setHasNewMessages(true);
     });
 
-    // Listen for new messages
+    // This listens for new messages.
     socketService.onNewMessage((newMsg) => {
       console.log('Received new message:', newMsg); // Debug log
       
       setMessages((prev) => [...prev, toChatMessage(newMsg)]);
     });
 
-    // Listen for message deletions
+    // This listens for message deletions.
     socketService.onMessageDeleted(({ messageId }) => {
       setMessages(prev => prev.filter(msg => msg.id !== messageId));
     });
 
-    // Listen for errors
+    // This listens for errors.
     socketService.onError((err) => {
       const nextError = typeof err === 'string'
         ? { message: err, showToUser: false, cooldownSeconds: 0 }
@@ -165,13 +165,13 @@ const LiveChat = ({ isOpen, onClose }) => {
       setTimeout(() => setError(null), 5000);
     });
 
-    // Listen for announcement list
+    // This listens for announcement list.
     socketService.onAnnouncements((data) => {
       const nextAnnouncements = Array.isArray(data) ? data : [];
       setAnnouncements(nextAnnouncements);
     });
 
-    // Listen for command feedback messages (private bot responses)
+    // This listens for command feedback messages (private bot responses).
     socketService.onCommandFeedback((botMessage) => {
       const commandMessage = toChatMessage(botMessage);
       const ttlMs = Number(botMessage?.ttlMs || 30000);
@@ -191,21 +191,21 @@ const LiveChat = ({ isOpen, onClose }) => {
       commandFeedbackTimersRef.current.set(commandMessage.id, timerId);
     });
 
-    // Listen for high-priority alerts
+    // This listens for high-priority alerts.
     socketService.onAlert((alertPayload) => {
       if (alertPayload?.message) {
         setActiveAlert(alertPayload);
       }
     });
 
-    // Listen for help command response
+    // This listens for help command response.
     socketService.on('chat_help', (data) => {
       console.log('Received help data:', data);
       setHelpData(data);
       setShowHelpModal(true);
     });
 
-    // Cleanup on unmount or user change
+    // This cleans up on unmount or user change.
     return () => {
       commandFeedbackTimersRef.current.forEach((timerId) => clearTimeout(timerId));
       commandFeedbackTimersRef.current.clear();
@@ -213,17 +213,17 @@ const LiveChat = ({ isOpen, onClose }) => {
     };
   }, [user]); // Re-run when user changes
 
-  // Handle chat open/close
+  // This handles chat open/close.
   useEffect(() => {
     if (isOpen) {
-      // Clear notification badge
+      // This clears notification badge.
       setHasNewMessages(false);
-      // Notify server that chat is opened
+      // This notifies server that chat is opened.
       if (user) {
         socketService.emit('chat_opened');
       }
     } else {
-      // Notify server that chat is closed
+      // This notifies server that chat is closed.
       if (user) {
         socketService.emit('chat_closed');
       }
@@ -273,7 +273,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     }
   };
 
-  // Scroll to specific message
+  // This scrolls to specific message.
   const scrollToMessage = (messageId) => {
     const messageElement = document.getElementById(`message-${messageId}`);
     if (messageElement) {
@@ -286,7 +286,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     }
   };
 
-  // Handle scroll event to show/hide scroll-to-bottom button and optimize rendering
+  // This handles scroll event to show/hide scroll-to-bottom button and optimize rendering.
   const handleScroll = () => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -302,11 +302,11 @@ const LiveChat = ({ isOpen, onClose }) => {
       const scrollTop = container.scrollTop;
       const containerHeight = container.clientHeight;
       
-      // Calculate which messages are visible
+      // This calculates which messages are visible.
       const firstVisible = Math.floor(scrollTop / MESSAGE_HEIGHT);
       const lastVisible = Math.ceil((scrollTop + containerHeight) / MESSAGE_HEIGHT);
       
-      // Add buffer above and below (20 messages on each side)
+      // This adds buffer above and below (20 messages on each side).
       const bufferSize = 20;
       const start = Math.max(0, firstVisible - bufferSize);
       const end = Math.min(messages.length, lastVisible + bufferSize);
@@ -317,12 +317,12 @@ const LiveChat = ({ isOpen, onClose }) => {
       setVisibleRange({ start: 0, end: messages.length });
     }
 
-    // Clear existing timeout
+    // This clears existing timeout.
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
     }
 
-    // Reset user scrolling after 3 seconds of no scroll
+    // This resets user scrolling after 3 seconds of no scroll.
     scrollTimeoutRef.current = setTimeout(() => {
       if (isNearBottom) {
         setIsUserScrolling(false);
@@ -330,12 +330,12 @@ const LiveChat = ({ isOpen, onClose }) => {
     }, 3000);
   };
 
-  // Update visible range when messages change
+  // This updates visible range when messages change.
   useEffect(() => {
     if (messages.length <= RENDER_THRESHOLD) {
       setVisibleRange({ start: 0, end: messages.length });
     } else {
-      // Keep showing the latest messages
+      // This keeps showing the latest messages.
       setVisibleRange({ start: Math.max(0, messages.length - 50), end: messages.length });
     }
   }, [messages.length]);
@@ -346,7 +346,7 @@ const LiveChat = ({ isOpen, onClose }) => {
   }, [messages]);
 
 
-  // Parse message for mentions
+  // This parses message for mentions.
   const parseMessage = (text) => {
     const mentionRegex = /@(\w+)/g;
     const parts = [];
@@ -354,14 +354,14 @@ const LiveChat = ({ isOpen, onClose }) => {
     let match;
 
     while ((match = mentionRegex.exec(text)) !== null) {
-      // Add text before mention
+      // This adds text before mention.
       if (match.index > lastIndex) {
         parts.push({
           type: 'text',
           content: text.substring(lastIndex, match.index)
         });
       }
-      // Add mention
+      // This adds mention.
       parts.push({
         type: 'mention',
         content: match[0]
@@ -369,7 +369,7 @@ const LiveChat = ({ isOpen, onClose }) => {
       lastIndex = match.index + match[0].length;
     }
 
-    // Add remaining text
+    // This adds remaining text.
     if (lastIndex < text.length) {
       parts.push({
         type: 'text',
@@ -380,7 +380,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     return parts.length > 0 ? parts : [{ type: 'text', content: text }];
   };
 
-  // Send message via WebSocket
+  // This sends message via WebSocket.
   const handleSendMessage = (e, stickerUrl = null) => {
     if (e) e.preventDefault();
 
@@ -412,10 +412,10 @@ const LiveChat = ({ isOpen, onClose }) => {
     // Regular text message
     if (!message.trim() || !user) return;
 
-    // Extract mentions
+    // This extracts mentions.
     const mentions = message.match(/@(\w+)/g) || [];
 
-    // Send via WebSocket
+    // This sends via WebSocket.
     socketService.sendMessage({
       message: message,
       mentions: mentions,
@@ -428,20 +428,20 @@ const LiveChat = ({ isOpen, onClose }) => {
     setShowEmojiPicker(false);
   };
 
-  // Handle reply
+  // This handles reply.
   const handleReply = (msg) => {
     setReplyTo(msg);
     inputRef.current?.focus();
   };
 
-  // Handle clicking on reply indicator to jump to original message
+  // This handles clicking on reply indicator to jump to original message.
   const handleReplyClick = (replyToMsg) => {
     if (replyToMsg && replyToMsg._id) {
       scrollToMessage(replyToMsg._id);
     }
   };
 
-  // Format timestamp
+  // This formats timestamp.
   const formatTime = (date) => {
     const now = new Date();
     const diff = now - date;
@@ -907,7 +907,7 @@ const LiveChat = ({ isOpen, onClose }) => {
           {showStickerPicker && (
             <StickerPicker
               onSelect={(stickerUrl) => {
-                // Send sticker as a separate message or append to text
+                // This sends sticker as a separate message or append to text.
                 if (stickerUrl.startsWith('data:') || stickerUrl.startsWith('/') || stickerUrl.startsWith('http')) {
                   // It's an image sticker, send it directly
                   handleSendMessage(null, stickerUrl);

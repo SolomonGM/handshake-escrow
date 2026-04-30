@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import cron from 'node-cron';
 import { ethers } from 'ethers';
 import TradeTicket from '../models/TradeTicket.js';
@@ -19,7 +19,7 @@ const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c
 
 const getExchangeRate = (crypto) => EXCHANGE_RATES[crypto] || 1;
 
-// Convert USD to crypto using configured exchange rate
+// This converts USD to crypto using configured exchange rate.
 const convertUSDToCrypto = (usdAmount, crypto) => {
   const rate = getExchangeRate(crypto);
   return (usdAmount / rate).toFixed(8);
@@ -125,7 +125,7 @@ const getAddressTransactions = async (address, crypto = 'litecoin', networkOverr
     );
     return response.data;
   } catch (error) {
-    console.error(`âŒ Error fetching transactions for ${address}:`, error.message);
+    console.error(`❌ Error fetching transactions for ${address}:`, error.message);
     return null;
   }
 };
@@ -262,7 +262,7 @@ const handleTicketTimeout = async (ticket) => {
   if (ticket.transactionTimeoutAt) {
     const timeoutDate = new Date(ticket.transactionTimeoutAt);
     if (now >= timeoutDate && !ticket.transactionTimedOut) {
-      console.log(`⏰ Transaction timeout reached for ticket ${ticket.ticketId}`);
+      console.log(`? Transaction timeout reached for ticket ${ticket.ticketId}`);
       ticket.transactionTimedOut = true;
       ticket.awaitingTransaction = false;
 
@@ -285,7 +285,7 @@ const handleTicketTimeout = async (ticket) => {
       });
 
       await ticket.save();
-      console.log(`💾 Timeout prompt added to ticket ${ticket.ticketId}\n`);
+      console.log(`?? Timeout prompt added to ticket ${ticket.ticketId}\n`);
       return true;
     }
 
@@ -295,7 +295,7 @@ const handleTicketTimeout = async (ticket) => {
   const timeoutMinutes = 20;
   ticket.transactionTimeoutAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
   await ticket.save();
-  console.log(`   ⏰ Timeout set for ${timeoutMinutes} minutes`);
+  console.log(`   ? Timeout set for ${timeoutMinutes} minutes`);
   return false;
 };
 
@@ -357,7 +357,7 @@ const monitorUtxoTicketTransaction = async (ticket, crypto, runtimeConfig) => {
       const matchResult = isUtxoAmountMatch(output.value, expectedCrypto, ticket.expectedAmount, crypto, network);
 
       if (matchResult.isMatch) {
-        console.log(`✅ TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
+        console.log(`? TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
         console.log(`   TX Hash: ${tx.hash}`);
         console.log(`   Amount: ${matchResult.receivedCrypto} ${network.symbol} (expected ${matchResult.expectedCrypto} ${network.symbol})`);
         console.log(`   USD Value: $${ticket.expectedAmount}`);
@@ -380,7 +380,7 @@ const monitorUtxoTicketTransaction = async (ticket, crypto, runtimeConfig) => {
         );
 
         await ticket.save();
-        console.log(`💾 Transaction detected and saved for ticket ${ticket.ticketId}\n`);
+        console.log(`?? Transaction detected and saved for ticket ${ticket.ticketId}\n`);
 
         if (tx.confirmations >= network.confirmationsRequired) {
           await updateTransactionConfirmations(ticket, tx.hash, tx.confirmations, network.confirmationsRequired);
@@ -398,7 +398,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
     ? new ethers.JsonRpcProvider(ethRuntime.config.rpcUrl)
     : null;
   if (!provider) {
-    console.error('❌ Ethereum provider not available. Please configure RPC URL.');
+    console.error('? Ethereum provider not available. Please configure RPC URL.');
     return;
   }
 
@@ -418,7 +418,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
         const currentBlock = await provider.getBlockNumber();
         const confirmations = currentBlock - receipt.blockNumber + 1;
         if (!ethDetectionLoggedByTicket.has(ticket.ticketId)) {
-          console.log(`✅ ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
+          console.log(`? ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
           console.log(`   TX Hash: ${ticket.senderTransactionHash}`);
           console.log(`   Confirmations: ${confirmations}/${requiredConfirmations}`);
           ethDetectionLoggedByTicket.add(ticket.ticketId);
@@ -430,7 +430,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
         ethCooldownByTicket.set(ticket.ticketId, now + ETH_RATE_LIMIT_COOLDOWN_MS);
         return;
       }
-      console.error(`❌ Error refreshing ETH confirmations for ticket ${ticket.ticketId}:`, error.message);
+      console.error(`? Error refreshing ETH confirmations for ticket ${ticket.ticketId}:`, error.message);
     }
     return;
   }
@@ -507,7 +507,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
 
       const confirmations = receipt.blockNumber ? currentBlock - receipt.blockNumber + 1 : 0;
 
-      console.log(`✅ ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
+      console.log(`? ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
       console.log(`   TX Hash: ${transfer.hash}`);
       console.log(`   Amount: ${matchResult.receivedETH.toFixed(8)} ETH (expected ${matchResult.expectedETH.toFixed(8)} ETH)`);
       console.log(`   USD Value: $${ticket.expectedAmount}`);
@@ -531,7 +531,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
       );
 
       await ticket.save();
-      console.log(`💾 Transaction detected and saved for ticket ${ticket.ticketId}\n`);
+      console.log(`?? Transaction detected and saved for ticket ${ticket.ticketId}\n`);
 
       if (confirmations >= requiredConfirmations) {
         await updateTransactionConfirmations(ticket, transfer.hash, confirmations, requiredConfirmations);
@@ -601,7 +601,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
       const matchResult = isEthAmountMatch(txData.value, expectedETH, ticket.expectedAmount);
 
       if (matchResult.isMatch) {
-        console.log(`✅ ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
+        console.log(`? ETH TRANSACTION DETECTED for ticket ${ticket.ticketId}!`);
         console.log(`   TX Hash: ${txData.hash}`);
         console.log(`   Amount: ${matchResult.receivedETH.toFixed(8)} ETH (expected ${matchResult.expectedETH.toFixed(8)} ETH)`);
         console.log(`   USD Value: $${ticket.expectedAmount}`);
@@ -625,7 +625,7 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
         );
 
         await ticket.save();
-        console.log(`💾 Transaction detected and saved for ticket ${ticket.ticketId}\n`);
+        console.log(`?? Transaction detected and saved for ticket ${ticket.ticketId}\n`);
 
         if (confirmations >= requiredConfirmations) {
           await updateTransactionConfirmations(ticket, txData.hash, confirmations, requiredConfirmations);
@@ -656,7 +656,7 @@ export const monitorTicketTransaction = async (ticketId) => {
       return;
     }
 
-    console.log(`🔍 Monitoring ticket ${ticketId} - Expecting ${ticket.expectedAmount} USD to ${ticket.botWalletAddress}`);
+    console.log(`?? Monitoring ticket ${ticketId} - Expecting ${ticket.expectedAmount} USD to ${ticket.botWalletAddress}`);
 
     const supportedCryptos = ['ethereum', 'litecoin', 'bitcoin'];
     if (!supportedCryptos.includes(ticket.cryptocurrency)) {
@@ -684,7 +684,7 @@ export const monitorTicketTransaction = async (ticketId) => {
       await monitorUtxoTicketTransaction(ticket, ticket.cryptocurrency, runtimeConfig);
     }
   } catch (error) {
-    console.error(`❌ Error monitoring ticket ${ticketId}:`, error);
+    console.error(`? Error monitoring ticket ${ticketId}:`, error);
   }
 };
 
@@ -760,12 +760,12 @@ const updateTransactionConfirmations = async (ticket, txHash, confirmations, req
       });
 
       await ticket.save();
-      console.log(`âœ… Transaction CONFIRMED for ticket ${ticket.ticketId} (${confirmations} confirmations)\n`);
+      console.log(`✅ Transaction CONFIRMED for ticket ${ticket.ticketId} (${confirmations} confirmations)\n`);
     } else {
       await ticket.save();
     }
   } catch (error) {
-    console.error(`âŒ Error updating confirmations:`, error);
+    console.error(`❌ Error updating confirmations:`, error);
   }
 };
 
@@ -872,7 +872,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
             await order.save();
           }
           
-          // Emit confirmation progress to frontend
+          // This emits confirmation progress to frontend.
           if (io && !reachedRequired) {
             io.emit(`pass_order_update:${orderId}`, {
               orderId,
@@ -929,7 +929,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
         console.log(`   Difference: ${matchResult.difference.toFixed(8)} ${network.symbol} (${matchResult.percentDiff.toFixed(2)}%)`);
         console.log(`   Confirmations: ${confirmations}/${network.confirmationsRequired}`);
         
-        // Save detailed transaction information for business records
+        // This saves detailed transaction information for business records.
         order.transactionHash = txHash;
         order.transactionDetails = {
           detectedAt: new Date(),
@@ -946,7 +946,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
           paymentNotes: `${network.symbol} payment on testnet. BlockCypher: ${explorerLink || 'n/a'}`
         };
 
-        // Emit transaction detected event
+        // This emits transaction detected event.
         if (io) {
           io.emit(`pass_order_update:${orderId}`, {
             orderId,
@@ -1038,7 +1038,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
           const fromAddress = getUtxoFromAddress(txDetails);
           const networkFee = getUtxoNetworkFee(txDetails);
 
-          // Process order anyway since user overpaid, save details
+          // This processes order anyway since user overpaid, save details.
           order.transactionHash = txHash;
           order.transactionDetails = {
             detectedAt: new Date(),
@@ -1054,7 +1054,7 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
             paymentNotes: `OVERPAYMENT: Received ${receivedCrypto.toFixed(8)} ${network.symbol}, expected ${matchResult.expectedCrypto.toFixed(8)} ${network.symbol}. Excess: ${(receivedCrypto - matchResult.expectedCrypto).toFixed(8)} ${network.symbol}. BlockCypher: ${explorerLink || 'n/a'}`
           };
           
-          // Emit overpayment detected event
+          // This emits overpayment detected event.
           if (io) {
             io.emit(`pass_order_update:${orderId}`, {
               orderId,
@@ -1136,13 +1136,13 @@ export const monitorBitcoinPassOrder = async (orderId, io = null) => {
 const getEthProvider = (networkMode = ETH_NETWORK_MODE) => {
   const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG[ETH_NETWORK_MODE];
   if (!config || !config.rpcUrl || config.rpcUrl.includes('YOUR_INFURA_API_KEY')) {
-    console.warn('âš ï¸  Ethereum RPC URL not configured. Set SEPOLIA_RPC_URL in .env file');
+    console.warn('⚠️  Ethereum RPC URL not configured. Set SEPOLIA_RPC_URL in .env file');
     return null;
   }
   return new ethers.JsonRpcProvider(config.rpcUrl);
 };
 
-// Convert USD to Ethereum (using configured test rate for Sepolia)
+// This converts USD to Ethereum (using configured test rate for Sepolia).
 const convertUSDToETH = (usdAmount, exchangeRate = getExchangeRate('ethereum')) => {
   return (usdAmount / exchangeRate).toFixed(8);
 };
@@ -1161,7 +1161,7 @@ const isEthAmountMatch = (receivedWei, expectedETH, expectedUSD) => {
   const isMatch = receivedETH >= minAcceptable && receivedETH <= maxAcceptable;
   
   if (isMatch && difference > 0) {
-    console.log(`   â„¹ï¸  Amount within 2% tolerance: ${difference.toFixed(8)} ETH difference (max: ${tolerance.toFixed(8)} ETH)`);
+    console.log(`   ℹ️  Amount within 2% tolerance: ${difference.toFixed(8)} ETH difference (max: ${tolerance.toFixed(8)} ETH)`);
   }
   
   return {
@@ -1245,7 +1245,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
     const ethRuntime = getEthereumRuntimeConfig(runtimeWithOrderMode);
     const provider = getEthProvider(ethRuntime.mode);
     if (!provider) {
-      console.error('âŒ Ethereum provider not available. Please configure RPC URL.');
+      console.error('❌ Ethereum provider not available. Please configure RPC URL.');
       return;
     }
 
@@ -1266,20 +1266,20 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       const timeoutDate = new Date(order.timeoutDetails.timeoutAt);
       
       if (now >= timeoutDate) {
-        console.log(`â° 10-minute timeout reached for Ethereum pass order ${orderId} - No transaction detected`);
+        console.log(`⏰ 10-minute timeout reached for Ethereum pass order ${orderId} - No transaction detected`);
         order.timeoutDetails.timedOut = true;
         order.status = 'timedout';
         order.timeoutDetails.paymentNotes = 'No transaction detected within 10-minute window.';
         await order.save();
         
-        console.log(`â±ï¸  Order ${orderId} marked as timedout`);
+        console.log(`⏱️  Order ${orderId} marked as timedout`);
         return;
       }
     }
 
     // This check determines whether order has expired (30 minutes total)
     if (now > order.expiresAt && order.status === 'pending') {
-      console.log(`â° Ethereum pass order ${orderId} expired without payment (30 min expiry)`);
+      console.log(`⏰ Ethereum pass order ${orderId} expired without payment (30 min expiry)`);
       order.status = 'expired';
       await order.save();
       return;
@@ -1290,7 +1290,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       return;
     }
 
-    console.log(`ðŸ” Monitoring Ethereum pass order ${orderId} - Expecting ${order.cryptoAmount} ETH ($${order.priceUSD}) to ${order.paymentAddress}`);
+    console.log(`🔍 Monitoring Ethereum pass order ${orderId} - Expecting ${order.cryptoAmount} ETH ($${order.priceUSD}) to ${order.paymentAddress}`);
     console.log(`   Network: ${config.name.toUpperCase()}, Explorer: ${config.blockExplorer}`);
 
     // Retrieves current block number
@@ -1304,16 +1304,16 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
     // Scan recent blocks for transactions to our address
     let foundTransactions = [];
     
-    // Check recent blocks (batching to avoid rate limits)
+    // This checks recent blocks (batching to avoid rate limits).
     for (let blockNum = currentBlock; blockNum >= searchFromBlock && foundTransactions.length === 0; blockNum--) {
       try {
         const block = await provider.getBlock(blockNum, true); // true = include transactions
         
         if (block && block.transactions) {
-          // Filter transactions sent to our payment address
+          // This filters transactions sent to our payment address.
           for (const txHash of block.transactions) {
             if (typeof txHash === 'string') {
-              // Hash only, need to fetch full transaction
+              // This hashes only, need to fetch full transaction.
               const tx = await provider.getTransaction(txHash);
               if (tx && tx.to && tx.to.toLowerCase() === order.paymentAddress.toLowerCase()) {
                 tx.blockTimestamp = block.timestamp;
@@ -1344,7 +1344,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
 
     console.log(`   Found ${foundTransactions.length} transaction(s) to analyze`);
 
-    // Check each transaction
+    // This checks each transaction.
     let matched = false;
     let duplicateMatch = null;
     for (const tx of foundTransactions) {
@@ -1363,7 +1363,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
               await order.save();
             }
             
-            // Emit confirmation progress to frontend
+            // This emits confirmation progress to frontend.
             if (io && !reachedRequired) {
               io.emit(`pass_order_update:${orderId}`, {
                 orderId,
@@ -1401,7 +1401,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       // This check determines whether transaction was successful (not reverted)
       const receipt = await provider.getTransactionReceipt(tx.hash);
       if (!receipt || receipt.status !== 1) {
-        console.log(`   âš ï¸  Transaction ${tx.hash.slice(0, 16)}... failed or reverted, skipping`);
+        console.log(`   ⚠️  Transaction ${tx.hash.slice(0, 16)}... failed or reverted, skipping`);
         continue;
       }
 
@@ -1427,7 +1427,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       }
 
       if (matchResult.isMatch) {
-        console.log(`âœ… Ethereum payment found!`);
+        console.log(`✅ Ethereum payment found!`);
         console.log(`   Order ID: ${orderId}`);
         console.log(`   User: ${order.user.username}`);
         console.log(`   TX Hash: ${tx.hash}`);
@@ -1444,7 +1444,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
         const gasFee = receipt.gasUsed * (tx.gasPrice || 0n);
         const gasFeeETH = parseFloat(ethers.formatEther(gasFee));
         
-        // Save detailed transaction information
+        // This saves detailed transaction information.
         order.transactionHash = tx.hash;
         order.transactionDetails = {
           detectedAt: new Date(),
@@ -1461,7 +1461,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
           paymentNotes: `Ethereum payment on ${config.name}. Gas fee: ${gasFeeETH.toFixed(8)} ETH. Etherscan: ${config.blockExplorer}/tx/${tx.hash}`
         };
 
-        // Emit transaction detected event
+        // This emits transaction detected event.
         if (io) {
           io.emit(`pass_order_update:${orderId}`, {
             orderId,
@@ -1481,7 +1481,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
           // Complete the order immediately
           const success = await completePassOrder(orderId, tx.hash, io);
           if (success) {
-            console.log(`ðŸŽ‰ Ethereum pass order ${orderId} completed successfully!\n`);
+            console.log(`🎉 Ethereum pass order ${orderId} completed successfully!\n`);
           }
         } else {
           // Marks as confirmed, waiting for more confirmations
@@ -1493,7 +1493,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
           } catch (historyError) {
             console.error('Error updating pass transaction history:', historyError);
           }
-          console.log(`   ðŸ•’ Order marked as confirmed, waiting for ${config.confirmationsRequired} confirmations\n`);
+          console.log(`   🕒 Order marked as confirmed, waiting for ${config.confirmationsRequired} confirmations\n`);
         }
         matched = true;
         break;
@@ -1503,11 +1503,11 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
         const isOverpayment = matchResult.receivedETH > matchResult.expectedETH;
         
         if (isUnderpayment && Math.abs(matchResult.percentDiff) > 2) {
-          console.log(`âš ï¸  UNDERPAYMENT detected for Ethereum order ${orderId}`);
+          console.log(`⚠️  UNDERPAYMENT detected for Ethereum order ${orderId}`);
           console.log(`   Expected: ${matchResult.expectedETH.toFixed(8)} ETH`);
           console.log(`   Received: ${matchResult.receivedETH.toFixed(8)} ETH`);
           console.log(`   Shortfall: ${(matchResult.expectedETH - matchResult.receivedETH).toFixed(8)} ETH`);
-          console.log(`   âŒ Order will NOT be processed - payment insufficient\n`);
+          console.log(`   ❌ Order will NOT be processed - payment insufficient\n`);
           console.log(`   Etherscan: ${config.blockExplorer}/tx/${tx.hash}`);
           
           if (order.status === 'pending') {
@@ -1543,11 +1543,11 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
           matched = true;
           break;
         } else if (isOverpayment && Math.abs(matchResult.percentDiff) > 2) {
-          console.log(`âœ… OVERPAYMENT detected for Ethereum order ${orderId}`);
+          console.log(`✅ OVERPAYMENT detected for Ethereum order ${orderId}`);
           console.log(`   Expected: ${matchResult.expectedETH.toFixed(8)} ETH`);
           console.log(`   Received: ${matchResult.receivedETH.toFixed(8)} ETH`);
           console.log(`   Excess: ${(matchResult.receivedETH - matchResult.expectedETH).toFixed(8)} ETH`);
-          console.log(`   âœ… Order will be processed (user paid more than required)\n`);
+          console.log(`   ✅ Order will be processed (user paid more than required)\n`);
           console.log(`   Etherscan: ${config.blockExplorer}/tx/${tx.hash}`);
           
           const gasFee = receipt.gasUsed * (tx.gasPrice || 0n);
@@ -1568,7 +1568,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
             paymentNotes: `OVERPAYMENT: Received ${matchResult.receivedETH.toFixed(8)} ETH, expected ${matchResult.expectedETH.toFixed(8)} ETH. Excess: ${(matchResult.receivedETH - matchResult.expectedETH).toFixed(8)} ETH. Etherscan: ${config.blockExplorer}/tx/${tx.hash}`
           };
           
-          // Emit overpayment detected event
+          // This emits overpayment detected event.
           if (io) {
             io.emit(`pass_order_update:${orderId}`, {
               orderId,
@@ -1587,7 +1587,7 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
             await order.save();
             const success = await completePassOrder(orderId, tx.hash, io);
             if (success) {
-              console.log(`ðŸŽ‰ Ethereum pass order ${orderId} completed with overpayment!\n`);
+              console.log(`🎉 Ethereum pass order ${orderId} completed with overpayment!\n`);
             }
           } else {
             order.confirmations = confirmations;
@@ -1630,14 +1630,14 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
     }
 
   } catch (error) {
-    console.error(`âŒ Error monitoring Ethereum pass order ${orderId}:`, error.message);
+    console.error(`❌ Error monitoring Ethereum pass order ${orderId}:`, error.message);
     if (error.stack) {
       console.error(error.stack);
     }
   }
 };
 
-// Start monitoring all awaiting tickets
+// This starts monitoring all awaiting tickets.
 export const startTransactionMonitoring = (io) => {
   console.log('Starting transaction monitoring service...');
   console.log(`   Bitcoin: ${getUtxoNetworkMode('bitcoin').toUpperCase()} (default)`);
@@ -1645,7 +1645,7 @@ export const startTransactionMonitoring = (io) => {
   console.log(`   Ethereum: ${ETH_NETWORK_MODE.toUpperCase()} (default ${ETH_RPC_CONFIG[ETH_NETWORK_MODE].name})`);
   console.log('   Monitoring interval: Every 3 seconds\n');
   
-  // Run every 3 seconds for faster confirmation updates
+  // This runs every 3 seconds for faster confirmation updates.
   cron.schedule('*/3 * * * * *', async () => {
     try {
       const ticketsPaused = await isTicketWorkflowPaused();

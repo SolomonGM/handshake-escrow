@@ -36,7 +36,7 @@ const CreateTradeModal = ({ isOpen, onClose }) => {
       setIsCreating(true);
       console.log('Creating ticket with crypto:', selectedCrypto);
       
-      // Create ticket via API
+      // This creates ticket via API.
       const response = await axios.post(
         `${API_URL}/tickets`,
         { cryptocurrency: selectedCrypto },
@@ -46,7 +46,7 @@ const CreateTradeModal = ({ isOpen, onClose }) => {
       console.log('Ticket creation response:', response.data);
 
       if (response.data.success) {
-        // Navigate to the ticket page (URL encode the ticketId to handle # symbol)
+        // This navigates to the ticket page (URL encode the ticketId to handle # symbol).
         const encodedTicketId = encodeURIComponent(response.data.ticket.ticketId);
         navigate(`/trade-ticket?ticketId=${encodedTicketId}`);
         onClose();

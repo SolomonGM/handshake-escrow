@@ -24,7 +24,7 @@ const ProtectedRoute = ({ children }) => {
   }
 
   if (!isAuthenticated) {
-    // Redirect to home page where they can use the auth modal
+    // This redirects to home page where they can use the auth modal.
     return <Navigate to="/" replace />;
   }
 

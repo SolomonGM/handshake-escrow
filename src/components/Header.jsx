@@ -50,18 +50,18 @@ const Header = () => {
       return;
     }
 
-    // Close mobile nav if open
+    // This closes mobile nav if open.
     if (openNavigation) {
       enablePageScroll();
       setOpenNavigation(false);
     }
 
-    // Check if it's a route (starts with /) or a section anchor (starts with #)
+    // This checks if it's a route (starts with /) or a section anchor (starts with #).
     if (url.startsWith('/')) {
       // It's a route, navigate to it
       navigate(url);
     } else if (pathname.pathname !== '/') {
-      // Navigate to homepage first, then scroll to section
+      // This navigates to homepage first, then scroll to section.
       navigate('/');
       // Small delay to ensure page loads before scrolling
       setTimeout(() => {

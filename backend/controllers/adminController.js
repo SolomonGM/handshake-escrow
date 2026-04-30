@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import TradeRequest from '../models/TradeRequest.js';
 import TradeTicket from '../models/TradeTicket.js';
@@ -379,7 +379,7 @@ export const updateUserTotalDeals = async (req, res) => {
   }
 };
 
-// Delete user (Admin only)
+// This deletes user (Admin only).
 export const deleteUser = async (req, res) => {
   try {
     // This check ensures user is admin with developer rank
@@ -389,7 +389,7 @@ export const deleteUser = async (req, res) => {
 
     const { userId } = req.params;
 
-    // Prevent deleting yourself
+    // This prevents deleting yourself.
     if (userId === req.user._id.toString()) {
       return res.status(400).json({ message: 'Cannot delete your own account' });
     }
@@ -577,7 +577,7 @@ export const updateTradeRequest = async (req, res) => {
   }
 };
 
-// Delete trade request (Admin only)
+// This deletes trade request (Admin only).
 export const deleteTradeRequest = async (req, res) => {
   try {
     if (req.user.rank !== 'developer') {

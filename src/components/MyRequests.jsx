@@ -70,7 +70,7 @@ const MyRequests = () => {
       setInvitations(keptInvitations);
       setActiveTickets(response.data.activeTickets.slice(0, MAX_TICKETS));
       
-      // Reset to first page when data refreshes
+      // This resets to first page when data refreshes.
       setMyTicketsPage(1);
       setActiveTicketsPage(1);
       setInvitationIndex(0);
@@ -94,11 +94,11 @@ const MyRequests = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Refresh tickets after responding
+      // This refreshes tickets after responding.
       fetchTickets();
       
       if (action === 'accept') {
-        // Navigate to the ticket
+        // This navigates to the ticket.
         navigate(`/trade-ticket?ticketId=${encodeURIComponent(ticketId)}`);
       }
     } catch (error) {

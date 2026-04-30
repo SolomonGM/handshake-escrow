@@ -2,12 +2,12 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import dotenv from 'dotenv';
 
-// Load environment variables
+// This loads environment variables.
 dotenv.config();
 
 const createAdminUser = async () => {
   try {
-    // Connect to MongoDB
+    // This connects to MongoDB.
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected to MongoDB');
 
@@ -16,13 +16,13 @@ const createAdminUser = async () => {
     const adminPassword = 'password';
     const adminUsername = 'adminUser';
 
-    // Check if admin already exists
+    // This checks if admin already exists.
     const existingAdmin = await User.findOne({ email: adminEmail });
 
     if (existingAdmin) {
       console.log('Admin user already exists');
       
-      // Update existing admin to have developer rank and max XP
+      // This updates existing admin to have developer rank and max XP.
       existingAdmin.rank = 'developer';
       existingAdmin.role = 'admin';
       existingAdmin.xp = 1000; // Max XP
@@ -30,7 +30,7 @@ const createAdminUser = async () => {
       await existingAdmin.save();
       console.log('Updated existing admin to developer rank with max XP and passes');
     } else {
-      // Create new admin user
+      // This creates new admin user.
       const adminUser = new User({
         username: adminUsername,
         email: adminEmail,

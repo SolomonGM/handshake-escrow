@@ -5,11 +5,11 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    // Trigger widget refresh through parent component
+    // This triggers widget refresh through parent component.
     if (onRefresh) {
       onRefresh();
     }
-    // Stop spinning animation after 1 second
+    // This stops spinning animation after 1 second.
     setTimeout(() => {
       setIsRefreshing(false);
     }, 1000);
