@@ -218,11 +218,27 @@ export const updateTradeRequest = async (req, res) => {
 export const markAsSold = async (req, res) => {
   try {
     const { requestId } = req.params;
+    const userId = req.user._id;
 
     const tradeRequest = await TradeRequest.findById(requestId);
 
     if (!tradeRequest) {
       return res.status(404).json({ message: 'Trade request not found' });
+    }
+
+    // Only creator can mark a request as sold.
+    if (tradeRequest.creator.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to mark this request as sold'
+      });
+    }
+
+    if (tradeRequest.status === 'sold') {
+      return res.json({
+        success: true,
+        message: 'Trade request is already marked as sold'
+      });
     }
 
     tradeRequest.status = 'sold';

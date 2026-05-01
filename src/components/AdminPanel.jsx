@@ -65,6 +65,7 @@ const AdminPanel = () => {
   const [runtimeDraft, setRuntimeDraft] = useState(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const [runtimeAvailabilitySaving, setRuntimeAvailabilitySaving] = useState(false);
   const [runtimeWorkflowBusy, setRuntimeWorkflowBusy] = useState(false);
   const [runtimePauseReason, setRuntimePauseReason] = useState('Runtime configuration update in progress');
 
@@ -78,6 +79,7 @@ const AdminPanel = () => {
     { key: 'usdt-erc20', label: 'USDT (ERC-20)' },
     { key: 'usdc-erc20', label: 'USDC (ERC-20)' }
   ];
+  const runtimeTicketCoins = runtimeWalletCoins;
   const runtimeNetworkModes = [
     {
       key: 'bitcoin',
@@ -252,6 +254,12 @@ const AdminPanel = () => {
             testnet: runtime.wallets?.[key]?.testnet || ''
           }
         ])
+      ),
+      ticketAvailability: Object.fromEntries(
+        runtimeTicketCoins.map(({ key }) => [
+          key,
+          Boolean(runtime.ticketAvailability?.[key])
+        ])
       )
     };
   };
@@ -414,6 +422,19 @@ const AdminPanel = () => {
     });
   };
 
+  const updateRuntimeDraftTicketAvailability = (coin, enabled) => {
+    setRuntimeDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ticketAvailability: {
+          ...(prev.ticketAvailability || {}),
+          [coin]: Boolean(enabled)
+        }
+      };
+    });
+  };
+
   const handlePauseTicketWorkflow = async () => {
     try {
       setRuntimeWorkflowBusy(true);
@@ -453,7 +474,8 @@ const AdminPanel = () => {
       setRuntimeSaving(true);
       const response = await adminAPI.updateRuntimeConfig({
         networkModes: runtimeDraft.networkModes,
-        wallets: runtimeDraft.wallets
+        wallets: runtimeDraft.wallets,
+        ticketAvailability: runtimeDraft.ticketAvailability
       });
       const nextRuntime = response.runtimeConfig || null;
       setRuntimeConfig(nextRuntime);
@@ -464,6 +486,26 @@ const AdminPanel = () => {
       setMessage('Error updating runtime config: ' + (error.response?.data?.message || error.message));
     } finally {
       setRuntimeSaving(false);
+    }
+  };
+
+  const handleSaveTicketAvailability = async () => {
+    if (!runtimeDraft?.ticketAvailability) return;
+
+    try {
+      setRuntimeAvailabilitySaving(true);
+      const response = await adminAPI.updateRuntimeConfig({
+        ticketAvailability: runtimeDraft.ticketAvailability
+      });
+      const nextRuntime = response.runtimeConfig || null;
+      setRuntimeConfig(nextRuntime);
+      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
+      setMessage(response.message || 'Ticket availability updated successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error updating ticket availability: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setRuntimeAvailabilitySaving(false);
     }
   };
 
@@ -672,6 +714,7 @@ const AdminPanel = () => {
       active: 'bg-[#10B981]/20 text-[#10B981]',
       paused: 'bg-yellow-500/20 text-yellow-400',
       expired: 'bg-n-5 text-n-3',
+      sold: 'bg-blue-500/20 text-blue-300',
       deleted: 'bg-red-500/20 text-red-400',
     };
     return styles[status] || 'bg-n-5 text-n-3';
@@ -922,6 +965,50 @@ const AdminPanel = () => {
                   placeholder="Example: Wallet rotation in progress. Ticket actions resume in 10 minutes."
                   className="mt-3 w-full resize-none rounded-lg border border-red-400/30 bg-[#1f0c10]/80 px-3 py-2 text-sm text-red-50 placeholder-red-200/40 focus:border-red-300/60 focus:outline-none"
                 />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-n-5 bg-n-7/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-n-4">Ticket Availability</p>
+              <p className="mt-1 text-xs text-n-4">
+                Disable a coin to block new ticket creation. Existing tickets are unaffected.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {runtimeTicketCoins.map((coin) => {
+                  const enabled = Boolean(runtimeDraft.ticketAvailability?.[coin.key]);
+                  return (
+                    <label
+                      key={coin.key}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                        enabled
+                          ? 'border-emerald-400/35 bg-emerald-500/10'
+                          : 'border-amber-400/35 bg-amber-500/10'
+                      }`}
+                    >
+                      <span className="font-semibold text-n-2">{coin.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateRuntimeDraftTicketAvailability(coin.key, !enabled)}
+                        className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                          enabled
+                            ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+                        }`}
+                      >
+                        {enabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={handleSaveTicketAvailability}
+                  disabled={runtimeAvailabilitySaving}
+                  className="rounded-lg border border-cyan-400/35 bg-cyan-500/20 px-4 py-2 text-xs font-semibold text-cyan-200 transition-colors hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {runtimeAvailabilitySaving ? 'Saving...' : 'Save Ticket Availability'}
+                </button>
               </div>
             </div>
 
@@ -1698,6 +1785,7 @@ const AdminPanel = () => {
             <option value="active">Active</option>
             <option value="paused">Paused</option>
             <option value="expired">Expired</option>
+            <option value="sold">Sold</option>
             <option value="deleted">Deleted</option>
           </select>
           <div className="flex gap-3 md:col-span-2">
@@ -1852,6 +1940,7 @@ const AdminPanel = () => {
                             <option value="active">Active</option>
                             <option value="paused">Paused</option>
                             <option value="expired">Expired</option>
+                            <option value="sold">Sold</option>
                             <option value="deleted">Deleted</option>
                           </select>
                         ) : (

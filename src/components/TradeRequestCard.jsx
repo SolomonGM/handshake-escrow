@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
@@ -7,16 +7,137 @@ import axios from "axios";
 import { toast } from "../utils/toast";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const UNAVAILABLE_AUTO_CLOSE_SECONDS = 120;
+const CRYPTO_TICKET_METHODS = ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20'];
+const DEFAULT_TICKET_AVAILABILITY = {
+  bitcoin: false,
+  ethereum: true,
+  litecoin: false,
+  solana: false,
+  'usdt-erc20': false,
+  'usdc-erc20': false
+};
+
+const METHOD_INFO = {
+  bitcoin: { label: 'Bitcoin', icon: '₿', color: '#F7931A' },
+  ethereum: { label: 'Ethereum', icon: 'Ξ', color: '#627EEA' },
+  litecoin: { label: 'Litecoin', icon: 'Ł', color: '#345D9D' },
+  solana: { label: 'Solana', icon: '◎', color: '#14F195' },
+  'usdt-erc20': { label: 'USDT', icon: '₮', color: '#26A17B' },
+  'usdc-erc20': { label: 'USDC', icon: '$', color: '#2775CA' }
+};
 
 const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [ticketAvailability, setTicketAvailability] = useState(DEFAULT_TICKET_AVAILABILITY);
+  const [unavailableNotice, setUnavailableNotice] = useState(null);
+  const [noticeSecondsRemaining, setNoticeSecondsRemaining] = useState(0);
+  const closeTimeoutRef = useRef(null);
+  const countdownIntervalRef = useRef(null);
 
   const isCreator = currentUser && request.creator._id === currentUser.id;
+  const cryptoPaymentMethods = useMemo(
+    () => (request.paymentMethods || []).filter((method) => CRYPTO_TICKET_METHODS.includes(method)),
+    [request.paymentMethods]
+  );
+
+  const clearNoticeTimers = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  };
+
+  const closePaymentMethodModal = () => {
+    clearNoticeTimers();
+    setShowPaymentMethodModal(false);
+    setUnavailableNotice(null);
+    setNoticeSecondsRemaining(0);
+  };
+
+  const isTicketCoinAvailable = (coin) => Boolean(ticketAvailability?.[coin]);
+
+  const showUnavailableNotice = ({ message, cryptocurrency, unavailableForSeconds, openModal = false }) => {
+    const durationSeconds = Number(unavailableForSeconds) > 0
+      ? Number(unavailableForSeconds)
+      : UNAVAILABLE_AUTO_CLOSE_SECONDS;
+    const closeAt = Date.now() + durationSeconds * 1000;
+
+    if (openModal) {
+      setShowPaymentMethodModal(true);
+    }
+
+    clearNoticeTimers();
+    setUnavailableNotice({
+      message: message || `${String(cryptocurrency || '').toUpperCase()} tickets are currently unavailable.`,
+      cryptocurrency: cryptocurrency || null,
+      closeAt
+    });
+    setNoticeSecondsRemaining(durationSeconds);
+
+    countdownIntervalRef.current = setInterval(() => {
+      const secondsLeft = Math.max(0, Math.ceil((closeAt - Date.now()) / 1000));
+      setNoticeSecondsRemaining(secondsLeft);
+      if (secondsLeft <= 0) {
+        clearNoticeTimers();
+      }
+    }, 1000);
+
+    closeTimeoutRef.current = setTimeout(() => {
+      closePaymentMethodModal();
+    }, durationSeconds * 1000);
+  };
+
+  const fetchTicketAvailability = useCallback(async () => {
+    if (!token) {
+      setTicketAvailability(DEFAULT_TICKET_AVAILABILITY);
+      return;
+    }
+
+    try {
+      setAvailabilityLoading(true);
+      const response = await axios.get(`${API_URL}/tickets/availability`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data?.success && response.data?.ticketAvailability) {
+        setTicketAvailability({
+          ...DEFAULT_TICKET_AVAILABILITY,
+          ...response.data.ticketAvailability
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load ticket availability:', error);
+      setTicketAvailability(DEFAULT_TICKET_AVAILABILITY);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchTicketAvailability();
+  }, [fetchTicketAvailability]);
+
+  useEffect(() => {
+    if (showPaymentMethodModal) {
+      fetchTicketAvailability();
+    }
+  }, [showPaymentMethodModal, fetchTicketAvailability]);
+
+  useEffect(() => {
+    return () => {
+      clearNoticeTimers();
+    };
+  }, []);
 
   // This calculates time remaining.
   const getTimeRemaining = (expiresAt) => {
@@ -35,18 +156,6 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
     }
     return `${hours}h ${minutes}m`;
   };
-
-  // This gets crypto info (only used if cryptoOffered exists).
-  const cryptoInfo = {
-    'bitcoin': { symbol: 'BTC', color: '#F7931A' },
-    'ethereum': { symbol: 'ETH', color: '#627EEA' },
-    'litecoin': { symbol: 'LTC', color: '#345D9D' },
-    'solana': { symbol: 'SOL', color: '#14F195' },
-    'usdt-erc20': { symbol: 'USDT', color: '#26A17B' },
-    'usdc-erc20': { symbol: 'USDC', color: '#2775CA' },
-  };
-
-  const crypto = request.cryptoOffered ? cryptoInfo[request.cryptoOffered] : null;
 
   // This gets currency symbol for price display.
   const getCurrencySymbol = (currency) => {
@@ -93,35 +202,50 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
       return;
     }
 
-    // For buying requests, proceed directly
-    await createTicket(selectedPaymentMethod);
+    // For buying requests, choose a valid/available crypto method and proceed directly.
+    const preferredMethod = CRYPTO_TICKET_METHODS.includes(request.cryptoOffered)
+      ? request.cryptoOffered
+      : null;
+    const fallbackMethod = cryptoPaymentMethods.find((method) => isTicketCoinAvailable(method));
+    const paymentMethod = preferredMethod && isTicketCoinAvailable(preferredMethod)
+      ? preferredMethod
+      : fallbackMethod;
+
+    if (!paymentMethod) {
+      showUnavailableNotice({
+        message: 'No supported ticket network is currently available for this request. Please try again later.',
+        unavailableForSeconds: UNAVAILABLE_AUTO_CLOSE_SECONDS,
+        openModal: true
+      });
+      return;
+    }
+
+    await createTicket(paymentMethod);
   };
 
   // This creates ticket with selected payment method.
   const createTicket = async (paymentMethod) => {
     try {
       setIsCreatingTicket(true);
+      const cryptocurrency = String(paymentMethod || '').trim().toLowerCase();
 
-      // This maps payment method to cryptocurrency.
-      const cryptoMapping = {
-        'bitcoin': 'bitcoin',
-        'ethereum': 'ethereum',
-        'litecoin': 'litecoin',
-        'solana': 'solana',
-        'usdt-erc20': 'usdt-erc20',
-        'usdc-erc20': 'usdc-erc20'
-      };
-
-      const cryptocurrency = cryptoMapping[paymentMethod];
-
-      if (!cryptocurrency) {
+      if (!CRYPTO_TICKET_METHODS.includes(cryptocurrency)) {
         toast.error('Please select a valid cryptocurrency payment method');
-        setIsCreatingTicket(false);
+        return;
+      }
+
+      if (!isTicketCoinAvailable(cryptocurrency)) {
+        showUnavailableNotice({
+          message: `${METHOD_INFO[cryptocurrency]?.label || cryptocurrency.toUpperCase()} tickets are currently unavailable.`,
+          cryptocurrency,
+          unavailableForSeconds: UNAVAILABLE_AUTO_CLOSE_SECONDS,
+          openModal: true
+        });
         return;
       }
 
       const ticketData = {
-        cryptocurrency: cryptocurrency,
+        cryptocurrency,
         invitedUserId: request.creator._id
       };
 
@@ -134,15 +258,27 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
       if (response.data.success) {
         const encodedTicketId = encodeURIComponent(response.data.ticket.ticketId);
         toast.success('Ticket created! Opening trade...');
-        
+
         // This marks trade request as sold.
         await markAsSold();
-        
+
+        closePaymentMethodModal();
         navigate(`/trade-ticket?ticketId=${encodedTicketId}`);
       }
     } catch (err) {
+      const errorData = err.response?.data;
+      if (err.response?.status === 409 && errorData?.code === 'TICKET_COIN_UNAVAILABLE') {
+        showUnavailableNotice({
+          message: errorData.message,
+          cryptocurrency: errorData.cryptocurrency || paymentMethod,
+          unavailableForSeconds: errorData.unavailableForSeconds,
+          openModal: true
+        });
+        return;
+      }
+
       console.error('Error creating ticket:', err);
-      toast.error(err.response?.data?.message || 'Failed to create ticket');
+      toast.error(errorData?.message || 'Failed to create ticket');
     } finally {
       setIsCreatingTicket(false);
     }
@@ -417,7 +553,7 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
         </div>
       )}
 
-      {/* Payment Method Selection Modal */}
+            {/* Payment Method Selection Modal */}
       {showPaymentMethodModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-n-8 rounded-2xl border border-n-6 max-w-md w-full p-6 shadow-2xl">
@@ -425,65 +561,71 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
             <p className="text-sm text-n-3 mb-6">
               Choose how you want to pay for this item. A trade ticket will be created with the selected cryptocurrency.
             </p>
+            <p className="text-xs text-n-4 mb-4">
+              Automated payout is currently supported only for Ethereum tickets.
+            </p>
+
+            {unavailableNotice && (
+              <div className="mb-4 p-4 bg-amber-500/10 border border-amber-400/40 rounded-lg">
+                <p className="text-sm text-amber-200 font-semibold">
+                  {unavailableNotice.message}
+                </p>
+                <p className="text-xs text-amber-100 mt-2">
+                  This window will close automatically in {noticeSecondsRemaining}s.
+                </p>
+              </div>
+            )}
 
             {/* Filter only crypto payment methods */}
             <div className="space-y-2 mb-6 max-h-80 overflow-y-auto">
-              {request.paymentMethods
-                .filter(method => ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20'].includes(method))
-                .map((method) => {
-                  const methodInfo = {
-                    'bitcoin': { label: 'Bitcoin', icon: '₿', color: '#F7931A' },
-                    'ethereum': { label: 'Ethereum', icon: 'Ξ', color: '#627EEA' },
-                    'litecoin': { label: 'Litecoin', icon: 'Ł', color: '#345D9D' },
-                    'solana': { label: 'Solana', icon: '◎', color: '#14F195' },
-                    'usdt-erc20': { label: 'USDT', icon: '₮', color: '#26A17B' },
-                    'usdc-erc20': { label: 'USDC', icon: '$', color: '#2775CA' },
-                  };
+              {cryptoPaymentMethods.map((method) => {
+                const info = METHOD_INFO[method];
+                const isAvailable = isTicketCoinAvailable(method);
+                if (!info) return null;
 
-                  const info = methodInfo[method];
-                  if (!info) return null;
-
-                  return (
-                    <button
-                      key={method}
-                      onClick={async () => {
-                        setSelectedPaymentMethod(method);
-                        setShowPaymentMethodModal(false);
-                        await createTicket(method);
-                      }}
-                      className="w-full p-4 rounded-lg border-2 border-n-6 hover:border-[#10B981] bg-n-7 hover:bg-n-7/50 transition-all flex items-center gap-3"
+                return (
+                  <button
+                    key={method}
+                    disabled={!isAvailable || isCreatingTicket || availabilityLoading || Boolean(unavailableNotice)}
+                    onClick={async () => {
+                      await createTicket(method);
+                    }}
+                    className={`w-full p-4 rounded-lg border-2 bg-n-7 transition-all flex items-center gap-3 ${
+                      isAvailable && !unavailableNotice
+                        ? 'border-n-6 hover:border-[#10B981] hover:bg-n-7/50'
+                        : 'border-n-6 opacity-55 cursor-not-allowed'
+                    }`}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                      style={{ backgroundColor: info.color }}
                     >
-                      <div 
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
-                        style={{ backgroundColor: info.color }}
-                      >
-                        {info.icon}
+                      {info.icon}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <div className="font-semibold text-n-1">{info.label}</div>
+                      <div className={`text-xs ${isAvailable ? 'text-n-4' : 'text-amber-200'}`}>
+                        {isAvailable ? `Pay with ${info.label}` : `${info.label} tickets currently unavailable`}
                       </div>
-                      <div className="flex-1 text-left">
-                        <div className="font-semibold text-n-1">{info.label}</div>
-                        <div className="text-xs text-n-4">Pay with {info.label}</div>
-                      </div>
-                      <svg className="w-5 h-5 text-n-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  );
-                })}
-              
-              {request.paymentMethods.filter(m => ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20'].includes(m)).length === 0 && (
+                    </div>
+                    <svg className="w-5 h-5 text-n-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                );
+              })}
+
+              {cryptoPaymentMethods.length === 0 && (
                 <div className="text-center py-8 text-n-4">
                   <p>No cryptocurrency payment methods available.</p>
-                  <p className="text-xs mt-2">This seller doesn't accept crypto payments.</p>
+                  <p className="text-xs mt-2">This seller does not accept crypto payments.</p>
                 </div>
               )}
             </div>
 
             {/* Cancel Button */}
             <button
-              onClick={() => {
-                setShowPaymentMethodModal(false);
-                setSelectedPaymentMethod(null);
-              }}
+              onClick={closePaymentMethodModal}
               className="w-full py-3 rounded-lg bg-n-6 hover:bg-n-5 text-n-1 font-semibold transition-colors"
             >
               Cancel
@@ -496,3 +638,4 @@ const TradeRequestCard = ({ request, onUpdate, currentUser }) => {
 };
 
 export default TradeRequestCard;
+

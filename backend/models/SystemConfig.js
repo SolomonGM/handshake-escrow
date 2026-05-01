@@ -67,6 +67,32 @@ const systemConfigSchema = new mongoose.Schema(
       of: walletModesSchema,
       default: {}
     },
+    ticketAvailability: {
+      bitcoin: {
+        type: Boolean,
+        default: false
+      },
+      litecoin: {
+        type: Boolean,
+        default: false
+      },
+      ethereum: {
+        type: Boolean,
+        default: true
+      },
+      solana: {
+        type: Boolean,
+        default: false
+      },
+      'usdt-erc20': {
+        type: Boolean,
+        default: false
+      },
+      'usdc-erc20': {
+        type: Boolean,
+        default: false
+      }
+    },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

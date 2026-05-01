@@ -7,12 +7,36 @@ import {
   getActiveNetworkModeForCoin,
   getBotWalletForCoin,
   getRuntimeConfig,
+  getTicketAvailabilityForCoin,
+  getTicketAvailabilityMatrix,
   getTicketPauseMetadata
 } from '../services/runtimeConfigService.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 
 const ACTIVE_TICKET_LIMIT = 12;
 const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
+const UNAVAILABLE_TICKET_CLOSE_SECONDS = 120;
+const SUPPORTED_TICKET_COINS = ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20'];
+
+const buildUnavailableTicketResponse = (coin, runtimeConfig, message = null) => {
+  const now = Date.now();
+  const autoCloseAt = new Date(now + UNAVAILABLE_TICKET_CLOSE_SECONDS * 1000).toISOString();
+
+  return {
+    success: false,
+    code: 'TICKET_COIN_UNAVAILABLE',
+    message: message || `${coin.toUpperCase()} ticket creation is currently unavailable.`,
+    cryptocurrency: coin,
+    unavailableForSeconds: UNAVAILABLE_TICKET_CLOSE_SECONDS,
+    autoCloseAt,
+    ticketAvailability: getTicketAvailabilityMatrix(runtimeConfig),
+    payoutSupport: {
+      ethereumOnly: true,
+      supportedCoins: ['ethereum'],
+      message: 'Automated payout is currently supported only for Ethereum tickets.'
+    }
+  };
+};
 
 const getEthProvider = (networkMode = 'mainnet') => {
   const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG.mainnet;
@@ -377,19 +401,23 @@ const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networ
 // Creates a new trade ticket
 export const createTicket = async (req, res) => {
   try {
-    const { cryptocurrency } = req.body;
+    const cryptocurrency = String(req.body?.cryptocurrency || '').trim().toLowerCase();
     const userId = req.user._id;
-    
-    console.log('🎫 Creating ticket for user:', userId);
-    console.log('📦 Request body:', req.body);
-    console.log('💰 Cryptocurrency value:', cryptocurrency, 'Type:', typeof cryptocurrency);
 
-    // Validates cryptocurrency parameter
-    if (!cryptocurrency || cryptocurrency.trim() === '') {
-      console.log('❌ Cryptocurrency validation failed');
+    if (!cryptocurrency) {
       return res.status(400).json({
         success: false,
-        message: 'Cryptocurrency is required'
+        code: 'CRYPTOCURRENCY_REQUIRED',
+        message: 'Cryptocurrency is required.'
+      });
+    }
+
+    if (!SUPPORTED_TICKET_COINS.includes(cryptocurrency)) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNSUPPORTED_TICKET_COIN',
+        message: 'Unsupported cryptocurrency for ticket creation.',
+        supportedCoins: SUPPORTED_TICKET_COINS
       });
     }
 
@@ -403,14 +431,27 @@ export const createTicket = async (req, res) => {
       });
     }
 
-    // Generates unique ticket ID
+    const runtimeConfig = await getRuntimeConfig();
+    const isCoinAvailable = getTicketAvailabilityForCoin(cryptocurrency, runtimeConfig);
+    if (!isCoinAvailable) {
+      return res.status(409).json(buildUnavailableTicketResponse(cryptocurrency, runtimeConfig));
+    }
+
+    const { wallet: botWallet } = getBotWalletForCoin(cryptocurrency, runtimeConfig);
+    if (!botWallet) {
+      return res.status(409).json(
+        buildUnavailableTicketResponse(
+          cryptocurrency,
+          runtimeConfig,
+          `${cryptocurrency.toUpperCase()} ticket creation is disabled until wallet configuration is complete.`
+        )
+      );
+    }
+
     const ticketId = `#${Math.floor(Math.random() * 9000000) + 1000000}`;
+    const cryptoUpper = cryptocurrency.toUpperCase();
+    const cryptoCapitalized = cryptocurrency.charAt(0).toUpperCase() + cryptocurrency.slice(1);
 
-    // Validates and normalizes cryptocurrency value
-    const cryptoUpper = cryptocurrency ? cryptocurrency.toUpperCase() : 'CRYPTO';
-    const cryptoCapitalized = cryptocurrency ? cryptocurrency.charAt(0).toUpperCase() + cryptocurrency.slice(1) : 'Crypto';
-
-    // Creates initial bot messages
     const initialMessages = [
       {
         isBot: true,
@@ -443,9 +484,6 @@ export const createTicket = async (req, res) => {
       status: 'open'
     });
 
-    console.log('✅ Ticket created:', ticketId, 'status:', ticket.status);
-
-    // Populates creator info
     await ticket.populate('creator', 'username userId avatar');
 
     res.status(201).json({
@@ -457,6 +495,48 @@ export const createTicket = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to create ticket',
+      error: error.message
+    });
+  }
+};
+
+// Returns current ticket creation availability matrix for UI gating.
+export const getTicketAvailability = async (req, res) => {
+  try {
+    const runtimeConfig = await getRuntimeConfig();
+    const configuredAvailability = getTicketAvailabilityMatrix(runtimeConfig);
+    const availabilityReasons = {};
+    const ticketAvailability = Object.fromEntries(
+      Object.entries(configuredAvailability).map(([coin, enabled]) => {
+        const hasWallet = Boolean(getBotWalletForCoin(coin, runtimeConfig).wallet);
+        const isAvailable = Boolean(enabled && hasWallet);
+
+        if (!enabled) {
+          availabilityReasons[coin] = 'disabled_by_admin';
+        } else if (!hasWallet) {
+          availabilityReasons[coin] = 'wallet_not_configured';
+        }
+
+        return [coin, isAvailable];
+      })
+    );
+
+    res.json({
+      success: true,
+      ticketAvailability,
+      configuredTicketAvailability: configuredAvailability,
+      availabilityReasons,
+      payoutSupport: {
+        ethereumOnly: true,
+        supportedCoins: ['ethereum'],
+        message: 'Automated payout is currently supported only for Ethereum tickets.'
+      }
+    });
+  } catch (error) {
+    console.error('Get ticket availability error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch ticket availability',
       error: error.message
     });
   }
@@ -3317,6 +3397,7 @@ export const cancelTransaction = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 
 

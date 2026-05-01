@@ -5,7 +5,10 @@ dotenv.config();
 
 const viewTicketDetails = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://jerome:NiOAmty3b8EEFmF0@handshake-dev.emc8dyz.mongodb.net/handshake_db';
+    const mongoURI = String(process.env.MONGODB_URI || '').trim();
+    if (!mongoURI) {
+      throw new Error('MONGODB_URI is required');
+    }
     
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB\n');
@@ -106,3 +109,4 @@ const viewTicketDetails = async () => {
 };
 
 viewTicketDetails();
+

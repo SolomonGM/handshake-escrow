@@ -460,7 +460,7 @@ export const getTradeRequests = async (req, res) => {
     const statusFilter = toTrimmedString(req.query.status, 'all').toLowerCase();
     const { page, pageSize } = parsePageParams(req);
     const isSearch = Boolean(search);
-    const hasStatusFilter = ['active', 'paused', 'expired', 'deleted'].includes(statusFilter);
+    const hasStatusFilter = ['active', 'paused', 'expired', 'deleted', 'sold'].includes(statusFilter);
     const hasScopedQuery = isSearch || hasStatusFilter;
     const query = {};
 
@@ -1061,16 +1061,32 @@ export const updateRuntimeConfiguration = async (req, res) => {
       return;
     }
 
-    const pauseState = await getTicketPauseMetadata();
-    if (!pauseState.paused) {
-      return res.status(409).json({
-        message: 'Pause ticket workflow before updating runtime configuration.'
+    const hasNetworkModesUpdate = Boolean(req.body?.networkModes && typeof req.body.networkModes === 'object');
+    const hasWalletsUpdate = Boolean(req.body?.wallets && typeof req.body.wallets === 'object');
+    const hasTicketAvailabilityUpdate = Boolean(
+      req.body?.ticketAvailability && typeof req.body.ticketAvailability === 'object'
+    );
+
+    if (!hasNetworkModesUpdate && !hasWalletsUpdate && !hasTicketAvailabilityUpdate) {
+      return res.status(400).json({
+        message: 'No runtime configuration changes were provided.'
       });
+    }
+
+    // Wallet/network updates mutate transaction-critical runtime settings and must be done in maintenance mode.
+    if (hasNetworkModesUpdate || hasWalletsUpdate) {
+      const pauseState = await getTicketPauseMetadata();
+      if (!pauseState.paused) {
+        return res.status(409).json({
+          message: 'Pause ticket workflow before updating runtime configuration.'
+        });
+      }
     }
 
     const runtimeConfig = await applyRuntimeConfigUpdate({
       networkModes: req.body?.networkModes,
       wallets: req.body?.wallets,
+      ticketAvailability: req.body?.ticketAvailability,
       actorId: req.user._id
     });
     broadcastTicketWorkflowState(runtimeConfig);

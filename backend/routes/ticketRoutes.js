@@ -1,6 +1,7 @@
 ﻿import express from 'express';
 import {
   createTicket,
+  getTicketAvailability,
   getTicket,
   addUserToTicket,
   sendMessage,
@@ -34,6 +35,9 @@ router.use(protect);
 
 // Creates new ticket
 router.post('/', requireTicketWorkflowActive, createTicket);
+
+// Retrieves ticket creation availability matrix
+router.get('/availability', getTicketAvailability);
 
 // Retrieves user's tickets (created, invitations, active)
 router.get('/my-tickets', getUserTickets);

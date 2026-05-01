@@ -12,12 +12,12 @@ export const LTC_NETWORK_MODE = normalizeNetworkMode(process.env.LTC_NETWORK_MOD
 
 const BTC_WALLETS = {
   mainnet: process.env.BTC_MAINNET_WALLET || '',
-  testnet: process.env.BTC_TESTNET_WALLET || 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
+  testnet: process.env.BTC_TESTNET_WALLET || ''
 };
 
 const LTC_WALLETS = {
   mainnet: process.env.LTC_MAINNET_WALLET || '',
-  testnet: process.env.LTC_TESTNET_WALLET || 'miJwGUNLFGhFVfr7kDqskVotW4HgY1ePmP'
+  testnet: process.env.LTC_TESTNET_WALLET || ''
 };
 
 const resolveUtxoWallet = (crypto, mode, wallets) => {
@@ -32,11 +32,11 @@ const resolveUtxoWallet = (crypto, mode, wallets) => {
 // Bot wallet addresses for each cryptocurrency
 export const BOT_WALLETS = {
   bitcoin: resolveUtxoWallet('bitcoin', BTC_NETWORK_MODE, BTC_WALLETS),
-  ethereum: '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E', // Ethereum SEPOLIA TESTNET wallet
+  ethereum: String(process.env.ETH_TESTNET_WALLET || process.env.ETH_MAINNET_WALLET || '').trim(),
   litecoin: resolveUtxoWallet('litecoin', LTC_NETWORK_MODE, LTC_WALLETS),
-  solana: '7EqQdEUaxybT6NNXcj2kXZvEJPr6YFVkXFNZL3pHHoVd', // Example Solana address
-  'usdt-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E', // Same as Ethereum (ERC-20)
-  'usdc-erc20': '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E'  // Same as Ethereum (ERC-20)
+  solana: String(process.env.SOL_MAINNET_WALLET || process.env.SOL_TESTNET_WALLET || '').trim(),
+  'usdt-erc20': String(process.env.USDT_MAINNET_WALLET || process.env.USDT_TESTNET_WALLET || process.env.ETH_MAINNET_WALLET || process.env.ETH_TESTNET_WALLET || '').trim(),
+  'usdc-erc20': String(process.env.USDC_MAINNET_WALLET || process.env.USDC_TESTNET_WALLET || process.env.ETH_MAINNET_WALLET || process.env.ETH_TESTNET_WALLET || '').trim()
 };
 
 // BlockCypher UTXO network configuration (BTC + LTC)
@@ -94,8 +94,7 @@ export const ETH_RPC_CONFIG = {
   testnet: {
     name: 'sepolia',
     get rpcUrl() {
-      // This uses Alchemy URL from env, or fallback (but Alchemy should always be set).
-      return process.env.SEPOLIA_RPC_URL || 'https://eth-sepolia.g.alchemy.com/v2/xen1YQcatm8HLMVKERM9Z';
+      return process.env.SEPOLIA_RPC_URL || '';
     },
     chainId: 11155111,
     blockExplorer: 'https://sepolia.etherscan.io',
@@ -104,7 +103,7 @@ export const ETH_RPC_CONFIG = {
   // For production: Use Ethereum mainnet
   mainnet: {
     name: 'mainnet',
-    rpcUrl: process.env.ETH_MAINNET_RPC_URL || 'https://mainnet.infura.io/v3/YOUR_INFURA_API_KEY',
+    rpcUrl: process.env.ETH_MAINNET_RPC_URL || '',
     chainId: 1,
     blockExplorer: 'https://etherscan.io',
     confirmationsRequired: 3 // Require more confirmations on mainnet for security

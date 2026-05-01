@@ -9,7 +9,7 @@ import {
   getUtxoRuntimeNetwork
 } from '../services/runtimeConfigService.js';
 
-const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
+const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
 // Pass configurations
 const PASS_CONFIG = {
@@ -51,6 +51,9 @@ const generateUniquePaymentAddress = async (cryptocurrency, orderId, runtimeConf
   try {
     // For Litecoin and Bitcoin, use BlockCypher's address generation
     if (cryptocurrency === 'litecoin' || cryptocurrency === 'bitcoin') {
+      if (!BLOCKCYPHER_TOKEN) {
+        throw new Error('BLOCKCYPHER_TOKEN is required for UTXO address generation');
+      }
       const network = getUtxoRuntimeNetwork(cryptocurrency, runtimeConfig)?.config;
       if (!network) {
         throw new Error(`Unsupported UTXO network: ${cryptocurrency}`);

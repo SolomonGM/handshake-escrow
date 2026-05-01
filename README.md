@@ -12,6 +12,9 @@ Site: [Handshake](https://handshake-frontend-9zqv.onrender.com/)
 - Real-time updates with Socket.IO
 - Vite + React frontend with Tailwind CSS
 - MongoDB Atlas compatible data layer
+- Admin runtime controls for per-coin ticket availability toggles
+- Ticket creation hard-stops unavailable coins before persistence, with timed user warnings
+- Automated payout flow is currently implemented for Ethereum tickets
 
 ## Tech Stack
 
@@ -74,8 +77,8 @@ Backend (`backend/.env`)
 - Legacy fallback (optional): `DISCORD_ROLE_ID_USER`, `DISCORD_ROLE_ID_MODERATOR`, `DISCORD_ROLE_ID_ADMIN`
 - `DISCORD_SETTINGS_REDIRECT_URL` optional full frontend settings URL override (default `<CLIENT_URL>/settings`)
 - `DISCORD_OAUTH_SCOPES` optional (defaults to `identify`)
-- `DISCORD_SYNC_LOG_CHANNEL_ID` optional channel id for sync log embeds (default `1476298330022744085`)
-- `DISCORD_COMPLETED_TICKET_CHANNEL_ID` optional channel id for completed ticket embeds (default `1439533047480586310`)
+- `DISCORD_SYNC_LOG_CHANNEL_ID` optional channel id for sync log embeds
+- `DISCORD_COMPLETED_TICKET_CHANNEL_ID` optional channel id for completed ticket embeds
 
 Discord linking notes
 
@@ -102,6 +105,14 @@ Backend
 - Ensure the backend binds to `process.env.PORT`.
 - For Render free instances, use API-based email delivery (`EMAIL_PROVIDER=resend` + `RESEND_API_KEY`) instead of SMTP.
 - The backend now includes CSP headers, global per-IP API rate limiting, and optional Turnstile captcha enforcement on signup.
+
+## Ticket Network Scope
+
+- Ticket creation supports these coin keys: `bitcoin`, `ethereum`, `litecoin`, `solana`, `usdt-erc20`, `usdc-erc20`.
+- Actual creation availability is controlled at runtime by admin in **Runtime Config -> Ticket Availability**.
+- If a coin is disabled, UI prevents selection and backend returns `TICKET_COIN_UNAVAILABLE`; no ticket is saved.
+- Unavailable coin warnings auto-close after 120 seconds in ticket creation flows.
+- Automated payout confirmation/release is currently Ethereum-only; other ticket coins should remain disabled unless full payout support is implemented.
 
 ## Security Hardening (Render + Cloudflare)
 

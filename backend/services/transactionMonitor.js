@@ -15,7 +15,7 @@ import {
 } from './runtimeConfigService.js';
 
 // BlockCypher API configuration
-const BLOCKCYPHER_TOKEN = process.env.BLOCKCYPHER_TOKEN || 'c35091e2555e49dfb41c2ba499c2ca0c';
+const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
 const getExchangeRate = (crypto) => EXCHANGE_RATES[crypto] || 1;
 
@@ -115,6 +115,10 @@ const getBlockCypherTxLink = (txHash, crypto, networkOverride = null) => {
 // Retrieves address transactions from BlockCypher
 const getAddressTransactions = async (address, crypto = 'litecoin', networkOverride = null) => {
   try {
+    if (!BLOCKCYPHER_TOKEN) {
+      console.warn('BLOCKCYPHER_TOKEN is not configured; skipping UTXO transaction lookups.');
+      return null;
+    }
     const network = networkOverride || getUtxoNetwork(crypto);
     if (!network) {
       console.error(`Unsupported UTXO network: ${crypto}`);
@@ -132,6 +136,9 @@ const getAddressTransactions = async (address, crypto = 'litecoin', networkOverr
 
 const getUtxoTransaction = async (txHash, crypto = 'litecoin', networkOverride = null) => {
   try {
+    if (!BLOCKCYPHER_TOKEN) {
+      return null;
+    }
     const network = networkOverride || getUtxoNetwork(crypto);
     if (!network || !txHash) {
       return null;
@@ -1135,7 +1142,7 @@ export const monitorBitcoinPassOrder = async (orderId, io = null) => {
 // Retrieves Ethereum provider based on network mode
 const getEthProvider = (networkMode = ETH_NETWORK_MODE) => {
   const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG[ETH_NETWORK_MODE];
-  if (!config || !config.rpcUrl || config.rpcUrl.includes('YOUR_INFURA_API_KEY')) {
+  if (!config || !config.rpcUrl) {
     console.warn('⚠️  Ethereum RPC URL not configured. Set SEPOLIA_RPC_URL in .env file');
     return null;
   }

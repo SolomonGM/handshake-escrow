@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
-const DEFAULT_COMPLETED_TICKET_CHANNEL_ID = '1439533047480586310';
 
 const COIN_DISPLAY_META = {
   BTC: {
@@ -41,7 +40,7 @@ const BLOCKCHAIN_TO_SYMBOL = {
 
 const getDiscordBotToken = () => String(process.env.DISCORD_BOT_TOKEN || '').trim();
 const getCompletedTicketChannelId = () => (
-  String(process.env.DISCORD_COMPLETED_TICKET_CHANNEL_ID || DEFAULT_COMPLETED_TICKET_CHANNEL_ID || '').trim()
+  String(process.env.DISCORD_COMPLETED_TICKET_CHANNEL_ID || '').trim()
 );
 
 const getPrimaryClientUrl = () => {

@@ -294,8 +294,8 @@ export const adminAPI = {
     return response.data;
   },
 
-  updateRuntimeConfig: async ({ networkModes, wallets }) => {
-    const response = await api.put('/admin/runtime-config', { networkModes, wallets });
+  updateRuntimeConfig: async ({ networkModes, wallets, ticketAvailability }) => {
+    const response = await api.put('/admin/runtime-config', { networkModes, wallets, ticketAvailability });
     return response.data;
   },
 };

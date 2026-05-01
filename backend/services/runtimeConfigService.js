@@ -11,11 +11,7 @@ const CONFIG_KEY = 'runtime';
 const CACHE_TTL_MS = 5000;
 const NETWORK_MODES = ['mainnet', 'testnet'];
 const WALLET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20'];
-
-const ETH_TESTNET_FALLBACK_WALLET = '0x55058382068dEB5E4EFDDbdd5A69D2771C7Cf80E';
-const SOLANA_FALLBACK_WALLET = '7EqQdEUaxybT6NNXcj2kXZvEJPr6YFVkXFNZL3pHHoVd';
-const BTC_TESTNET_FALLBACK_WALLET = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn';
-const LTC_TESTNET_FALLBACK_WALLET = 'miJwGUNLFGhFVfr7kDqskVotW4HgY1ePmP';
+const TICKET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20'];
 
 const DEFAULT_NETWORK_MODES = {
   bitcoin: normalizeNetworkMode(BTC_NETWORK_MODE, 'testnet'),
@@ -27,28 +23,37 @@ const DEFAULT_NETWORK_MODES = {
 const DEFAULT_WALLETS = {
   bitcoin: {
     mainnet: String(process.env.BTC_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.BTC_TESTNET_WALLET || BTC_TESTNET_FALLBACK_WALLET).trim()
+    testnet: String(process.env.BTC_TESTNET_WALLET || '').trim()
   },
   litecoin: {
     mainnet: String(process.env.LTC_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.LTC_TESTNET_WALLET || LTC_TESTNET_FALLBACK_WALLET).trim()
+    testnet: String(process.env.LTC_TESTNET_WALLET || '').trim()
   },
   ethereum: {
     mainnet: String(process.env.ETH_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.ETH_TESTNET_WALLET || ETH_TESTNET_FALLBACK_WALLET).trim()
+    testnet: String(process.env.ETH_TESTNET_WALLET || '').trim()
   },
   solana: {
-    mainnet: String(process.env.SOL_MAINNET_WALLET || SOLANA_FALLBACK_WALLET).trim(),
-    testnet: String(process.env.SOL_TESTNET_WALLET || SOLANA_FALLBACK_WALLET).trim()
+    mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
   },
   'usdt-erc20': {
     mainnet: String(process.env.USDT_MAINNET_WALLET || process.env.ETH_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.USDT_TESTNET_WALLET || process.env.ETH_TESTNET_WALLET || ETH_TESTNET_FALLBACK_WALLET).trim()
+    testnet: String(process.env.USDT_TESTNET_WALLET || process.env.ETH_TESTNET_WALLET || '').trim()
   },
   'usdc-erc20': {
     mainnet: String(process.env.USDC_MAINNET_WALLET || process.env.ETH_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.USDC_TESTNET_WALLET || process.env.ETH_TESTNET_WALLET || ETH_TESTNET_FALLBACK_WALLET).trim()
+    testnet: String(process.env.USDC_TESTNET_WALLET || process.env.ETH_TESTNET_WALLET || '').trim()
   }
+};
+
+const DEFAULT_TICKET_AVAILABILITY = {
+  bitcoin: false,
+  litecoin: false,
+  ethereum: true,
+  solana: false,
+  'usdt-erc20': false,
+  'usdc-erc20': false
 };
 
 let cachedRuntimeConfig = null;
@@ -98,6 +103,20 @@ const normalizeNetworkModes = (rawModes = {}) => {
   };
 };
 
+const normalizeTicketAvailability = (rawAvailability = {}) => {
+  const source = toObject(rawAvailability);
+  return TICKET_COIN_KEYS.reduce((acc, coin) => {
+    const configured = source[coin];
+    if (typeof configured === 'boolean') {
+      acc[coin] = configured;
+      return acc;
+    }
+
+    acc[coin] = DEFAULT_TICKET_AVAILABILITY[coin] ?? false;
+    return acc;
+  }, {});
+};
+
 const buildDefaultDocumentShape = () => ({
   key: CONFIG_KEY,
   ticketWorkflowPaused: false,
@@ -105,13 +124,18 @@ const buildDefaultDocumentShape = () => ({
   pauseChangedAt: null,
   pauseChangedBy: null,
   networkModes: clone(DEFAULT_NETWORK_MODES),
-  wallets: clone(DEFAULT_WALLETS)
+  wallets: clone(DEFAULT_WALLETS),
+  ticketAvailability: clone(DEFAULT_TICKET_AVAILABILITY)
 });
 
-const hasRequiredWallets = (networkModes, wallets) => {
+const hasRequiredWallets = (networkModes, wallets, ticketAvailability = DEFAULT_TICKET_AVAILABILITY) => {
   const missing = [];
 
   WALLET_COIN_KEYS.forEach((coin) => {
+    if (!ticketAvailability?.[coin]) {
+      return;
+    }
+
     const mode = getActiveNetworkModeForCoin(coin, { networkModes });
     const wallet = wallets?.[coin]?.[mode];
     if (!wallet) {
@@ -158,10 +182,14 @@ const isWalletFormatValid = (coin, mode, wallet) => {
   return true;
 };
 
-const validateWalletFormats = (networkModes, wallets) => {
+const validateWalletFormats = (networkModes, wallets, ticketAvailability = DEFAULT_TICKET_AVAILABILITY) => {
   const invalid = [];
 
   WALLET_COIN_KEYS.forEach((coin) => {
+    if (!ticketAvailability?.[coin]) {
+      return;
+    }
+
     const mode = getActiveNetworkModeForCoin(coin, { networkModes });
     const wallet = wallets?.[coin]?.[mode];
     if (!wallet) {
@@ -184,6 +212,7 @@ const toPublicRuntimeConfig = (docLike) => {
     pauseChangedBy: config.pauseChangedBy || null,
     networkModes: config.networkModes,
     wallets: config.wallets,
+    ticketAvailability: config.ticketAvailability,
     updatedAt: config.updatedAt || null
   };
 };
@@ -199,7 +228,8 @@ const normalizeRuntimeConfig = (docLike) => {
     pauseChangedBy: raw.pauseChangedBy || null,
     updatedAt: raw.updatedAt || null,
     networkModes: normalizeNetworkModes(raw.networkModes),
-    wallets: normalizeWallets(raw.wallets)
+    wallets: normalizeWallets(raw.wallets),
+    ticketAvailability: normalizeTicketAvailability(raw.ticketAvailability)
   };
 };
 
@@ -241,6 +271,14 @@ export const ensureRuntimeConfig = async () => {
   });
   if (!hasAllWalletKeys) {
     configDoc.wallets = mergedWallets;
+    shouldSave = true;
+  }
+
+  const rawAvailability = toObject(configDoc.ticketAvailability);
+  const mergedAvailability = normalizeTicketAvailability(rawAvailability);
+  const hasAllAvailabilityKeys = TICKET_COIN_KEYS.every((coin) => typeof rawAvailability?.[coin] === 'boolean');
+  if (!hasAllAvailabilityKeys || JSON.stringify(rawAvailability) !== JSON.stringify(mergedAvailability)) {
+    configDoc.ticketAvailability = mergedAvailability;
     shouldSave = true;
   }
 
@@ -333,6 +371,25 @@ export const getEthereumRuntimeConfig = (runtimeConfig) => {
   };
 };
 
+export const getTicketAvailabilityForCoin = (coin, runtimeConfig) => {
+  const normalizedCoin = String(coin || '').trim().toLowerCase();
+  if (!normalizedCoin || !TICKET_COIN_KEYS.includes(normalizedCoin)) {
+    return false;
+  }
+
+  const availability = runtimeConfig?.ticketAvailability || DEFAULT_TICKET_AVAILABILITY;
+  if (typeof availability[normalizedCoin] === 'boolean') {
+    return availability[normalizedCoin];
+  }
+
+  return DEFAULT_TICKET_AVAILABILITY[normalizedCoin] ?? false;
+};
+
+export const getTicketAvailabilityMatrix = (runtimeConfig) => {
+  const availability = runtimeConfig?.ticketAvailability || DEFAULT_TICKET_AVAILABILITY;
+  return normalizeTicketAvailability(availability);
+};
+
 export const isTicketWorkflowPaused = async () => {
   const runtime = await getRuntimeConfig();
   return Boolean(runtime.ticketWorkflowPaused);
@@ -350,11 +407,12 @@ export const setTicketWorkflowPaused = async ({ paused, reason = null, actorId =
   return getPublicRuntimeConfig();
 };
 
-export const updateRuntimeConfig = async ({ networkModes, wallets, actorId = null }) => {
+export const updateRuntimeConfig = async ({ networkModes, wallets, ticketAvailability, actorId = null }) => {
   const configDoc = await ensureRuntimeConfig();
   const current = normalizeRuntimeConfig(configDoc);
   const nextModes = normalizeNetworkModes(networkModes || current.networkModes);
   const nextWallets = normalizeWallets(wallets || current.wallets);
+  const nextTicketAvailability = normalizeTicketAvailability(ticketAvailability || current.ticketAvailability);
 
   if (nextModes.litecoin === 'testnet' && !UTXO_NETWORKS.litecoin?.testnet) {
     const error = new Error('Litecoin testnet is not supported by the current monitor provider.');
@@ -362,14 +420,14 @@ export const updateRuntimeConfig = async ({ networkModes, wallets, actorId = nul
     throw error;
   }
 
-  const missingWallets = hasRequiredWallets(nextModes, nextWallets);
+  const missingWallets = hasRequiredWallets(nextModes, nextWallets, nextTicketAvailability);
   if (missingWallets.length > 0) {
     const error = new Error(`Missing active wallet configuration for: ${missingWallets.join(', ')}`);
     error.statusCode = 400;
     throw error;
   }
 
-  const invalidWallets = validateWalletFormats(nextModes, nextWallets);
+  const invalidWallets = validateWalletFormats(nextModes, nextWallets, nextTicketAvailability);
   if (invalidWallets.length > 0) {
     const error = new Error(`Invalid wallet format for: ${invalidWallets.join(', ')}`);
     error.statusCode = 400;
@@ -378,6 +436,7 @@ export const updateRuntimeConfig = async ({ networkModes, wallets, actorId = nul
 
   configDoc.networkModes = nextModes;
   configDoc.wallets = nextWallets;
+  configDoc.ticketAvailability = nextTicketAvailability;
   configDoc.updatedBy = actorId || configDoc.updatedBy || null;
   await configDoc.save();
   clearCache();

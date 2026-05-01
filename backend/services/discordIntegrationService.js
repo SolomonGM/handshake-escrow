@@ -5,7 +5,6 @@ import jwt from 'jsonwebtoken';
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_OAUTH_STATE_TTL_SECONDS = 10 * 60;
 const DISCORD_DEFAULT_SCOPES = 'identify';
-const DISCORD_DEFAULT_SYNC_LOG_CHANNEL_ID = '1476298330022744085';
 const DISCORD_ROLE_SYNC_BYPASS_RANKS = new Set(['owner', 'developer']);
 
 const sanitizeRoleId = (value) => {
@@ -147,7 +146,7 @@ const getBotGuildConfig = () => {
 };
 
 const getSyncLogChannelId = () => (
-  String(process.env.DISCORD_SYNC_LOG_CHANNEL_ID || DISCORD_DEFAULT_SYNC_LOG_CHANNEL_ID || '').trim()
+  String(process.env.DISCORD_SYNC_LOG_CHANNEL_ID || '').trim()
 );
 
 const getDefaultAvatarIndex = (discordUserId, discriminator) => {

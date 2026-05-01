@@ -71,7 +71,7 @@ const tradeRequestSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'expired', 'paused', 'deleted'],
+    enum: ['active', 'expired', 'paused', 'deleted', 'sold'],
     default: 'active'
   },
   totalViews: {
