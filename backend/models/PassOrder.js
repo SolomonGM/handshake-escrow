@@ -78,7 +78,7 @@ const passOrderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'completed', 'expired', 'failed', 'timedout', 'awaiting-staff', 'refunded', 'returned'],
+    enum: ['pending', 'confirmed', 'completed', 'expired', 'failed', 'timedout', 'awaiting-staff', 'refunded', 'returned', 'cancelled'],
     default: 'pending'
   },
   confirmations: {

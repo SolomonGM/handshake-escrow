@@ -1,4 +1,4 @@
-import { EXCHANGE_RATES } from '../config/wallets.js';
+import { convertUsdToCryptoAmount } from '../config/wallets.js';
 
 const COIN_SYMBOLS = {
   bitcoin: 'BTC',
@@ -79,8 +79,12 @@ export const buildTransactionFeedItem = (ticket, options = {}) => {
 
   const { senderUser, receiverUser } = resolveSenderReceiver(ticket);
   const usdValue = getUsdAmount(ticket);
-  const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency] || 1;
-  const amount = exchangeRate > 0 ? Number((usdValue / exchangeRate).toFixed(8)) : 0;
+  const networkMode = ticket.transactionNetworkMode || options.networkMode || null;
+  const storedAmount = Number(ticket?.expectedCryptoAmount);
+  const hasDealAmount = Number.isFinite(Number(ticket?.dealAmount)) && Number(ticket?.dealAmount) > 0;
+  const amount = !hasDealAmount && Number.isFinite(storedAmount) && storedAmount > 0
+    ? Number(storedAmount.toFixed(8))
+    : convertUsdToCryptoAmount(usdValue, ticket.cryptocurrency, { networkMode });
   const coinSymbol = COIN_SYMBOLS[ticket.cryptocurrency] || ticket.cryptocurrency?.toUpperCase() || 'CRYPTO';
 
   const senderSelection = getPrivacySelection(ticket, senderUser);
@@ -110,7 +114,7 @@ export const buildTransactionFeedItem = (ticket, options = {}) => {
     receiver,
     transactionId: transactionHash,
     blockchain: ticket.cryptocurrency || 'N/A',
-    networkMode: ticket.transactionNetworkMode || options.networkMode || null,
+    networkMode,
     timestamp,
     status: 'completed',
     completedAt,

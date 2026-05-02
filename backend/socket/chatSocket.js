@@ -165,6 +165,11 @@ const ticketManagementCommands = [
     example: '/join-ticket #1234567'
   },
   {
+    command: '/close-ticket <ticketId>',
+    description: 'Admin only: mark a ticket as cancelled',
+    example: '/close-ticket #1234567'
+  },
+  {
     command: '/release <ticketId> <sender|receiver> [reason]',
     description: 'Force-mark ticket as refunded and assign refund target role',
     example: '/release #1234567 sender sender requested manual refund'
@@ -495,6 +500,43 @@ const handleTicketStaffCommand = async ({ io, socket, command, args }) => {
       socket,
       `Ticket ${ticket.ticketId} (${ticket.status}) spectator link: ${spectatorUrl}`
     );
+    return true;
+  }
+
+  if (command === '/close-ticket') {
+    const ticketIdArg = normalizeTicketId(args[0]);
+    if (!ticketIdArg) {
+      emitPrivateBotMessage(socket, 'Usage: /close-ticket <ticketId>');
+      return true;
+    }
+
+    const ticket = await TradeTicket.findOne({ ticketId: ticketIdArg });
+    if (!ticket) {
+      emitPrivateBotMessage(socket, `Ticket ${ticketIdArg} was not found.`);
+      return true;
+    }
+
+    if (ticket.status === 'cancelled') {
+      emitPrivateBotMessage(socket, `Ticket ${ticket.ticketId} is already cancelled.`);
+      return true;
+    }
+
+    ticket.status = 'cancelled';
+    await ticket.save();
+
+    await logModerationAction({
+      actionType: 'ticket_cancel',
+      scope: 'ticket',
+      targetUser: ticket.creator || null,
+      moderatorUser: socket.user._id,
+      reason: 'Ticket cancelled by admin command.',
+      ticketId: ticket.ticketId,
+      metadata: {
+        ticketStatus: ticket.status
+      }
+    });
+
+    emitPrivateBotMessage(socket, `Ticket ${ticket.ticketId} set to cancelled.`);
     return true;
   }
 
@@ -1764,6 +1806,20 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
       `Pass giveaway ${commandId} started. Countdown: ${formatCountdown(endsAt)} (${endsAt.toLocaleString()}).`
     );
     return true;
+  }
+
+  if (command === '/close-ticket') {
+    if (!roleFlags.isAdmin) {
+      emitPrivateBotMessage(socket, 'Only admins can use /close-ticket.');
+      return true;
+    }
+
+    return handleTicketStaffCommand({
+      io,
+      socket,
+      command,
+      args
+    });
   }
 
   if (command === '/join-ticket' || command === '/release') {

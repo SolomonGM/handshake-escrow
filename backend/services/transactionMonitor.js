@@ -4,7 +4,14 @@ import { ethers } from 'ethers';
 import TradeTicket from '../models/TradeTicket.js';
 import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
-import { ETH_RPC_CONFIG, ETH_NETWORK_MODE, EXCHANGE_RATES, getUtxoNetwork, getUtxoNetworkMode } from '../config/wallets.js';
+import {
+  ETH_RPC_CONFIG,
+  ETH_NETWORK_MODE,
+  convertUsdToCryptoAmount,
+  getExchangeRateForCoin,
+  getUtxoNetwork,
+  getUtxoNetworkMode
+} from '../config/wallets.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
 import {
   getActiveNetworkModeForCoin,
@@ -17,13 +24,12 @@ import {
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
-const getExchangeRate = (crypto) => EXCHANGE_RATES[crypto] || 1;
+const getExchangeRate = (crypto, options = {}) => getExchangeRateForCoin(crypto, options);
 
 // This converts USD to crypto using configured exchange rate.
-const convertUSDToCrypto = (usdAmount, crypto) => {
-  const rate = getExchangeRate(crypto);
-  return (usdAmount / rate).toFixed(8);
-};
+const convertUSDToCrypto = (usdAmount, crypto, options = {}) => (
+  convertUsdToCryptoAmount(usdAmount, crypto, options).toFixed(8)
+);
 
 const ETH_SCAN_INTERVAL_MS = 15000;
 const ETH_RATE_LIMIT_COOLDOWN_MS = 30000;
@@ -340,7 +346,10 @@ const monitorUtxoTicketTransaction = async (ticket, crypto, runtimeConfig) => {
     return;
   }
 
-  const expectedCrypto = convertUSDToCrypto(ticket.expectedAmount, crypto);
+  const storedExpectedCrypto = Number(ticket?.expectedCryptoAmount);
+  const expectedCrypto = Number.isFinite(storedExpectedCrypto) && storedExpectedCrypto > 0
+    ? storedExpectedCrypto.toFixed(8)
+    : convertUSDToCrypto(ticket.expectedAmount, crypto, { networkMode: ticket.transactionNetworkMode });
   const recentTxs = addressData.txs.slice(0, 10);
 
   for (const tx of recentTxs) {
@@ -458,7 +467,14 @@ const monitorEthTicketTransaction = async (ticket, runtimeConfig) => {
     }
     throw error;
   }
-  const expectedETH = convertUSDToETH(ticket.expectedAmount);
+  const storedExpectedEth = Number(ticket?.expectedCryptoAmount);
+  const ethModeForConversion = ethRuntime?.mode || ticket.transactionNetworkMode;
+  const expectedETH = Number.isFinite(storedExpectedEth) && storedExpectedEth > 0
+    ? storedExpectedEth.toFixed(8)
+    : convertUSDToETH(
+      ticket.expectedAmount,
+      getExchangeRate('ethereum', { networkMode: ethModeForConversion })
+    );
 
   let transfers = null;
   const transferFromBlock = Math.max(0, currentBlock - 120);
@@ -1149,7 +1165,7 @@ const getEthProvider = (networkMode = ETH_NETWORK_MODE) => {
   return new ethers.JsonRpcProvider(config.rpcUrl);
 };
 
-// This converts USD to Ethereum (using configured test rate for Sepolia).
+// This converts USD to Ethereum (rate may vary by network mode).
 const convertUSDToETH = (usdAmount, exchangeRate = getExchangeRate('ethereum')) => {
   return (usdAmount / exchangeRate).toFixed(8);
 };

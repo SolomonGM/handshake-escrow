@@ -18,6 +18,12 @@ const normalizeNetworkMode = (value, fallback) => {
 };
 const BTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
 const LTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
+const PASS_PAYMENT_METHODS = ['litecoin', 'bitcoin', 'ethereum'];
+const DEFAULT_PASS_PAYMENT_AVAILABILITY = {
+  litecoin: true,
+  bitcoin: true,
+  ethereum: true
+};
 
 const PassesPurchase = () => {
   const navigate = useNavigate();
@@ -41,6 +47,8 @@ const PassesPurchase = () => {
   const [copyFeedback, setCopyFeedback] = useState({ address: false, amount: false });
   const copyTimers = useRef({});
   const [paymentIssue, setPaymentIssue] = useState(null);
+  const [paymentAvailability, setPaymentAvailability] = useState(DEFAULT_PASS_PAYMENT_AVAILABILITY);
+  const [paymentAvailabilityReasons, setPaymentAvailabilityReasons] = useState({});
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const resumeToastRef = useRef(null);
 
@@ -107,6 +115,44 @@ const PassesPurchase = () => {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    const loadPassPaymentAvailability = async () => {
+      if (!token) return;
+
+      try {
+        const response = await axios.get(
+          `${API_URL}/passes/availability`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (response.data?.success && response.data?.paymentAvailability) {
+          const nextAvailability = PASS_PAYMENT_METHODS.reduce((acc, method) => {
+            acc[method] = Boolean(response.data.paymentAvailability?.[method]);
+            return acc;
+          }, {});
+          const nextReasons = PASS_PAYMENT_METHODS.reduce((acc, method) => {
+            acc[method] = response.data.availabilityReasons?.[method] || null;
+            return acc;
+          }, {});
+
+          setPaymentAvailability(nextAvailability);
+          setPaymentAvailabilityReasons(nextReasons);
+          setSelectedCrypto((current) => {
+            if (nextAvailability[current]) {
+              return current;
+            }
+            const fallback = PASS_PAYMENT_METHODS.find((method) => nextAvailability[method]);
+            return fallback || current;
+          });
+        }
+      } catch (err) {
+        console.error('Error loading pass payment availability:', err);
+      }
+    };
+
+    loadPassPaymentAvailability();
+  }, [token]);
+
   // This checks for active order on mount and restore payment state.
   useEffect(() => {
     const checkActiveOrder = async () => {
@@ -167,7 +213,7 @@ const PassesPurchase = () => {
               return;
             }
 
-            if (latestOrder && ['returned', 'refunded'].includes(latestOrder.status)) {
+            if (latestOrder && ['returned', 'refunded', 'cancelled'].includes(latestOrder.status)) {
               setStep('select');
               setPurchaseData(null);
               setPaymentIssue(null);
@@ -182,6 +228,18 @@ const PassesPurchase = () => {
                 : (latestOrder.status === 'timedout' || latestOrder.status === 'expired')
                   ? 'Payment window expired. If you sent funds, please contact staff.'
                   : 'Payment requires manual review. Please contact staff.';
+
+              if (
+                !latestOrder.transactionHash
+                && (latestOrder.status === 'timedout' || latestOrder.status === 'expired')
+              ) {
+                setStep('select');
+                setPurchaseData(null);
+                setPaymentIssue(null);
+                setTimeRemaining(null);
+                resetTransactionStatus();
+                return;
+              }
 
               setPurchaseData(latestOrder);
               setSelectedCrypto(latestOrder.cryptocurrency);
@@ -311,13 +369,19 @@ const PassesPurchase = () => {
           break;
 
         case 'refunded':
+        case 'cancelled':
           setPurchaseData(null);
           setReceiptData(null);
           setPaymentIssue(null);
           setTimeRemaining(null);
           resetTransactionStatus();
           setStep('select');
-          toast.success(data.message || 'Your pass payment was marked refunded by staff.');
+          toast.success(
+            data.message
+            || (data.status === 'cancelled'
+              ? 'Order cancelled. You can start a new pass purchase.'
+              : 'Your pass payment was marked refunded by staff.')
+          );
           break;
       }
     };
@@ -359,7 +423,7 @@ const PassesPurchase = () => {
           return;
         }
 
-        if (order.status === 'returned' || order.status === 'refunded') {
+        if (order.status === 'returned' || order.status === 'refunded' || order.status === 'cancelled') {
           setPurchaseData(null);
           setPaymentIssue(null);
           setTimeRemaining(null);
@@ -419,6 +483,22 @@ const PassesPurchase = () => {
       toast.error('Please select a pass');
       return;
     }
+
+    const availableMethods = PASS_PAYMENT_METHODS.filter((method) => Boolean(paymentAvailability?.[method]));
+    if (availableMethods.length === 0) {
+      toast.error('No payment methods are currently available right now.');
+      return;
+    }
+
+    if (!paymentAvailability?.[selectedCrypto]) {
+      const fallbackMethod = availableMethods[0];
+      if (fallbackMethod) {
+        setSelectedCrypto(fallbackMethod);
+      }
+      toast.error('Selected payment method is currently unavailable.');
+      return;
+    }
+
     setPaymentIssue(null);
 
     try {
@@ -441,6 +521,24 @@ const PassesPurchase = () => {
       }
     } catch (err) {
       console.error('Error creating pass order:', err);
+
+      if (err.response?.status === 409 && err.response?.data?.code === 'PASS_PAYMENT_METHOD_UNAVAILABLE') {
+        const serverAvailability = err.response.data.paymentAvailability;
+        if (serverAvailability && typeof serverAvailability === 'object') {
+          const nextAvailability = PASS_PAYMENT_METHODS.reduce((acc, method) => {
+            acc[method] = Boolean(serverAvailability[method]);
+            return acc;
+          }, {});
+          setPaymentAvailability(nextAvailability);
+
+          const fallback = PASS_PAYMENT_METHODS.find((method) => nextAvailability[method]);
+          if (fallback && !nextAvailability[selectedCrypto]) {
+            setSelectedCrypto(fallback);
+          }
+        }
+        toast.error(err.response?.data?.message || 'Selected payment method is currently unavailable.');
+        return;
+      }
       
       // If user already has active order, redirect to it
       if (err.response?.status === 400 && err.response?.data?.activeOrder) {
@@ -471,8 +569,11 @@ const PassesPurchase = () => {
   };
 
   const getCryptoInfo = () => {
-    return cryptoOptions.find(c => c.value === selectedCrypto);
+    return cryptoOptions.find(c => c.value === selectedCrypto) || cryptoOptions[0];
   };
+
+  const isPaymentMethodAvailable = (value) => Boolean(paymentAvailability?.[value]);
+  const hasAvailablePaymentMethods = cryptoOptions.some((crypto) => isPaymentMethodAvailable(crypto.value));
 
   const getConfirmationsRequired = (crypto) => {
     const confirmationRequirements = {
@@ -673,15 +774,35 @@ const PassesPurchase = () => {
             {/* Cryptocurrency Selection */}
             <div className="max-w-2xl mx-auto mb-12">
               <h3 className="text-xl font-bold text-n-1 mb-6 text-center">Select Payment Method</h3>
+              {!hasAvailablePaymentMethods && (
+                <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300 text-center">
+                  No payment methods are currently available. Please try again later.
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {cryptoOptions.map((crypto) => (
+                  (() => {
+                    const isAvailable = isPaymentMethodAvailable(crypto.value);
+                    const isSelected = selectedCrypto === crypto.value;
+                    const disabledReason = paymentAvailabilityReasons?.[crypto.value];
+                    const disabledLabel = disabledReason === 'disabled_by_admin'
+                      ? 'Disabled by admin'
+                      : 'Unavailable';
+
+                    return (
                   <button
                     key={crypto.value}
-                    onClick={() => setSelectedCrypto(crypto.value)}
+                    onClick={() => {
+                      if (!isAvailable) return;
+                      setSelectedCrypto(crypto.value);
+                    }}
+                    disabled={!isAvailable}
                     className={`p-6 rounded-xl border-2 transition-all ${
-                      selectedCrypto === crypto.value
+                      isSelected
                         ? 'border-[#10B981] bg-[#10B981]/10'
-                        : 'border-n-6 bg-n-8 hover:border-n-5'
+                        : isAvailable
+                          ? 'border-n-6 bg-n-8 hover:border-n-5'
+                          : 'border-n-6/60 bg-n-8/70 opacity-55 cursor-not-allowed'
                     }`}
                   >
                     <div className="flex flex-col items-center gap-3">
@@ -702,9 +823,16 @@ const PassesPurchase = () => {
                           {crypto.symbol === 'LTC' && 'L'}
                         </div>
                       </div>
-                      <span className="font-semibold text-n-1">{crypto.label}</span>
+                      <span className={`font-semibold ${isAvailable ? 'text-n-1' : 'text-n-4'}`}>{crypto.label}</span>
+                      {!isAvailable && (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-red-300">
+                          {disabledLabel}
+                        </span>
+                      )}
                     </div>
                   </button>
+                    );
+                  })()
                 ))}
               </div>
             </div>
@@ -728,12 +856,13 @@ const PassesPurchase = () => {
                   </div>
                   <div className="border-t border-n-6 pt-4 flex justify-between">
                     <span className="text-lg font-bold text-n-1">Total:</span>
-                    <span className="text-2xl font-bold text-[N#10B981]">${selectedPass.price}</span>
+                    <span className="text-2xl font-bold text-[#10B981]">${selectedPass.price}</span>
                   </div>
                 </div>
                 <Button
                   className="w-full"
                   onClick={handleProceedToPayment}
+                  disabled={!hasAvailablePaymentMethods || !isPaymentMethodAvailable(selectedCrypto)}
                 >
                   Proceed to Payment
                 </Button>

@@ -6,6 +6,7 @@ import { upsertPassTransactionHistory } from '../services/passTransactionHistory
 import {
   getBotWalletForCoin,
   getRuntimeConfig,
+  getTicketAvailabilityForCoin,
   getUtxoRuntimeNetwork
 } from '../services/runtimeConfigService.js';
 
@@ -38,6 +39,39 @@ const SUPPORTED_CRYPTOS = new Set([
   'usdt-erc20',
   'usdc-erc20'
 ]);
+
+const resolvePassPaymentAvailability = (runtimeConfig) => {
+  const paymentAvailability = {};
+  const availabilityReasons = {};
+
+  SUPPORTED_CRYPTOS.forEach((coin) => {
+    const enabledByAdmin = getTicketAvailabilityForCoin(coin, runtimeConfig);
+    if (!enabledByAdmin) {
+      paymentAvailability[coin] = false;
+      availabilityReasons[coin] = 'disabled_by_admin';
+      return;
+    }
+
+    const runtimeWallet = getBotWalletForCoin(coin, runtimeConfig).wallet;
+    const hasUtxoNetwork = !UTXO_CRYPTOS.has(coin) || Boolean(getUtxoRuntimeNetwork(coin, runtimeConfig)?.config);
+    const hasPaymentAddressSupport = UTXO_CRYPTOS.has(coin)
+      ? Boolean(BLOCKCYPHER_TOKEN || runtimeWallet)
+      : Boolean(runtimeWallet);
+
+    const isAvailable = Boolean(hasUtxoNetwork && hasPaymentAddressSupport);
+    paymentAvailability[coin] = isAvailable;
+
+    if (!hasUtxoNetwork) {
+      availabilityReasons[coin] = 'network_unavailable';
+      return;
+    }
+    if (!hasPaymentAddressSupport) {
+      availabilityReasons[coin] = 'wallet_not_configured';
+    }
+  });
+
+  return { paymentAvailability, availabilityReasons };
+};
 
 /**
  * Generate a unique payment address for an order using BlockCypher API
@@ -179,6 +213,17 @@ export const createPassOrder = async (req, res) => {
     if (!SUPPORTED_CRYPTOS.has(cryptocurrency)) {
       return res.status(400).json({ success: false, message: 'Unsupported cryptocurrency' });
     }
+    const { paymentAvailability, availabilityReasons } = resolvePassPaymentAvailability(runtimeConfig);
+    if (!paymentAvailability[cryptocurrency]) {
+      return res.status(409).json({
+        success: false,
+        code: 'PASS_PAYMENT_METHOD_UNAVAILABLE',
+        message: 'Selected payment method is currently unavailable.',
+        cryptocurrency,
+        paymentAvailability,
+        availabilityReasons
+      });
+    }
     const runtimeWalletConfig = getBotWalletForCoin(cryptocurrency, runtimeConfig);
     const runtimeWallet = runtimeWalletConfig.wallet;
     const coinNetworkMode = runtimeWalletConfig.mode;
@@ -292,6 +337,23 @@ export const getPassOrder = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching pass order:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Retrieves pass payment method availability for UI gating
+export const getPassPaymentAvailability = async (req, res) => {
+  try {
+    const runtimeConfig = await getRuntimeConfig();
+    const { paymentAvailability, availabilityReasons } = resolvePassPaymentAvailability(runtimeConfig);
+
+    res.json({
+      success: true,
+      paymentAvailability,
+      availabilityReasons
+    });
+  } catch (error) {
+    console.error('Error fetching pass payment availability:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -453,6 +515,7 @@ export default {
   createPassOrder,
   getUserPassOrders,
   getPassOrder,
+  getPassPaymentAvailability,
   getPassTransactionHistory,
   completePassOrder,
   cancelPassOrder

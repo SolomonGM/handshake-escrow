@@ -160,6 +160,14 @@ const tradeTicketSchema = new mongoose.Schema({
     type: Number,
     default: null
   },
+  expectedCryptoAmount: {
+    type: Number,
+    default: null
+  },
+  exchangeRateUsed: {
+    type: Number,
+    default: null
+  },
   transactionDetected: {
     type: Boolean,
     default: false

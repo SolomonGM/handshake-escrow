@@ -6,6 +6,11 @@ const normalizeNetworkMode = (value, fallback = 'mainnet') => {
   return fallback;
 };
 
+const parsePositiveNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 // BTC/LTC network mode (aligns BlockCypher usage with explorer links)
 export const BTC_NETWORK_MODE = normalizeNetworkMode(process.env.BTC_NETWORK_MODE || 'testnet', 'testnet');
 export const LTC_NETWORK_MODE = normalizeNetworkMode(process.env.LTC_NETWORK_MODE || 'mainnet', 'mainnet');
@@ -113,6 +118,19 @@ export const ETH_RPC_CONFIG = {
 // Current network mode (change to 'mainnet' when going to production)
 export const ETH_NETWORK_MODE = process.env.ETH_NETWORK_MODE || 'testnet';
 
+const DEFAULT_MAINNET_ETH_USD_RATE = 3000;
+const DEFAULT_TESTNET_ETH_USD_RATE = 500 / 0.009; // 0.009 Sepolia ETH ~= $500
+
+const ETH_MAINNET_USD_RATE = parsePositiveNumber(
+  process.env.ETH_MAINNET_USD_RATE || process.env.ETH_USD_RATE,
+  DEFAULT_MAINNET_ETH_USD_RATE
+);
+
+const ETH_TESTNET_USD_RATE = parsePositiveNumber(
+  process.env.ETH_TESTNET_USD_RATE || process.env.SEPOLIA_ETH_USD_RATE,
+  DEFAULT_TESTNET_ETH_USD_RATE
+);
+
 // This calculates total amount to send (deal amount + fees).
 export const calculateTotalAmount = (dealAmount, cryptocurrency, usedPass) => {
   if (usedPass) {
@@ -142,12 +160,40 @@ export const calculateTotalAmount = (dealAmount, cryptocurrency, usedPass) => {
 
 // This gets exchange rate placeholder (this will be replaced with real API later).
 // WARNING: These are EXAMPLE rates. In production, use a live API like CoinGecko
-// TESTING: Set ETH = $240 so Rhino Pass ($12) costs exactly 0.05 ETH
+// Ethereum is network-aware via getExchangeRateForCoin (mainnet vs sepolia testnet)
 export const EXCHANGE_RATES = {
   bitcoin: 42000, // 1 BTC = $42,000 USD
-  ethereum: 240, // 1 ETH = $240 USD (TESTING: allows 0.05 ETH for all passes)
+  ethereum: ETH_MAINNET_USD_RATE, // Mainnet fallback/reference
   litecoin: 75, // 1 LTC = $75 USD (TESTNET uses same rate for simplicity)
   solana: 100, // 1 SOL = $100 USD
   'usdt-erc20': 1, // 1 USDT = $1 USD
   'usdc-erc20': 1  // 1 USDC = $1 USD
+};
+
+export const getEthereumUsdRate = (networkMode = ETH_NETWORK_MODE) => {
+  const resolvedMode = normalizeNetworkMode(networkMode, normalizeNetworkMode(ETH_NETWORK_MODE, 'testnet'));
+  return resolvedMode === 'testnet' ? ETH_TESTNET_USD_RATE : ETH_MAINNET_USD_RATE;
+};
+
+export const getExchangeRateForCoin = (coin, options = {}) => {
+  const normalizedCoin = String(coin || '').trim().toLowerCase();
+  if (!normalizedCoin) {
+    return 1;
+  }
+
+  if (normalizedCoin === 'ethereum') {
+    return getEthereumUsdRate(options.networkMode);
+  }
+
+  const rate = EXCHANGE_RATES[normalizedCoin];
+  return Number.isFinite(rate) && rate > 0 ? rate : 1;
+};
+
+export const convertUsdToCryptoAmount = (usdAmount, coin, options = {}) => {
+  const usd = Number(usdAmount);
+  const rate = getExchangeRateForCoin(coin, options);
+  if (!Number.isFinite(usd) || usd <= 0 || !Number.isFinite(rate) || rate <= 0) {
+    return 0;
+  }
+  return Number((usd / rate).toFixed(8));
 };

@@ -1,7 +1,12 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import { ethers } from 'ethers';
-import { calculateTotalAmount, EXCHANGE_RATES, ETH_RPC_CONFIG } from '../config/wallets.js';
+import {
+  calculateTotalAmount,
+  convertUsdToCryptoAmount,
+  getExchangeRateForCoin,
+  ETH_RPC_CONFIG
+} from '../config/wallets.js';
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
 import {
   getActiveNetworkModeForCoin,
@@ -264,8 +269,27 @@ const normalizeAttachmentsInput = (attachments, maxDataUrlLength) => {
   }).filter(Boolean);
 };
 
-const buildPayoutDetails = (ticket) => {
-  const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency] || 1;
+const getTicketRateContext = (ticket, networkModeOverride = null) => {
+  const fallbackMode = ticket?.transactionNetworkMode
+    || ticket?.payoutNetworkMode
+    || null;
+  return {
+    networkMode: networkModeOverride || fallbackMode
+  };
+};
+
+const getTicketExchangeRate = (ticket, networkModeOverride = null) => {
+  const context = getTicketRateContext(ticket, networkModeOverride);
+  return getExchangeRateForCoin(ticket?.cryptocurrency, context);
+};
+
+const getTicketCryptoAmount = (ticket, usdAmount, networkModeOverride = null) => {
+  const context = getTicketRateContext(ticket, networkModeOverride);
+  return convertUsdToCryptoAmount(usdAmount, ticket?.cryptocurrency, context);
+};
+
+const buildPayoutDetails = (ticket, networkMode = 'mainnet') => {
+  const exchangeRate = getTicketExchangeRate(ticket, networkMode);
   const dealAmount = Number(ticket.dealAmount ?? ticket.expectedAmount ?? 0);
   if (!Number.isFinite(dealAmount) || dealAmount <= 0) {
     throw new Error('Invalid deal amount for payout');
@@ -279,7 +303,7 @@ const buildPayoutDetails = (ticket) => {
   if (!Number.isFinite(payoutUsd) || payoutUsd <= 0) {
     throw new Error('Invalid payout amount');
   }
-  const payoutEth = (payoutUsd / exchangeRate).toFixed(8);
+  const payoutEth = getTicketCryptoAmount(ticket, payoutUsd, networkMode).toFixed(8);
 
   return {
     payoutEth,
@@ -297,7 +321,7 @@ const sendEthPayout = async (ticket, toAddress, networkMode = 'mainnet') => {
     throw new Error('Ethereum provider not configured');
   }
 
-  const { payoutEth, payoutUsd } = buildPayoutDetails(ticket);
+  const { payoutEth, payoutUsd } = buildPayoutDetails(ticket, networkMode);
   const value = ethers.parseEther(payoutEth);
 
   const feeData = await provider.getFeeData();
@@ -2541,8 +2565,8 @@ export const confirmPassUse = async (req, res) => {
         true // Pass was used
       );
       const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
-      const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
-      const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
+      const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
+      const cryptoAmount = getTicketCryptoAmount(ticket, totalAmount, transactionNetworkMode).toFixed(8);
 
       if (!botWallet) {
         ticket.messages.push({
@@ -2579,7 +2603,8 @@ export const confirmPassUse = async (req, res) => {
             botWallet,
             cryptoAmount,
             totalAmount,
-            exchangeRate: `1 ${ticket.cryptocurrency.toUpperCase()} = $${exchangeRate.toLocaleString()} USD`
+            exchangeRate: `1 ${ticket.cryptocurrency.toUpperCase()} = $${exchangeRate.toLocaleString()} USD`,
+            exchangeNetworkMode: transactionNetworkMode
           }
         },
         timestamp: new Date()
@@ -2590,6 +2615,8 @@ export const confirmPassUse = async (req, res) => {
       ticket.botWalletAddress = botWallet;
       ticket.transactionNetworkMode = transactionNetworkMode;
       ticket.expectedAmount = totalAmount;
+      ticket.expectedCryptoAmount = Number(cryptoAmount);
+      ticket.exchangeRateUsed = exchangeRate;
       console.log(`📤 Transaction prompt added for ${senderUser.username}`);
     }
 
@@ -2701,8 +2728,8 @@ export const confirmFees = async (req, res) => {
           false // Fees are being charged
         );
         const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
-        const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
-        const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
+        const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
+        const cryptoAmount = getTicketCryptoAmount(ticket, totalAmount, transactionNetworkMode).toFixed(8);
 
         if (!botWallet) {
           ticket.messages.push({
@@ -2739,7 +2766,8 @@ export const confirmFees = async (req, res) => {
               botWallet,
               cryptoAmount,
               totalAmount,
-              exchangeRate: `1 ${ticket.cryptocurrency.toUpperCase()} = $${exchangeRate.toLocaleString()} USD`
+              exchangeRate: `1 ${ticket.cryptocurrency.toUpperCase()} = $${exchangeRate.toLocaleString()} USD`,
+              exchangeNetworkMode: transactionNetworkMode
             }
           },
           timestamp: new Date()
@@ -2750,6 +2778,8 @@ export const confirmFees = async (req, res) => {
         ticket.botWalletAddress = botWallet;
         ticket.transactionNetworkMode = transactionNetworkMode;
         ticket.expectedAmount = totalAmount;
+        ticket.expectedCryptoAmount = Number(cryptoAmount);
+        ticket.exchangeRateUsed = exchangeRate;
         console.log(`📤 Transaction prompt added for ${senderUser.username}`);
       }
 
@@ -2864,14 +2894,7 @@ export const copyTransactionDetails = async (req, res) => {
     }
 
     // Retrieves transaction details
-    const totalAmount = calculateTotalAmount(
-      ticket.dealAmount,
-      ticket.cryptocurrency,
-      ticket.feeDecision === 'with-pass'
-    );
     const botWallet = String(ticket.botWalletAddress || '').trim() || (await resolveTicketBotWallet(ticket)).wallet;
-    const exchangeRate = EXCHANGE_RATES[ticket.cryptocurrency];
-    const cryptoAmount = (totalAmount / exchangeRate).toFixed(8);
 
     if (!botWallet) {
       return res.status(500).json({

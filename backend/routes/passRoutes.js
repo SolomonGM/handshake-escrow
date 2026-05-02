@@ -4,6 +4,7 @@ import {
   getUserPassOrders,
   getPassOrder,
   cancelPassOrder,
+  getPassPaymentAvailability,
   getPassTransactionHistory
 } from '../controllers/passController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -21,6 +22,9 @@ router.post('/cancel-order', cancelPassOrder);
 
 // This gets user's pass orders.
 router.get('/my-orders', getUserPassOrders);
+
+// This gets pass payment method availability.
+router.get('/availability', getPassPaymentAvailability);
 
 // This gets user's pass transaction history.
 router.get('/transactions', getPassTransactionHistory);
