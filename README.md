@@ -1,6 +1,6 @@
 ﻿# Handshake
 
-Full-stack web application with a modern React frontend and an Express/MongoDB backend. Built for real-time experiences with Socket.IO and a modular API surface.
+Full-stack web application for cypto escrow service.
 
 ## Live Site
 
