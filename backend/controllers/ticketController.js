@@ -3439,6 +3439,182 @@ export const cancelTransaction = async (req, res) => {
   }
 };
 
+// @desc    User or admin cancels an entire ticket (not just the awaiting transaction).
+//          Allowed before any funds have been confirmed into escrow. If funds are
+//          already detected, the user must request a refund via an admin instead.
+// @route   POST /api/tickets/:ticketId/cancel-ticket
+// @access  Private (ticket creator, accepted participant, or staff)
+export const cancelTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const reason = String(req.body?.reason || '').trim();
+    const ticket = await TradeTicket.findOne({ ticketId });
+
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const userId = req.user._id.toString();
+    const isCreator = ticket.creator?.toString() === userId;
+    const isParticipant = ticket.participants.some(
+      p => p.user?.toString() === userId && p.status === 'accepted'
+    );
+    const isStaff = isStaffUser(req.user);
+
+    if (!isCreator && !isParticipant && !isStaff) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to cancel this ticket'
+      });
+    }
+
+    if (['completed', 'cancelled', 'refunded'].includes(ticket.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Ticket is already ${ticket.status}.`
+      });
+    }
+
+    // Funds already locked in escrow → only admins can refund, regular users cannot cancel.
+    const fundsLocked = Boolean(
+      ticket.transactionConfirmed
+      || ticket.fundsReleased
+      || ticket.releaseInitiated
+      || ['awaiting-close', 'closing'].includes(ticket.status)
+    );
+    if (fundsLocked && !isStaff) {
+      return res.status(409).json({
+        success: false,
+        code: 'TICKET_HAS_ESCROWED_FUNDS',
+        message: 'Funds have already been received. Contact staff to request a refund.'
+      });
+    }
+
+    ticket.status = 'cancelled';
+    ticket.awaitingTransaction = false;
+    ticket.closeInitiatedBy = req.user._id;
+    ticket.closedAt = new Date();
+    ticket.closedBy = req.user._id;
+
+    ticket.messages.push({
+      isBot: true,
+      content: 'Ticket Cancelled',
+      type: 'embed',
+      embedData: {
+        title: 'Ticket Cancelled',
+        description: isStaff
+          ? `This ticket was cancelled by staff.${reason ? `\n\nReason: ${reason}` : ''}`
+          : `This ticket was cancelled by the user.${reason ? `\n\nReason: ${reason}` : ''}`,
+        color: 'red'
+      },
+      timestamp: new Date()
+    });
+
+    await ticket.save();
+
+    res.json({
+      success: true,
+      message: 'Ticket cancelled.',
+      ticket: {
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        closedAt: ticket.closedAt
+      }
+    });
+  } catch (error) {
+    console.error('Cancel ticket error:', error);
+    res.status(500).json({ success: false, message: 'Failed to cancel ticket' });
+  }
+};
+
+// @desc    Admin/staff issue a refund for a ticket. Records the destination and
+//          reason. Actual on-chain transfer is performed manually (BTC/LTC sign
+//          via Sparrow, ETH/SOL via the mnemonic-signed payout flow). This
+//          endpoint marks the ticket as refunded once the admin confirms the
+//          payout tx hash.
+// @route   POST /api/tickets/:ticketId/admin-refund
+// @access  Private (staff only)
+export const adminRefundTicket = async (req, res) => {
+  try {
+    if (!isStaffUser(req.user)) {
+      return res.status(403).json({
+        success: false,
+        code: 'STAFF_ONLY',
+        message: 'Only staff can issue refunds.'
+      });
+    }
+
+    const { ticketId } = req.params;
+    const refundAddress = String(req.body?.refundAddress || '').trim();
+    const refundTransactionHash = String(req.body?.refundTransactionHash || '').trim();
+    const refundReason = String(req.body?.refundReason || '').trim();
+    const refundTargetRole = String(req.body?.refundTargetRole || '').trim();
+
+    if (!refundAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'refundAddress is required.'
+      });
+    }
+
+    const ticket = await TradeTicket.findOne({ ticketId });
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    if (ticket.status === 'refunded') {
+      return res.status(400).json({
+        success: false,
+        message: 'Ticket has already been refunded.'
+      });
+    }
+
+    ticket.status = 'refunded';
+    ticket.awaitingTransaction = false;
+    ticket.refundedAt = new Date();
+    ticket.refundedBy = req.user._id;
+    ticket.refundReason = refundReason || ticket.refundReason || null;
+    if (refundTargetRole === 'sender' || refundTargetRole === 'receiver') {
+      ticket.refundTargetRole = refundTargetRole;
+    }
+    ticket.payoutAddress = refundAddress;
+    if (refundTransactionHash) {
+      ticket.payoutTransactionHash = refundTransactionHash;
+    }
+
+    ticket.messages.push({
+      isBot: true,
+      content: 'Refund Issued',
+      type: 'embed',
+      embedData: {
+        title: 'Refund Issued',
+        description: refundTransactionHash
+          ? `Refund sent to ${refundAddress}.\n\nTx: ${refundTransactionHash}${refundReason ? `\n\nReason: ${refundReason}` : ''}`
+          : `Refund queued to ${refundAddress}.${refundReason ? `\n\nReason: ${refundReason}` : ''}`,
+        color: 'purple'
+      },
+      timestamp: new Date()
+    });
+
+    await ticket.save();
+
+    res.json({
+      success: true,
+      message: 'Refund recorded.',
+      ticket: {
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        refundedAt: ticket.refundedAt,
+        refundAddress,
+        refundTransactionHash: refundTransactionHash || null
+      }
+    });
+  } catch (error) {
+    console.error('Admin refund ticket error:', error);
+    res.status(500).json({ success: false, message: 'Failed to record refund' });
+  }
+};
+
 
 
 

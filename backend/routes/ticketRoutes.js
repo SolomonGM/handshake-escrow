@@ -23,6 +23,8 @@ import {
   confirmPayoutAddress,
   rescanTransaction,
   cancelTransaction,
+  cancelTicket,
+  adminRefundTicket,
   selectPrivacy
 } from '../controllers/ticketController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -98,6 +100,12 @@ router.post('/:ticketId/rescan-transaction', requireTicketWorkflowActive, rescan
 
 // Cancels transaction
 router.post('/:ticketId/cancel-transaction', requireTicketWorkflowActive, cancelTransaction);
+
+// Cancels the entire ticket (user or staff, before funds locked)
+router.post('/:ticketId/cancel-ticket', cancelTicket);
+
+// Issues a refund (staff only)
+router.post('/:ticketId/admin-refund', adminRefundTicket);
 
 // Selects broadcast privacy
 router.post('/:ticketId/select-privacy', requireTicketWorkflowActive, selectPrivacy);

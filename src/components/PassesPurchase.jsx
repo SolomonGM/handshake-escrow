@@ -76,33 +76,11 @@ const PassesPurchase = () => {
     }
   }, [step, showExitConfirm]);
 
-  // Countdown timer for 10-minute timeout
+  // Countdown timer removed — pass orders no longer expire. The deposit
+  // address watches indefinitely; user can cancel from the order page.
   useEffect(() => {
-    if (step !== 'payment' || !purchaseData) return;
-    if (transactionStatus.detected) {
-      setTimeRemaining(null);
-      return;
-    }
-
-    const updateTimer = () => {
-      const now = new Date();
-      const created = new Date(purchaseData.createdAt || Date.now());
-      const timeout = new Date(created.getTime() + 10 * 60 * 1000); // 10 minutes
-      const diff = timeout - now;
-      
-      if (diff <= 0) {
-        setTimeRemaining({ minutes: 0, seconds: 0, total: 0, expired: true });
-      } else {
-        const minutes = Math.floor(diff / 60000);
-        const seconds = Math.floor((diff % 60000) / 1000);
-        setTimeRemaining({ minutes, seconds, total: diff, expired: false });
-      }
-    };
-    
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [step, purchaseData, transactionStatus.detected]);
+    setTimeRemaining(null);
+  }, [step]);
 
   // This gets pass from URL or default to first pass.
   useEffect(() => {

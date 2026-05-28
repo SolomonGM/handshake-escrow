@@ -20,6 +20,16 @@ import {
   getUtxoRuntimeNetwork,
   isTicketWorkflowPaused
 } from './runtimeConfigService.js';
+import {
+  monitorSolanaPassOrder,
+  monitorSolanaTicket,
+  getSolanaMonitorStatus
+} from './solanaMonitor.js';
+import {
+  monitorErc20PassOrder,
+  monitorErc20Ticket,
+  getErc20MonitorStatus
+} from './erc20Monitor.js';
 
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
@@ -272,43 +282,9 @@ const handleTicketTimeout = async (ticket) => {
     return false;
   }
 
-  if (ticket.transactionTimeoutAt) {
-    const timeoutDate = new Date(ticket.transactionTimeoutAt);
-    if (now >= timeoutDate && !ticket.transactionTimedOut) {
-      console.log(`? Transaction timeout reached for ticket ${ticket.ticketId}`);
-      ticket.transactionTimedOut = true;
-      ticket.awaitingTransaction = false;
-
-      ticket.messages = ticket.messages.filter(msg =>
-        msg.embedData?.actionType !== 'transaction-send'
-      );
-
-      ticket.messages.push({
-        isBot: true,
-        content: 'No Transaction Found',
-        type: 'embed',
-        embedData: {
-          title: 'No Transaction Found',
-          description: `It appears no payment has been sent to the provided wallet.\n\nWould you like to continue? If you are having issues, please type <strong>/ping</strong> to alert staff.`,
-          color: 'orange',
-          requiresAction: true,
-          actionType: 'transaction-timeout'
-        },
-        timestamp: new Date()
-      });
-
-      await ticket.save();
-      console.log(`?? Timeout prompt added to ticket ${ticket.ticketId}\n`);
-      return true;
-    }
-
-    return false;
-  }
-
-  const timeoutMinutes = 20;
-  ticket.transactionTimeoutAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
-  await ticket.save();
-  console.log(`   ? Timeout set for ${timeoutMinutes} minutes`);
+  // Ticket transaction timeout is intentionally disabled: tickets may stay
+  // awaiting payment for weeks/months while warranty conditions are met.
+  // Cancellation is initiated by the user or an admin, never by a timer.
   return false;
 };
 
@@ -820,30 +796,10 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // This check determines whether 10-minute timeout has been reached (no transaction detected yet)
-    if (order.timeoutDetails?.timeoutAt && !order.transactionHash && !order.timeoutDetails.timedOut) {
-      const timeoutDate = new Date(order.timeoutDetails.timeoutAt);
-      
-      if (now >= timeoutDate) {
-        console.log(`Timeout reached for ${network.symbol} pass order ${orderId} - No transaction detected`);
-        order.timeoutDetails.timedOut = true;
-        order.status = 'timedout';
-        order.timeoutDetails.paymentNotes = 'No transaction detected within 10-minute window.';
-        await order.save();
-        return;
-      }
-    }
-
-    // This check determines whether order has expired (30 minutes total)
-    if (now > order.expiresAt && order.status === 'pending') {
-      console.log(`${network.symbol} pass order ${orderId} expired without payment (30 min expiry)`);
-      order.status = 'expired';
-      await order.save();
-      return;
-    }
-    
-    // This guard stops monitoring if already timed out
-    if (order.status === 'timedout') {
+    // Pass-order timeouts (10-min "no detection" + 30-min "expired") are
+    // intentionally disabled. Orders live until they are paid, cancelled by
+    // the user, or refunded by an admin.
+    if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'returned') {
       return;
     }
 
@@ -1284,32 +1240,8 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // This check determines whether 10-minute timeout has been reached (no transaction detected yet)
-    if (order.timeoutDetails?.timeoutAt && !order.transactionHash && !order.timeoutDetails.timedOut) {
-      const timeoutDate = new Date(order.timeoutDetails.timeoutAt);
-      
-      if (now >= timeoutDate) {
-        console.log(`⏰ 10-minute timeout reached for Ethereum pass order ${orderId} - No transaction detected`);
-        order.timeoutDetails.timedOut = true;
-        order.status = 'timedout';
-        order.timeoutDetails.paymentNotes = 'No transaction detected within 10-minute window.';
-        await order.save();
-        
-        console.log(`⏱️  Order ${orderId} marked as timedout`);
-        return;
-      }
-    }
-
-    // This check determines whether order has expired (30 minutes total)
-    if (now > order.expiresAt && order.status === 'pending') {
-      console.log(`⏰ Ethereum pass order ${orderId} expired without payment (30 min expiry)`);
-      order.status = 'expired';
-      await order.save();
-      return;
-    }
-    
-    // This guard stops monitoring if already timed out
-    if (order.status === 'timedout') {
+    // Pass-order timeouts disabled — orders live until paid, cancelled, or refunded.
+    if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'returned') {
       return;
     }
 
@@ -1666,6 +1598,11 @@ export const startTransactionMonitoring = (io) => {
   console.log(`   Bitcoin: ${getUtxoNetworkMode('bitcoin').toUpperCase()} (default)`);
   console.log(`   Litecoin: ${getUtxoNetworkMode('litecoin').toUpperCase()} (default)`);
   console.log(`   Ethereum: ${ETH_NETWORK_MODE.toUpperCase()} (default ${ETH_RPC_CONFIG[ETH_NETWORK_MODE].name})`);
+  const solStatus = getSolanaMonitorStatus();
+  console.log(`   Solana:   ${solStatus.network.toUpperCase()} via ${solStatus.rpc}`);
+  console.log(`     SPL mints: USDT=${solStatus.splMintsConfigured['usdt-spl'] ? 'set' : 'NOT SET'} USDC=${solStatus.splMintsConfigured['usdc-spl'] ? 'set' : 'NOT SET'}`);
+  const erc20Status = getErc20MonitorStatus();
+  console.log(`   ERC-20:   ${erc20Status.network.toUpperCase()} USDT=${erc20Status.contracts['usdt-erc20'] || 'NOT SET'} USDC=${erc20Status.contracts['usdc-erc20'] || 'NOT SET'}`);
   console.log('   Monitoring interval: Every 3 seconds\n');
   
   // This runs every 3 seconds for faster confirmation updates.
@@ -1678,7 +1615,7 @@ export const startTransactionMonitoring = (io) => {
           awaitingTransaction: true,
           transactionConfirmed: false,
           botWalletAddress: { $ne: null }
-        }).select('ticketId botWalletAddress expectedAmount transactionHash confirmationCount transactionNetworkMode');
+        }).select('ticketId botWalletAddress depositAddress depositChain depositToken cryptocurrency expectedAmount expectedCryptoAmount transactionHash confirmationCount transactionNetworkMode');
       }
 
       const now = new Date();
@@ -1706,19 +1643,44 @@ export const startTransactionMonitoring = (io) => {
         cryptocurrency: 'ethereum',
         $or: [
           { status: 'confirmed' },
-          { status: { $in: ['pending', 'awaiting-staff'] }, expiresAt: { $gt: now } }
+          { status: { $in: ['pending', 'awaiting-staff'] } }
         ]
       }).select('orderId paymentAddress cryptoAmount priceUSD status timeoutDetails');
 
-      const totalMonitoring = awaitingTickets.length + pendingLTCOrders.length + pendingBTCOrders.length + pendingETHOrders.length;
+      // Solana family — native SOL + SPL stablecoins. Address-matched per order.
+      const pendingSolanaOrders = await PassOrder.find({
+        cryptocurrency: { $in: ['solana', 'usdt-spl', 'usdc-spl'] },
+        status: { $in: ['pending', 'confirmed', 'awaiting-staff'] }
+      }).select('orderId paymentAddress cryptocurrency cryptoAmount status');
+
+      // ERC-20 stablecoins (USDT, USDC) on Ethereum. Detected via Transfer events
+      // — the native ETH monitor only sees `tx.to === address` payments, so
+      // ERC-20 transfers (which target the token contract) need this separate scan.
+      const pendingErc20Orders = await PassOrder.find({
+        cryptocurrency: { $in: ['usdt-erc20', 'usdc-erc20'] },
+        status: { $in: ['pending', 'confirmed', 'awaiting-staff'] }
+      }).select('orderId paymentAddress cryptocurrency cryptoAmount status');
+
+      const solanaAwaitingTickets = ticketsPaused ? [] : awaitingTickets.filter(
+        (ticket) => ticket.depositChain === 'solana'
+      );
+
+      const totalMonitoring = awaitingTickets.length + pendingLTCOrders.length + pendingBTCOrders.length + pendingETHOrders.length + pendingSolanaOrders.length + pendingErc20Orders.length;
 
       if (totalMonitoring > 0) {
         const ticketLabel = ticketsPaused ? '0 (paused)' : awaitingTickets.length;
-        console.log(`Checking ${ticketLabel} ticket(s), ${pendingLTCOrders.length} LTC order(s), ${pendingBTCOrders.length} BTC order(s), ${pendingETHOrders.length} ETH order(s)...`);
+        console.log(`Checking ${ticketLabel} ticket(s), ${pendingLTCOrders.length} LTC, ${pendingBTCOrders.length} BTC, ${pendingETHOrders.length} ETH, ${pendingSolanaOrders.length} SOL/SPL, ${pendingErc20Orders.length} ERC-20 order(s)...`);
 
         if (!ticketsPaused) {
           for (const ticket of awaitingTickets) {
-            await monitorTicketTransaction(ticket.ticketId);
+            const cur = String(ticket.cryptocurrency || '').toLowerCase();
+            if (ticket.depositChain === 'solana') {
+              await monitorSolanaTicket(ticket.ticketId);
+            } else if (cur === 'usdt-erc20' || cur === 'usdc-erc20') {
+              await monitorErc20Ticket(ticket.ticketId);
+            } else {
+              await monitorTicketTransaction(ticket.ticketId);
+            }
           }
         }
 
@@ -1732,6 +1694,14 @@ export const startTransactionMonitoring = (io) => {
 
         for (const order of pendingETHOrders) {
           await monitorEthPassOrder(order.orderId, io);
+        }
+
+        for (const order of pendingSolanaOrders) {
+          await monitorSolanaPassOrder(order.orderId, io);
+        }
+
+        for (const order of pendingErc20Orders) {
+          await monitorErc20PassOrder(order.orderId, io);
         }
       }
     } catch (error) {
