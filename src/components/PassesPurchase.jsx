@@ -696,21 +696,21 @@ const PassesPurchase = () => {
         <div className="flex items-center justify-center gap-4 mb-12">
           <div className={`flex items-center gap-2 ${step === 'select' ? 'text-[#10B981]' : step !== 'select' ? 'text-n-4' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'select' ? 'bg-[#10B981] text-white' : step !== 'select' && step !== 'payment' && step !== 'processing' && step !== 'complete' ? 'bg-n-7 text-n-3' : 'bg-[#10B981] text-white'}`}>
-              {step !== 'select' ? 'v' : '1'}
+              1
             </div>
             <span className="font-semibold">Select Pass</span>
           </div>
           <div className="h-0.5 w-12 bg-n-6"></div>
           <div className={`flex items-center gap-2 ${step === 'payment' ? 'text-[#10B981]' : step === 'processing' || step === 'complete' ? 'text-n-4' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'payment' ? 'bg-[#10B981] text-white' : step === 'processing' || step === 'complete' ? 'bg-[#10B981] text-white' : 'bg-n-7 text-n-3'}`}>
-              {step === 'processing' || step === 'complete' ? 'v' : '2'}
+              2
             </div>
             <span className="font-semibold">Payment</span>
           </div>
           <div className="h-0.5 w-12 bg-n-6"></div>
           <div className={`flex items-center gap-2 ${step === 'complete' ? 'text-[#10B981]' : 'text-n-3'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${step === 'complete' ? 'bg-[#10B981] text-white' : 'bg-n-7 text-n-3'}`}>
-              {step === 'complete' ? 'v' : '3'}
+              3
             </div>
             <span className="font-semibold">Complete</span>
           </div>

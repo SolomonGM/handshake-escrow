@@ -148,8 +148,32 @@ const tradeTicketSchema = new mongoose.Schema({
     default: false
   },
   botWalletAddress: {
+    // Kept for backward compatibility with the legacy monitor. New tickets
+    // populate this with the unique depositAddress derived for this ticket.
     type: String,
     default: null
+  },
+  depositAddress: {
+    // Unique per-ticket address derived from the chain's xpub at depositIndex.
+    // This is what the new address-matching monitor scans.
+    type: String,
+    default: null,
+    index: true
+  },
+  depositChain: {
+    type: String,
+    enum: ['bitcoin', 'litecoin', 'ethereum', 'solana', null],
+    default: null
+  },
+  depositToken: {
+    type: String,
+    enum: ['native', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl', null],
+    default: null
+  },
+  depositIndex: {
+    type: Number,
+    default: null,
+    min: 0
   },
   transactionNetworkMode: {
     type: String,
@@ -297,7 +321,7 @@ const tradeTicketSchema = new mongoose.Schema({
   cryptocurrency: {
     type: String,
     required: true,
-    enum: ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20']
+    enum: ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl']
   },
   status: {
     type: String,

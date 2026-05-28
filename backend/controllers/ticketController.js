@@ -17,11 +17,12 @@ import {
   getTicketPauseMetadata
 } from '../services/runtimeConfigService.js';
 import { isStaffUser } from '../utils/staffUtils.js';
+import { allocateDepositAddress } from '../services/hdWalletService.js';
 
 const ACTIVE_TICKET_LIMIT = 12;
 const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
 const UNAVAILABLE_TICKET_CLOSE_SECONDS = 120;
-const SUPPORTED_TICKET_COINS = ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20'];
+const SUPPORTED_TICKET_COINS = ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
 
 const buildUnavailableTicketResponse = (coin, runtimeConfig, message = null) => {
   const now = Date.now();
@@ -461,15 +462,23 @@ export const createTicket = async (req, res) => {
       return res.status(409).json(buildUnavailableTicketResponse(cryptocurrency, runtimeConfig));
     }
 
-    const { wallet: botWallet } = getBotWalletForCoin(cryptocurrency, runtimeConfig);
-    if (!botWallet) {
-      return res.status(409).json(
-        buildUnavailableTicketResponse(
-          cryptocurrency,
-          runtimeConfig,
-          `${cryptocurrency.toUpperCase()} ticket creation is disabled until wallet configuration is complete.`
-        )
-      );
+    // Derive a unique deposit address for this ticket from the chain xpub.
+    // This is what guarantees no two tickets can collide on the same address —
+    // the source of the "wrong user got the confirmation" bug.
+    let depositAllocation;
+    try {
+      depositAllocation = await allocateDepositAddress(cryptocurrency);
+    } catch (allocationError) {
+      console.error('HD address allocation failed:', allocationError);
+      const isConfigMissing = allocationError.code === 'HD_CONFIG_MISSING';
+      return res.status(isConfigMissing ? 503 : 500).json({
+        success: false,
+        code: isConfigMissing ? 'DEPOSIT_WALLET_NOT_CONFIGURED' : 'DEPOSIT_ALLOCATION_FAILED',
+        message: isConfigMissing
+          ? `${cryptocurrency.toUpperCase()} deposit wallet is not configured. Contact an administrator.`
+          : 'Failed to allocate a deposit address. Please try again.',
+        envKey: allocationError.envKey || null
+      });
     }
 
     const ticketId = `#${Math.floor(Math.random() * 9000000) + 1000000}`;
@@ -505,7 +514,16 @@ export const createTicket = async (req, res) => {
       creator: userId,
       cryptocurrency,
       messages: initialMessages,
-      status: 'open'
+      status: 'open',
+      depositAddress: depositAllocation.address,
+      depositChain: depositAllocation.chain,
+      depositToken: depositAllocation.token,
+      depositIndex: depositAllocation.derivationIndex,
+      // Mirror the unique deposit address into the legacy field so the existing
+      // address-scoped monitor scans per-ticket — fixing the multi-ticket
+      // same-amount collision bug for free.
+      botWalletAddress: depositAllocation.address,
+      transactionNetworkMode: depositAllocation.networkMode === 'devnet' ? 'testnet' : depositAllocation.networkMode
     });
 
     await ticket.populate('creator', 'username userId avatar');

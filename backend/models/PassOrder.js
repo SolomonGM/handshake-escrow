@@ -30,7 +30,22 @@ const passOrderSchema = new mongoose.Schema({
   cryptocurrency: {
     type: String,
     required: true,
-    enum: ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20']
+    enum: ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl']
+  },
+  depositChain: {
+    type: String,
+    enum: ['bitcoin', 'litecoin', 'ethereum', 'solana', null],
+    default: null
+  },
+  depositToken: {
+    type: String,
+    enum: ['native', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl', null],
+    default: null
+  },
+  depositIndex: {
+    type: Number,
+    default: null,
+    min: 0
   },
   networkMode: {
     type: String,

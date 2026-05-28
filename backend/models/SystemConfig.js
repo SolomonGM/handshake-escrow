@@ -91,6 +91,14 @@ const systemConfigSchema = new mongoose.Schema(
       'usdc-erc20': {
         type: Boolean,
         default: false
+      },
+      'usdt-spl': {
+        type: Boolean,
+        default: false
+      },
+      'usdc-spl': {
+        type: Boolean,
+        default: false
       }
     },
     updatedBy: {

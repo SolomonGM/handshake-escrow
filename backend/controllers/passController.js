@@ -9,6 +9,7 @@ import {
   getTicketAvailabilityForCoin,
   getUtxoRuntimeNetwork
 } from '../services/runtimeConfigService.js';
+import { allocateDepositAddress } from '../services/hdWalletService.js';
 
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
@@ -27,7 +28,9 @@ const CRYPTO_PRICES = {
   'litecoin': 75,
   'solana': 100,
   'usdt-erc20': 1,
-  'usdc-erc20': 1
+  'usdc-erc20': 1,
+  'usdt-spl': 1,
+  'usdc-spl': 1
 };
 
 const UTXO_CRYPTOS = new Set(['litecoin', 'bitcoin']);
@@ -37,7 +40,9 @@ const SUPPORTED_CRYPTOS = new Set([
   'ethereum',
   'solana',
   'usdt-erc20',
-  'usdc-erc20'
+  'usdc-erc20',
+  'usdt-spl',
+  'usdc-spl'
 ]);
 
 const resolvePassPaymentAvailability = (runtimeConfig) => {
@@ -81,64 +86,25 @@ const resolvePassPaymentAvailability = (runtimeConfig) => {
  * For Ethereum: Uses the master wallet directly since Ethereum transactions
  * can be tracked by unique order amounts and transaction history.
  */
-const generateUniquePaymentAddress = async (cryptocurrency, orderId, runtimeConfig) => {
-  try {
-    // For Litecoin and Bitcoin, use BlockCypher's address generation
-    if (cryptocurrency === 'litecoin' || cryptocurrency === 'bitcoin') {
-      if (!BLOCKCYPHER_TOKEN) {
-        throw new Error('BLOCKCYPHER_TOKEN is required for UTXO address generation');
-      }
-      const network = getUtxoRuntimeNetwork(cryptocurrency, runtimeConfig)?.config;
-      if (!network) {
-        throw new Error(`Unsupported UTXO network: ${cryptocurrency}`);
-      }
-
-      const response = await axios.post(
-        `${network.apiBase}/addrs?token=${BLOCKCYPHER_TOKEN}`
-      );
-      
-      console.log(`Generated unique address for order ${orderId}: ${response.data.address}`);
-      
-      return {
-        address: response.data.address,
-        private: response.data.private, // Store securely!
-        public: response.data.public,
-        wif: response.data.wif // Wallet Import Format
-      };
-    }
-    
-    // For Ethereum, Solana, and ERC-20 tokens:
-    // Uses master wallet directly. Each order is identified by:
-    // 1. Unique expected amount (down to 8 decimal places)
-    // 2. Transaction timestamp
-    // 3. User's sending address
-    // This allows multiple simultaneous orders to be tracked properly
-    const fallbackAddress = getBotWalletForCoin(cryptocurrency, runtimeConfig).wallet;
-    console.log(`Using runtime wallet for ${cryptocurrency} order ${orderId}: ${fallbackAddress}`);
-    if (!fallbackAddress) {
-      throw new Error(`Master wallet not configured for ${cryptocurrency}`);
-    }
-
-    return {
-      address: fallbackAddress,
-      private: null,
-      public: null,
-      wif: null
-    };
-  } catch (error) {
-    console.error('Error generating unique address:', error.message);
-    // Fallback to master wallet if generation fails
-    const fallbackAddress = getBotWalletForCoin(cryptocurrency, runtimeConfig).wallet;
-    if (!fallbackAddress) {
-      throw new Error(`Master wallet not configured for ${cryptocurrency}`);
-    }
-    return {
-      address: fallbackAddress,
-      private: null,
-      public: null,
-      wif: null
-    };
-  }
+const generateUniquePaymentAddress = async (cryptocurrency, orderId) => {
+  // Single source of truth for deposit addresses: derive a fresh address
+  // from the chain's xpub at a unique index. No more BlockCypher per-order
+  // calls, no more master-wallet collisions on ETH/SOL.
+  const allocation = await allocateDepositAddress(cryptocurrency);
+  console.log(
+    `[pass] order=${orderId} chain=${allocation.chain} token=${allocation.token} ` +
+    `idx=${allocation.derivationIndex} address=${allocation.address}`
+  );
+  return {
+    address: allocation.address,
+    chain: allocation.chain,
+    token: allocation.token,
+    derivationIndex: allocation.derivationIndex,
+    networkMode: allocation.networkMode,
+    private: null,
+    public: null,
+    wif: null
+  };
 };
 
 // Generates unique order ID
@@ -241,15 +207,28 @@ export const createPassOrder = async (req, res) => {
 
     // Generates unique payment address for this order
     const orderId = generateOrderId();
-    const paymentAddressData = await generateUniquePaymentAddress(cryptocurrency, orderId, runtimeConfig);
-    
-    // Sets expiration time (30 minutes for payment)
+    let paymentAddressData;
+    try {
+      paymentAddressData = await generateUniquePaymentAddress(cryptocurrency, orderId);
+    } catch (allocationError) {
+      console.error('HD pass address allocation failed:', allocationError);
+      const isConfigMissing = allocationError.code === 'HD_CONFIG_MISSING';
+      return res.status(isConfigMissing ? 503 : 500).json({
+        success: false,
+        code: isConfigMissing ? 'DEPOSIT_WALLET_NOT_CONFIGURED' : 'DEPOSIT_ALLOCATION_FAILED',
+        message: isConfigMissing
+          ? `${cryptocurrency.toUpperCase()} deposit wallet is not configured. Contact an administrator.`
+          : 'Failed to allocate a deposit address. Please try again.',
+        envKey: allocationError.envKey || null
+      });
+    }
+
+    // Long-lived pass purchases: keep an explicit `expiresAt` because the
+    // existing controllers/UI rely on the field, but set it far enough into
+    // the future (~10 years) that it never fires in practice. A separate cron
+    // we'll add later can sweep truly abandoned orders manually.
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 30);
-    
-    // Sets 10-minute timeout for initial detection
-    const timeoutAt = new Date();
-    timeoutAt.setMinutes(timeoutAt.getMinutes() + 10);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 10);
 
     const order = new PassOrder({
       orderId,
@@ -259,15 +238,13 @@ export const createPassOrder = async (req, res) => {
       passCount: passConfig.count,
       priceUSD,
       cryptocurrency,
-      networkMode: coinNetworkMode,
+      networkMode: paymentAddressData.networkMode === 'devnet' ? 'testnet' : (paymentAddressData.networkMode || coinNetworkMode),
       cryptoAmount: parseFloat(cryptoAmount),
       paymentAddress: paymentAddressData.address,
+      depositChain: paymentAddressData.chain,
+      depositToken: paymentAddressData.token,
+      depositIndex: paymentAddressData.derivationIndex,
       expiresAt,
-      timeoutDetails: {
-        timeoutAt,
-        timedOut: false,
-        staffContactRequested: false
-      },
       transactionDetails: {
         expectedAmount: parseFloat(cryptoAmount)
       }
