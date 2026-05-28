@@ -323,6 +323,11 @@ export const adminAPI = {
     const response = await api.put('/admin/runtime-config', { networkModes, wallets, ticketAvailability });
     return response.data;
   },
+
+  getWalletInfrastructure: async () => {
+    const response = await api.get('/admin/wallet-infrastructure');
+    return response.data;
+  },
 };
 
 // Passes API calls

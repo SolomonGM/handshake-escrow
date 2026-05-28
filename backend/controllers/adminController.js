@@ -15,6 +15,12 @@ import {
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 import { getIo } from '../utils/socketRegistry.js';
+import { selfTest as hdSelfTest, SUPPORTED_DEPOSIT_TOKENS } from '../services/hdWalletService.js';
+import { getSolanaMonitorStatus } from '../services/solanaMonitor.js';
+import { getErc20MonitorStatus } from '../services/erc20Monitor.js';
+import HdAddressCounter from '../models/HdAddressCounter.js';
+import TradeTicketModel from '../models/TradeTicket.js';
+import PassOrder from '../models/PassOrder.js';
 
 const MAX_RECENT_PAGES = 10;
 
@@ -1103,5 +1109,105 @@ export const updateRuntimeConfiguration = async (req, res) => {
     res.status(statusCode).json({
       message: error?.message || 'Server error'
     });
+  }
+};
+
+// @desc    Returns a snapshot of payment infrastructure: HD wallet config status
+//          per chain, next derivation index, sample address-at-index-0 so the
+//          admin can sanity-check derivation matches the offline-stored seed,
+//          ERC-20 contract addresses, Solana RPC + SPL mints, and live counts
+//          of in-flight tickets/orders per chain.
+// @route   GET /api/admin/wallet-infrastructure
+// @access  Private (developer)
+export const getWalletInfrastructure = async (req, res) => {
+  try {
+    if (!isStaffUser(req.user)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const hdResults = hdSelfTest();
+    const counters = await HdAddressCounter.find({}).select('chain nextIndex updatedAt').lean();
+    const counterByChain = counters.reduce((acc, c) => {
+      acc[c.chain] = { nextIndex: c.nextIndex, updatedAt: c.updatedAt };
+      return acc;
+    }, {});
+
+    const solStatus = getSolanaMonitorStatus();
+    const erc20Status = getErc20MonitorStatus();
+
+    // Live in-flight counts per chain/currency
+    const [ticketCounts, orderCounts] = await Promise.all([
+      TradeTicketModel.aggregate([
+        { $match: { status: { $in: ['open', 'in-progress'] } } },
+        { $group: { _id: { chain: '$depositChain', currency: '$cryptocurrency' }, count: { $sum: 1 } } }
+      ]),
+      PassOrder.aggregate([
+        { $match: { status: { $in: ['pending', 'confirmed', 'awaiting-staff'] } } },
+        { $group: { _id: { chain: '$depositChain', currency: '$cryptocurrency' }, count: { $sum: 1 } } }
+      ])
+    ]);
+
+    const sumByChain = (rows) => rows.reduce((acc, row) => {
+      const chain = row._id?.chain || 'unknown';
+      acc[chain] = (acc[chain] || 0) + row.count;
+      return acc;
+    }, {});
+
+    const sumByCurrency = (rows) => rows.reduce((acc, row) => {
+      const currency = row._id?.currency || 'unknown';
+      acc[currency] = (acc[currency] || 0) + row.count;
+      return acc;
+    }, {});
+
+    const chains = ['bitcoin', 'litecoin', 'ethereum', 'solana'];
+    const chainStatus = chains.map((chain) => {
+      const hd = hdResults[chain] || { ok: false, error: 'unknown' };
+      const counter = counterByChain[chain] || { nextIndex: 0, updatedAt: null };
+      return {
+        chain,
+        configured: Boolean(hd.ok),
+        configError: hd.ok ? null : (hd.error || 'Missing env'),
+        envKey: hd.ok ? null : (hd.code === 'HD_CONFIG_MISSING' ? hd.envKey || null : null),
+        sampleAddressAtIndex0: hd.ok ? hd.addressAtIndex0 : null,
+        nextDerivationIndex: counter.nextIndex,
+        derivationLastUpdated: counter.updatedAt,
+        activeTickets: sumByChain(ticketCounts)[chain] || 0,
+        activeOrders: sumByChain(orderCounts)[chain] || 0,
+        networkMode: chain === 'solana'
+          ? solStatus.network
+          : (chain === 'ethereum'
+              ? erc20Status.network
+              : (chain === 'bitcoin'
+                  ? (String(process.env.HD_BTC_NETWORK || 'testnet').toLowerCase() === 'mainnet' ? 'mainnet' : 'testnet')
+                  : (String(process.env.HD_LTC_NETWORK || 'testnet').toLowerCase() === 'mainnet' ? 'mainnet' : 'testnet')))
+      };
+    });
+
+    // Currency-level breakdown (split native vs stablecoin tokens)
+    const allCurrencies = Object.keys(SUPPORTED_DEPOSIT_TOKENS);
+    const ticketsByCurrency = sumByCurrency(ticketCounts);
+    const ordersByCurrency = sumByCurrency(orderCounts);
+    const currencyStatus = allCurrencies.map((currency) => {
+      const meta = SUPPORTED_DEPOSIT_TOKENS[currency];
+      return {
+        currency,
+        chain: meta.chain,
+        token: meta.token,
+        chainConfigured: Boolean(hdResults[meta.chain]?.ok),
+        activeTickets: ticketsByCurrency[currency] || 0,
+        activeOrders: ordersByCurrency[currency] || 0
+      };
+    });
+
+    res.json({
+      chains: chainStatus,
+      currencies: currencyStatus,
+      solana: solStatus,
+      ethereum: erc20Status,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get wallet infrastructure error:', error);
+    res.status(500).json({ message: 'Failed to load wallet infrastructure' });
   }
 };

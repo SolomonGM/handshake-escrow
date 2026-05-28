@@ -18,7 +18,8 @@ import {
   getRuntimeConfiguration,
   pauseTicketWorkflow,
   resumeTicketWorkflow,
-  updateRuntimeConfiguration
+  updateRuntimeConfiguration,
+  getWalletInfrastructure
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -44,5 +45,6 @@ router.get('/runtime-config', protect, getRuntimeConfiguration);
 router.post('/runtime-config/pause', protect, pauseTicketWorkflow);
 router.post('/runtime-config/resume', protect, resumeTicketWorkflow);
 router.put('/runtime-config', protect, updateRuntimeConfiguration);
+router.get('/wallet-infrastructure', protect, getWalletInfrastructure);
 
 export default router;
