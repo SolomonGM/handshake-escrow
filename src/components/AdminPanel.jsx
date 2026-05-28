@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
 import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
+import { cryptoLogos } from '../assets/currencies';
 
 const AdminPanel = () => {
   const [users, setUsers] = useState([]);
@@ -889,289 +890,286 @@ const AdminPanel = () => {
       )}
 
       {/* Payment Infrastructure Section */}
-      <div className="mb-10 rounded-2xl border border-n-5 bg-gradient-to-br from-n-6 via-n-7/95 to-n-8/95 p-5 sm:p-6 shadow-[0_16px_44px_-32px_rgba(16,185,129,0.45)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#10B981]/15 border border-[#10B981]/30">
-                <svg className="h-5 w-5 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
-                </svg>
-              </span>
-              <h3 className="h4 text-n-1">Payment Infrastructure</h3>
-            </div>
-            <p className="mt-2 text-sm text-n-4">
-              HD-derived deposit addresses for all 8 supported currencies. Per-ticket addresses guarantee no two deposits can collide.
-              Network modes and the master xpubs/mnemonics live in <code className="rounded bg-n-7 px-1.5 py-0.5 text-[11px] text-n-2">.env</code>.
+      <div className="mb-10 rounded-lg border border-n-5 bg-n-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-n-5 px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-n-1">Payment Infrastructure</h3>
+            <p className="mt-0.5 text-xs text-n-4">
+              HD-derived deposit addresses across 4 chains and 8 currencies.
             </p>
-            {runtimeConfig?.pauseChangedAt && (
-              <p className="mt-2 text-xs text-n-4">
-                Last workflow change: {new Date(runtimeConfig.pauseChangedAt).toLocaleString()}
-              </p>
-            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <span
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+              className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs ${
                 runtimeConfig?.ticketWorkflowPaused
-                  ? 'border-amber-400/35 bg-amber-500/20 text-amber-200'
-                  : 'border-emerald-400/35 bg-emerald-500/20 text-emerald-200'
+                  ? 'border-n-4 bg-n-7 text-n-2'
+                  : 'border-[#10B981]/30 bg-[#10B981]/10 text-[#10B981]'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${runtimeConfig?.ticketWorkflowPaused ? 'bg-amber-300 animate-pulse' : 'bg-emerald-300'}`} />
-              {runtimeConfig?.ticketWorkflowPaused ? 'Workflow Paused' : 'Workflow Active'}
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                runtimeConfig?.ticketWorkflowPaused ? 'bg-n-3' : 'bg-[#10B981]'
+              }`} />
+              {runtimeConfig?.ticketWorkflowPaused ? 'Paused' : 'Active'}
             </span>
             {runtimeConfig?.ticketWorkflowPaused ? (
               <button
                 onClick={handleResumeTicketWorkflow}
                 disabled={runtimeWorkflowBusy}
-                className="rounded-lg border border-emerald-400/35 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-n-5 bg-n-7 px-3 py-1.5 text-xs font-medium text-n-1 transition-colors hover:bg-n-5 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {runtimeWorkflowBusy ? 'Resuming...' : 'Resume Workflow'}
+                {runtimeWorkflowBusy ? 'Resuming...' : 'Resume'}
               </button>
             ) : (
               <button
                 onClick={handlePauseTicketWorkflow}
                 disabled={runtimeWorkflowBusy}
-                className="rounded-lg border border-amber-400/35 bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-n-5 bg-n-7 px-3 py-1.5 text-xs font-medium text-n-1 transition-colors hover:bg-n-5 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {runtimeWorkflowBusy ? 'Pausing...' : 'Pause Workflow'}
+                {runtimeWorkflowBusy ? 'Pausing...' : 'Pause'}
               </button>
             )}
             <button
               onClick={() => { loadRuntimeConfig(); loadWalletInfrastructure(); }}
               disabled={runtimeLoading || walletInfrastructureLoading}
-              className="rounded-lg border border-n-5 bg-n-7 px-3 py-2 text-xs font-semibold text-n-2 transition-colors hover:bg-n-6 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-n-5 bg-n-7 px-3 py-1.5 text-xs font-medium text-n-2 transition-colors hover:bg-n-5 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Reload"
             >
-              {(runtimeLoading || walletInfrastructureLoading) ? 'Loading...' : 'Reload'}
+              <svg className={`h-3.5 w-3.5 ${(runtimeLoading || walletInfrastructureLoading) ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             </button>
           </div>
         </div>
 
         {(runtimeLoading || walletInfrastructureLoading) && !walletInfrastructure ? (
-          <div className="mt-5 rounded-xl border border-n-5 bg-n-7/70 px-4 py-3 text-sm text-n-3">
-            Loading payment infrastructure...
-          </div>
+          <div className="px-5 py-8 text-center text-sm text-n-4">Loading payment infrastructure...</div>
         ) : (
-          <>
-            {/* HD Wallet Status — per chain */}
-            <div className="mt-5 rounded-xl border border-n-5 bg-n-7/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-n-4">HD Wallet Status</p>
-                  <p className="mt-1 text-xs text-n-4">Per-chain xpub/mnemonic configured in env. Index = next deposit address slot.</p>
-                </div>
-                <span className="rounded-full border border-n-5 bg-n-8 px-2.5 py-0.5 text-[10px] font-semibold text-n-3">
-                  {walletInfrastructure?.generatedAt
-                    ? `Last refresh: ${new Date(walletInfrastructure.generatedAt).toLocaleTimeString()}`
-                    : 'No data'}
-                </span>
+          <div className="p-5 space-y-5">
+
+            {/* ── HD Wallet Chain Status ── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-n-3">Chains</h4>
+                {walletInfrastructure?.generatedAt && (
+                  <span className="text-[10px] text-n-4">
+                    Updated {new Date(walletInfrastructure.generatedAt).toLocaleTimeString()}
+                  </span>
+                )}
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {(walletInfrastructure?.chains || []).map((chain) => {
                   const isRevealed = revealedAddressChain === chain.chain;
-                  const chainLabelMap = { bitcoin: 'Bitcoin', litecoin: 'Litecoin', ethereum: 'Ethereum', solana: 'Solana' };
-                  const codeMap = { bitcoin: 'BTC', litecoin: 'LTC', ethereum: 'ETH', solana: 'SOL' };
-                  const symbolBg = {
-                    bitcoin: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
-                    litecoin: 'bg-slate-400/10 text-slate-300 border-slate-400/30',
-                    ethereum: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
-                    solana: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30'
-                  };
+                  const chainLabel = { bitcoin: 'Bitcoin', litecoin: 'Litecoin', ethereum: 'Ethereum', solana: 'Solana' }[chain.chain];
+                  const logo = cryptoLogos[chain.chain];
                   return (
                     <div
                       key={chain.chain}
-                      className={`rounded-xl border bg-n-8/90 p-4 transition-all ${
-                        chain.configured ? 'border-n-5' : 'border-red-500/40 bg-red-500/5'
-                      }`}
+                      className="rounded-md border border-n-5 bg-n-7 p-3"
                     >
+                      {/* Header row: logo + name + status dot */}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-[10px] font-bold ${symbolBg[chain.chain] || ''}`}>
-                            {codeMap[chain.chain]}
-                          </span>
-                          <span className="text-sm font-semibold text-n-1">{chainLabelMap[chain.chain]}</span>
-                        </div>
-                        {chain.configured ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> OK
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-300 animate-pulse" /> Missing
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-code uppercase tracking-wider text-n-4">Network</span>
-                          <span className="text-xs font-semibold text-n-2 capitalize">{chain.networkMode}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-code uppercase tracking-wider text-n-4">Next index</span>
-                          <span className="text-xs font-semibold text-n-1 font-mono">#{chain.nextDerivationIndex}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-code uppercase tracking-wider text-n-4">Active tickets</span>
-                          <span className="text-xs font-semibold text-n-2">{chain.activeTickets}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-code uppercase tracking-wider text-n-4">Active orders</span>
-                          <span className="text-xs font-semibold text-n-2">{chain.activeOrders}</span>
-                        </div>
-                      </div>
-
-                      {chain.configured ? (
-                        <div className="mt-3 rounded-lg border border-n-6 bg-n-7/60 p-2">
-                          <p className="text-[10px] font-code uppercase tracking-wider text-n-4 mb-1">Sample address (index 0)</p>
-                          <div className="flex items-center gap-1">
-                            <code className="flex-1 truncate text-[10px] text-n-2 font-mono">
-                              {isRevealed ? chain.sampleAddressAtIndex0 : `${chain.sampleAddressAtIndex0?.slice(0, 8)}…${chain.sampleAddressAtIndex0?.slice(-6)}`}
-                            </code>
-                            <button
-                              type="button"
-                              onClick={() => setRevealedAddressChain(isRevealed ? null : chain.chain)}
-                              className="rounded border border-n-5 bg-n-8 px-1.5 py-0.5 text-[9px] font-semibold text-n-3 transition-colors hover:bg-n-6 hover:text-n-1"
-                              title={isRevealed ? 'Hide' : 'Reveal'}
-                            >
-                              {isRevealed ? 'Hide' : 'Show'}
-                            </button>
-                            {isRevealed && (
-                              <button
-                                type="button"
-                                onClick={() => { navigator.clipboard?.writeText(chain.sampleAddressAtIndex0 || ''); }}
-                                className="rounded border border-n-5 bg-n-8 px-1.5 py-0.5 text-[9px] font-semibold text-n-3 transition-colors hover:bg-n-6 hover:text-n-1"
-                                title="Copy"
-                              >
-                                Copy
-                              </button>
-                            )}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img src={logo} alt={chainLabel} className="h-6 w-6 flex-shrink-0 rounded-full" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-n-1 truncate">{chainLabel}</p>
+                            <p className="text-[10px] text-n-4 capitalize">{chain.networkMode}</p>
                           </div>
                         </div>
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            chain.configured ? 'bg-[#10B981]' : 'bg-n-3'
+                          }`}
+                          title={chain.configured ? 'Configured' : 'Not configured'}
+                        />
+                      </div>
+
+                      {/* Stats row */}
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-n-4">Index</p>
+                          <p className="mt-0.5 text-xs font-semibold text-n-1 font-mono">#{chain.nextDerivationIndex}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-n-4">Tickets</p>
+                          <p className="mt-0.5 text-xs font-semibold text-n-1">{chain.activeTickets}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-n-4">Orders</p>
+                          <p className="mt-0.5 text-xs font-semibold text-n-1">{chain.activeOrders}</p>
+                        </div>
+                      </div>
+
+                      {/* Address row */}
+                      {chain.configured ? (
+                        <div className="mt-3 flex items-center gap-1 rounded border border-n-5 bg-n-6 px-2 py-1.5">
+                          <code className="flex-1 truncate text-[10px] font-mono text-n-2">
+                            {isRevealed
+                              ? chain.sampleAddressAtIndex0
+                              : `${chain.sampleAddressAtIndex0?.slice(0, 8)}…${chain.sampleAddressAtIndex0?.slice(-6)}`}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => setRevealedAddressChain(isRevealed ? null : chain.chain)}
+                            className="text-n-4 transition-colors hover:text-n-1"
+                            title={isRevealed ? 'Hide' : 'Reveal'}
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              {isRevealed
+                                ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                : <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>
+                              }
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard?.writeText(chain.sampleAddressAtIndex0 || '')}
+                            className="text-n-4 transition-colors hover:text-n-1"
+                            title="Copy address"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        </div>
                       ) : (
-                        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-2">
-                          <p className="text-[10px] text-red-300/90">
-                            {chain.configError || 'Configure env vars.'}
-                          </p>
+                        <div className="mt-3 rounded border border-n-5 bg-n-6 px-2 py-1.5 text-[10px] text-n-4">
+                          Not configured in env
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
-
-              {/* Chain integrations footer */}
-              <div className="mt-4 grid gap-2 text-[10px] text-n-4 sm:grid-cols-2">
-                {walletInfrastructure?.solana && (
-                  <div className="rounded-lg border border-n-6 bg-n-8/60 p-2.5">
-                    <p className="font-code uppercase tracking-wider text-n-3 mb-1">Solana RPC</p>
-                    <p className="text-n-2 truncate">{walletInfrastructure.solana.rpc}</p>
-                    <p className="mt-1">
-                      SPL mints —
-                      <span className={walletInfrastructure.solana.splMintsConfigured?.['usdt-spl'] ? 'text-emerald-300' : 'text-amber-300'}> USDT {walletInfrastructure.solana.splMintsConfigured?.['usdt-spl'] ? 'set' : 'missing'}</span>
-                      <span className="text-n-4"> | </span>
-                      <span className={walletInfrastructure.solana.splMintsConfigured?.['usdc-spl'] ? 'text-emerald-300' : 'text-amber-300'}>USDC {walletInfrastructure.solana.splMintsConfigured?.['usdc-spl'] ? 'set' : 'missing'}</span>
-                    </p>
-                  </div>
-                )}
-                {walletInfrastructure?.ethereum && (
-                  <div className="rounded-lg border border-n-6 bg-n-8/60 p-2.5">
-                    <p className="font-code uppercase tracking-wider text-n-3 mb-1">ERC-20 contracts ({walletInfrastructure.ethereum.network})</p>
-                    <p className="truncate">
-                      <span className="text-n-3">USDT:</span> <span className="text-n-2">{walletInfrastructure.ethereum.contracts?.['usdt-erc20'] || '—'}</span>
-                    </p>
-                    <p className="truncate">
-                      <span className="text-n-3">USDC:</span> <span className="text-n-2">{walletInfrastructure.ethereum.contracts?.['usdc-erc20'] || '—'}</span>
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
 
-            {/* Currency Availability + Maintenance side-by-side */}
+            {/* ── Currency Availability ── */}
             {runtimeDraft && (
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-                <div className="rounded-xl border border-n-5 bg-n-7/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-n-4">Currency Availability</p>
-                      <p className="mt-1 text-xs text-n-4">Toggle a currency off to block new ticket creation. Existing tickets are unaffected.</p>
-                    </div>
-                    <button
-                      onClick={handleSaveTicketAvailability}
-                      disabled={runtimeAvailabilitySaving}
-                      className="rounded-lg border border-cyan-400/35 bg-cyan-500/20 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition-colors hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {runtimeAvailabilitySaving ? 'Saving...' : 'Save'}
-                    </button>
-                  </div>
-
-                  <div className="mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                    {runtimeTicketCoins.map((coin) => {
-                      const enabled = Boolean(runtimeDraft.ticketAvailability?.[coin.key]);
-                      const chainConfigured = (walletInfrastructure?.chains || []).find((c) => c.chain === coin.chain)?.configured;
-                      const blocked = !chainConfigured;
-                      return (
-                        <button
-                          type="button"
-                          key={coin.key}
-                          onClick={() => !blocked && updateRuntimeDraftTicketAvailability(coin.key, !enabled)}
-                          disabled={blocked}
-                          className={`group relative rounded-lg border p-2.5 text-left transition-all ${
-                            blocked
-                              ? 'border-red-500/30 bg-red-500/5 cursor-not-allowed opacity-60'
-                              : enabled
-                                ? 'border-emerald-400/35 bg-emerald-500/10 hover:bg-emerald-500/15'
-                                : 'border-n-5 bg-n-8/60 hover:bg-n-7'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-n-1">{coin.label}</span>
-                            <span className="rounded bg-n-7 px-1.5 py-0.5 text-[9px] font-semibold text-n-3 uppercase">{coin.code}</span>
-                          </div>
-                          <div className="mt-1.5 flex items-center gap-1">
-                            <span className={`h-1.5 w-1.5 rounded-full ${
-                              blocked ? 'bg-red-400' : enabled ? 'bg-emerald-400' : 'bg-n-4'
-                            }`} />
-                            <span className={`text-[10px] font-semibold ${
-                              blocked ? 'text-red-300' : enabled ? 'text-emerald-300' : 'text-n-4'
-                            }`}>
-                              {blocked ? 'No xpub' : enabled ? 'Enabled' : 'Disabled'}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-n-3">Currencies</h4>
+                  <button
+                    onClick={handleSaveTicketAvailability}
+                    disabled={runtimeAvailabilitySaving}
+                    className="rounded-md border border-[#10B981]/30 bg-[#10B981]/10 px-3 py-1 text-xs font-medium text-[#10B981] transition-colors hover:bg-[#10B981]/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {runtimeAvailabilitySaving ? 'Saving...' : 'Save Changes'}
+                  </button>
                 </div>
 
-                <div className="rounded-xl border border-red-500/35 bg-gradient-to-br from-red-500/15 via-[#3a1318]/75 to-n-8 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-red-200/90">Maintenance Message</p>
-                  <p className="mt-1 text-xs text-red-100/75">
-                    Displayed in live chat and active trade tickets while the workflow is paused.
-                  </p>
-                  <textarea
-                    rows={4}
-                    value={runtimePauseReason}
-                    onChange={(e) => setRuntimePauseReason(e.target.value)}
-                    placeholder="Example: Maintenance window in progress. Ticket actions resume in 10 minutes."
-                    className="mt-3 w-full resize-none rounded-lg border border-red-400/30 bg-[#1f0c10]/80 px-3 py-2 text-sm text-red-50 placeholder-red-200/40 focus:border-red-300/60 focus:outline-none"
-                  />
+                <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8">
+                  {runtimeTicketCoins.map((coin) => {
+                    const enabled = Boolean(runtimeDraft.ticketAvailability?.[coin.key]);
+                    const chainConfigured = (walletInfrastructure?.chains || []).find((c) => c.chain === coin.chain)?.configured;
+                    const blocked = !chainConfigured;
+                    const logo = cryptoLogos[coin.key];
+                    return (
+                      <button
+                        type="button"
+                        key={coin.key}
+                        onClick={() => !blocked && updateRuntimeDraftTicketAvailability(coin.key, !enabled)}
+                        disabled={blocked}
+                        className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-all ${
+                          blocked
+                            ? 'border-n-5 bg-n-7/40 cursor-not-allowed opacity-50'
+                            : enabled
+                              ? 'border-[#10B981]/30 bg-[#10B981]/5 hover:bg-[#10B981]/10'
+                              : 'border-n-5 bg-n-7 hover:border-n-4'
+                        }`}
+                      >
+                        <img src={logo} alt={coin.label} className="h-7 w-7 flex-shrink-0 rounded-full" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-n-1 truncate">{coin.label}</p>
+                          <p className="text-[10px] text-n-4">{coin.code}</p>
+                        </div>
+                        <span
+                          className={`h-2 w-2 flex-shrink-0 rounded-full ${
+                            blocked ? 'bg-n-4' : enabled ? 'bg-[#10B981]' : 'bg-n-4'
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Footer help text */}
-            <div className="mt-4 rounded-xl border border-n-5/60 bg-n-7/40 px-4 py-3">
-              <p className="text-xs text-n-4">
-                <span className="font-semibold text-n-2">How this works:</span> the bot derives a fresh deposit address from each chain&apos;s xpub at the next index for every new ticket or pass purchase.
-                Match is by destination address — never by amount — so two concurrent deposits can never collide. Tickets and pass orders no longer expire; they live until paid, cancelled, or refunded.
-                Master xpubs and mnemonics live in <code className="rounded bg-n-8 px-1 text-n-2">.env</code> on the server and never in this UI.
-              </p>
+            {/* ── Integrations ── */}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-md border border-n-5 bg-n-7 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-n-3">Solana RPC</span>
+                  {walletInfrastructure?.solana && (
+                    <span className="text-[10px] text-n-4 capitalize">{walletInfrastructure.solana.network}</span>
+                  )}
+                </div>
+                <code className="block truncate text-[11px] font-mono text-n-2">
+                  {walletInfrastructure?.solana?.rpc || '—'}
+                </code>
+                <div className="mt-2 flex gap-2 text-[10px]">
+                  <span className="flex items-center gap-1">
+                    <span className={`h-1.5 w-1.5 rounded-full ${
+                      walletInfrastructure?.solana?.splMintsConfigured?.['usdt-spl'] ? 'bg-[#10B981]' : 'bg-n-3'
+                    }`} />
+                    <span className="text-n-3">USDT-SPL mint</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className={`h-1.5 w-1.5 rounded-full ${
+                      walletInfrastructure?.solana?.splMintsConfigured?.['usdc-spl'] ? 'bg-[#10B981]' : 'bg-n-3'
+                    }`} />
+                    <span className="text-n-3">USDC-SPL mint</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-n-5 bg-n-7 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-n-3">ERC-20 Contracts</span>
+                  {walletInfrastructure?.ethereum && (
+                    <span className="text-[10px] text-n-4 capitalize">{walletInfrastructure.ethereum.network}</span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <img src={cryptoLogos['usdt-erc20']} alt="USDT" className="h-4 w-4 rounded-full" />
+                    <code className="flex-1 truncate text-[11px] font-mono text-n-2">
+                      {walletInfrastructure?.ethereum?.contracts?.['usdt-erc20'] || '—'}
+                    </code>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <img src={cryptoLogos['usdc-erc20']} alt="USDC" className="h-4 w-4 rounded-full" />
+                    <code className="flex-1 truncate text-[11px] font-mono text-n-2">
+                      {walletInfrastructure?.ethereum?.contracts?.['usdc-erc20'] || '—'}
+                    </code>
+                  </div>
+                </div>
+              </div>
             </div>
-          </>
+
+            {/* ── Maintenance message (collapsed when not paused) ── */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-n-3">Maintenance Message</h4>
+                <span className="text-[10px] text-n-4">
+                  {runtimeConfig?.ticketWorkflowPaused ? 'Shown to users while paused' : 'Stored for next pause'}
+                </span>
+              </div>
+              <textarea
+                rows={2}
+                value={runtimePauseReason}
+                onChange={(e) => setRuntimePauseReason(e.target.value)}
+                placeholder="e.g. Maintenance window in progress. Ticket actions resume in 10 minutes."
+                className="w-full resize-none rounded-md border border-n-5 bg-n-7 px-3 py-2 text-sm text-n-1 placeholder-n-4 focus:border-[#10B981] focus:outline-none"
+              />
+            </div>
+
+            {/* ── Footer hint ── */}
+            <div className="border-t border-n-5 pt-3 text-[11px] text-n-4">
+              Per-ticket addresses are derived from xpubs in <code className="rounded bg-n-7 px-1 py-0.5 text-n-2">.env</code>.
+              Match is by destination address — two deposits can never collide. Tickets do not expire; cancel via user/admin, refund via admin.
+            </div>
+          </div>
         )}
       </div>
 
