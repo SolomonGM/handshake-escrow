@@ -47,6 +47,7 @@ import benefitIconSupport from "./benefits/icon-support.svg";
 import benefitImage2 from "./benefits/image-2.jpg";
 
 import discordBlack from "./socials/discord.svg";
+import discordIcon from "./svg/discord.png";
 import facebook from "./socials/facebook.svg";
 import instagram from "./socials/instagram.svg";
 import telegram from "./socials/telegram.svg";
@@ -90,6 +91,7 @@ export {
   curve2,
   disc02,
   discordBlack,
+  discordIcon,
   etherscan,
   facebook,
   file02,

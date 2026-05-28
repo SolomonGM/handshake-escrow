@@ -30,6 +30,18 @@ const createProtectMiddleware = ({ allowBanned = false } = {}) => async (req, re
         return createUnauthorizedResponse(res, 'User not found');
       }
 
+      // Enforce single-device session for Discord-linked accounts.
+      const storedSessionToken = req.user.activeSession?.token || null;
+      const incomingSessionToken = decoded.sid || null;
+      const discordLinked = Boolean(req.user.discord?.connected && req.user.discord?.userId);
+      if (discordLinked && storedSessionToken && incomingSessionToken !== storedSessionToken) {
+        return res.status(401).json({
+          success: false,
+          code: 'SESSION_REVOKED',
+          message: 'This account was signed in from another device. Please sign in again.'
+        });
+      }
+
       if (isBanExpired(req.user.chatModeration)) {
         await User.findByIdAndUpdate(req.user._id, { $set: getBanResetUpdate() });
         req.user.chatModeration = {

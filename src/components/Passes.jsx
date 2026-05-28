@@ -41,7 +41,7 @@ const Passes = () => {
         <div className="flex justify-center mt-10">
           <a
             className="text-xs font-code font-bold tracking-wider uppercase border-b"
-            href="/passes"
+            href="/docs/fees#passes"
           >
             See the full details
           </a>

@@ -180,6 +180,36 @@ const userSchema = new mongoose.Schema({
       type: Date
     }
   },
+  passwordChange: {
+    pendingHash: {
+      type: String,
+      default: null
+    },
+    codeHash: {
+      type: String,
+      default: null
+    },
+    codeExpiresAt: {
+      type: Date,
+      default: null
+    },
+    codeAttempts: {
+      type: Number,
+      default: 0
+    },
+    codeLastSentAt: {
+      type: Date,
+      default: null
+    },
+    sessionTokenHash: {
+      type: String,
+      default: null
+    },
+    sessionTokenExpiresAt: {
+      type: Date,
+      default: null
+    }
+  },
   emailChange: {
     pendingEmail: {
       type: String,
@@ -231,6 +261,16 @@ const userSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  activeSession: {
+    token: {
+      type: String,
+      default: null
+    },
+    issuedAt: {
+      type: Date,
+      default: null
+    }
+  },
   discord: {
     connected: {
       type: Boolean,

@@ -67,9 +67,18 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
+    const handleSessionRevoked = (event) => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      setError(event?.detail?.message || 'Signed in from another device.');
+    };
+
     window.addEventListener('handshake:user-updated', handleExternalUserUpdate);
+    window.addEventListener('handshake:session-revoked', handleSessionRevoked);
     return () => {
       window.removeEventListener('handshake:user-updated', handleExternalUserUpdate);
+      window.removeEventListener('handshake:session-revoked', handleSessionRevoked);
     };
   }, []);
 
@@ -298,6 +307,53 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const requestPasswordChange = async ({ currentPassword, newPassword }) => {
+    try {
+      setError(null);
+      const response = await authAPI.requestPasswordChange({ currentPassword, newPassword });
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to start password change';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const resendPasswordChangeCode = async (verificationSessionToken) => {
+    try {
+      setError(null);
+      const response = await authAPI.resendPasswordChangeCode(verificationSessionToken);
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to resend verification code';
+      setError(errorMessage);
+      return {
+        success: false,
+        error: errorMessage,
+        cooldownSeconds: error.response?.data?.cooldownSeconds
+      };
+    }
+  };
+
+  const verifyPasswordChange = async ({ verificationSessionToken, code }) => {
+    try {
+      setError(null);
+      const response = await authAPI.verifyPasswordChange({ verificationSessionToken, code });
+      if (response.token) {
+        localStorage.setItem('token', response.token);
+      }
+      return { success: true, ...response };
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to verify password change';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    }
+  };
+
   const value = {
     user,
     token: localStorage.getItem('token'),
@@ -316,6 +372,9 @@ export const AuthProvider = ({ children }) => {
     verifyEmailChangeCurrentCode,
     resendEmailChangeNewCode,
     verifyEmailChangeNewCode,
+    requestPasswordChange,
+    resendPasswordChangeCode,
+    verifyPasswordChange,
     refreshCurrentUser,
     isAuthenticated: !!user,
   };

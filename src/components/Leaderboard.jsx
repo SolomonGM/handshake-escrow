@@ -132,121 +132,134 @@ const Leaderboard = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const podiumTiers = [
+    {
+      key: 'second',
+      entry: secondPlace,
+      rank: 2,
+      order: 'order-2 md:order-1',
+      maxWidth: 'md:max-w-[260px]',
+      translate: 'md:translate-y-10',
+      crown: null,
+      badgeGradient: 'from-[#E8E8E8] via-[#C0C0C0] to-[#7A7A7A]',
+      borderClass: 'border-[#C0C0C0]/30 hover:border-[#C0C0C0]/70',
+      ringClass: 'ring-[#C0C0C0]/40',
+      glowClass: 'from-[#C0C0C0]/25 via-[#9E9E9E]/15 to-transparent',
+      avatarSize: 'w-20 h-20',
+      nameSize: 'text-lg',
+      valueColor: 'text-[#E5E5E5]',
+      divider: 'border-[#C0C0C0]/15'
+    },
+    {
+      key: 'first',
+      entry: firstPlace,
+      rank: 1,
+      order: 'order-1 md:order-2',
+      maxWidth: 'md:max-w-[300px]',
+      translate: '',
+      crown: '🐋',
+      badgeGradient: 'from-[#FFE17A] via-[#FFD700] to-[#A8820C]',
+      borderClass: 'border-[#FFD700]/40 hover:border-[#FFD700]/80',
+      ringClass: 'ring-[#FFD700]/50',
+      glowClass: 'from-[#FFD700]/30 via-[#FFA500]/20 to-transparent',
+      avatarSize: 'w-24 h-24',
+      nameSize: 'text-2xl',
+      valueColor: 'text-[#FFD700]',
+      divider: 'border-[#FFD700]/20'
+    },
+    {
+      key: 'third',
+      entry: thirdPlace,
+      rank: 3,
+      order: 'order-3',
+      maxWidth: 'md:max-w-[260px]',
+      translate: 'md:translate-y-16',
+      crown: null,
+      badgeGradient: 'from-[#F0AE7C] via-[#CD7F32] to-[#7A4A19]',
+      borderClass: 'border-[#CD7F32]/30 hover:border-[#CD7F32]/70',
+      ringClass: 'ring-[#CD7F32]/40',
+      glowClass: 'from-[#CD7F32]/25 via-[#A0522D]/15 to-transparent',
+      avatarSize: 'w-20 h-20',
+      nameSize: 'text-lg',
+      valueColor: 'text-[#E08E55]',
+      divider: 'border-[#CD7F32]/15'
+    }
+  ];
+
   return (
     <Section className="overflow-hidden" id="leaderboard">
       <div className="container md:pb-10">
         {/* Leaderboard Header */}
         <div className="mb-10 text-center md:mb-16">
-          <h2 className="h2 mb-4">Top Whale</h2>
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#10B981]/10 border border-[#10B981]/30 mb-4">
+            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
+            <span className="text-xs font-code uppercase tracking-[0.25em] text-[#10B981]">Live Rankings</span>
+          </div>
+          <h2 className="h2 mb-4">Top Whales</h2>
           <p className="body-2 text-n-4 max-w-3xl mx-auto">
-            Our top 3 highest USD value exchangers with the largest trade volumes
+            The biggest movers on Handshake — top 3 traders by total USD volume.
           </p>
         </div>
 
         {/* Podium Section */}
-        <div className="relative mx-auto mb-16 max-w-4xl md:mb-32">
-          <div className="flex flex-col items-stretch justify-center gap-4 md:flex-row md:items-end md:gap-6">
-            {/* 2nd Place */}
-            <div className="order-2 w-full max-w-md md:order-1 md:max-w-[240px] md:flex-1">
-              <div className="relative rounded-2xl border-2 border-[#C0C0C0]/40 bg-[#2B2D31] p-6 shadow-[0_0_30px_rgba(192,192,192,0.15)] md:translate-y-10">
-                <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-gradient-to-br from-gray-300 to-gray-500 rounded-full flex items-center justify-center text-lg font-bold shadow-lg">
-                  2
-                </div>
-                <div className="text-center mt-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden bg-n-6 ring-2 ring-[#C0C0C0]/30">
-                    <img 
-                      src={getAvatar(secondPlace)} 
-                      alt={secondPlace.username}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = getAvatar({ username: secondPlace.username });
-                      }}
-                    />
-                  </div>
-                  <h3 className="text-lg font-bold mb-4 text-n-1">{secondPlace.username}</h3>
-                  
-                  <div className="space-y-3 text-left">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-n-3">Deals completed:</span>
-                      <span className="text-sm font-semibold text-n-1">{formatDeals(secondPlace.totalDeals)}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-n-1/10">
-                      <span className="text-sm text-n-3">Total USD Value:</span>
-                      <span className="text-base font-bold text-[#10B981]">${formatUSD(secondPlace.totalUSDValue)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="relative mx-auto mb-16 max-w-5xl md:mb-32">
+          <div className="flex flex-col items-stretch justify-center gap-6 md:flex-row md:items-end md:gap-6">
+            {podiumTiers.map((tier) => (
+              <div
+                key={tier.key}
+                className={`group ${tier.order} w-full max-w-md ${tier.maxWidth} md:flex-1 ${tier.translate}`}
+              >
+                <div className="relative">
+                  {/* Outer glow */}
+                  <div className={`absolute -inset-1 rounded-3xl bg-gradient-to-br ${tier.glowClass} opacity-60 blur-xl transition-opacity duration-500 group-hover:opacity-100 pointer-events-none`} />
 
-            {/* 1st Place */}
-            <div className="order-1 w-full max-w-md md:order-2 md:max-w-[260px] md:flex-1">
-              <div className="relative rounded-2xl border-2 border-[#FFD700]/40 bg-[#2B2D31] p-6 shadow-[0_0_40px_rgba(255,215,0,0.2)] md:p-7">
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-4xl">
-                  🐋
-                </div>
-                <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-11 h-11 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center text-xl font-bold shadow-lg mt-7">
-                  1
-                </div>
-                <div className="text-center mt-8">
-                  <div className="w-20 h-20 mx-auto mb-4 rounded-full overflow-hidden bg-n-6 ring-4 ring-[#FFD700]/30">
-                    <img 
-                      src={getAvatar(firstPlace)} 
-                      alt={firstPlace.username}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = getAvatar({ username: firstPlace.username });
-                      }}
-                    />
-                  </div>
-                  <h3 className="text-xl font-bold mb-4 text-n-1">{firstPlace.username}</h3>
-                  
-                  <div className="space-y-3 text-left">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-n-3">Deals completed:</span>
-                      <span className="text-sm font-semibold text-n-1">{formatDeals(firstPlace.totalDeals)}</span>
+                  <div className={`relative rounded-2xl border ${tier.borderClass} bg-gradient-to-br from-[#1B1B25] via-[#15151E] to-[#0E0C15] p-6 transition-all duration-300 group-hover:-translate-y-1 ${tier.rank === 1 ? 'pt-9 md:p-7 md:pt-10' : ''}`}>
+                    {/* Rank badge */}
+                    <div className="absolute -top-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+                      {tier.crown && (
+                        <span className="text-3xl drop-shadow-[0_0_8px_rgba(255,215,0,0.45)] -mb-1">{tier.crown}</span>
+                      )}
+                      <div className={`w-11 h-11 rounded-full bg-gradient-to-br ${tier.badgeGradient} flex items-center justify-center text-lg font-bold text-n-8 shadow-[0_4px_18px_rgba(0,0,0,0.45)] ring-2 ring-n-8`}>
+                        {tier.rank}
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-[#FFD700]/20">
-                      <span className="text-sm text-n-3">Total USD Value:</span>
-                      <span className="text-lg font-bold text-[#FFD700]">${formatUSD(firstPlace.totalUSDValue)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* 3rd Place */}
-            <div className="order-3 w-full max-w-md md:max-w-[240px] md:flex-1">
-              <div className="relative rounded-2xl border-2 border-[#CD7F32]/40 bg-[#2B2D31] p-6 shadow-[0_0_30px_rgba(205,127,50,0.15)] md:translate-y-16">
-                <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-gradient-to-br from-orange-300 to-orange-500 rounded-full flex items-center justify-center text-lg font-bold shadow-lg">
-                  3
-                </div>
-                <div className="text-center mt-6">
-                  <div className="w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden bg-n-6 ring-2 ring-[#CD7F32]/30">
-                    <img 
-                      src={getAvatar(thirdPlace)} 
-                      alt={thirdPlace.username}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = getAvatar({ username: thirdPlace.username });
-                      }}
-                    />
-                  </div>
-                  <h3 className="text-lg font-bold mb-4 text-n-1">{thirdPlace.username}</h3>
-                  
-                  <div className="space-y-3 text-left">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-n-3">Deals completed:</span>
-                      <span className="text-sm font-semibold text-n-1">{formatDeals(thirdPlace.totalDeals)}</span>
+                    {/* Avatar */}
+                    <div className="mt-6 flex justify-center">
+                      <div className={`relative ${tier.avatarSize} rounded-full overflow-hidden bg-n-6 ring-2 ${tier.ringClass} shadow-lg`}>
+                        <img
+                          src={getAvatar(tier.entry)}
+                          alt={tier.entry.username}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src = getAvatar({ username: tier.entry.username });
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-n-1/10">
-                      <span className="text-sm text-n-3">Total USD Value:</span>
-                      <span className="text-base font-bold text-[#10B981]">${formatUSD(thirdPlace.totalUSDValue)}</span>
+
+                    {/* Name */}
+                    <h3 className={`mt-4 text-center font-bold text-n-1 ${tier.nameSize}`}>
+                      {tier.entry.username}
+                    </h3>
+
+                    {/* Stats */}
+                    <div className="mt-5 rounded-xl bg-n-8/50 border border-n-6 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-code uppercase tracking-wider text-n-4">Deals</span>
+                        <span className="text-sm font-semibold text-n-1">{formatDeals(tier.entry.totalDeals)}</span>
+                      </div>
+                      <div className={`pt-3 border-t ${tier.divider} flex items-center justify-between`}>
+                        <span className="text-xs font-code uppercase tracking-wider text-n-4">USD Volume</span>
+                        <span className={`text-lg font-bold ${tier.valueColor}`}>
+                          ${formatUSD(tier.entry.totalUSDValue)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
 

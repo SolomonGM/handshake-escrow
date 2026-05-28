@@ -1,6 +1,7 @@
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import User from '../models/User.js';
-import { generateToken } from '../utils/jwt.js';
+import { generateToken, buildSessionToken as buildAuthSessionToken } from '../utils/jwt.js';
 import { sendEmailChangeCode, sendPasswordResetCode, sendTwoFactorCode } from '../utils/email.js';
 import { getTurnstileClientConfig, verifyTurnstileToken } from '../utils/turnstile.js';
 import { buildDiscordConnectionPayload } from '../services/discordIntegrationService.js';
@@ -262,8 +263,15 @@ export const register = async (req, res, next) => {
       password
     });
 
+    const sessionToken = buildAuthSessionToken();
+    user.activeSession = {
+      token: sessionToken,
+      issuedAt: new Date()
+    };
+    await user.save();
+
     // This generates token.
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, sessionToken);
 
     res.status(201).json({
       success: true,
@@ -384,11 +392,16 @@ export const login = async (req, res, next) => {
     }
 
     // This updates last login for non-2FA flow.
+    const sessionToken = buildAuthSessionToken();
     user.lastLogin = new Date();
+    user.activeSession = {
+      token: sessionToken,
+      issuedAt: new Date()
+    };
     await user.save();
 
-    // This generates token.
-    const token = generateToken(user._id);
+    // This generates token bound to the new session so older sessions are invalidated.
+    const token = generateToken(user._id, sessionToken);
 
     res.status(200).json({
       success: true,
@@ -496,7 +509,12 @@ export const verifyLoginTwoFactorCode = async (req, res, next) => {
       });
     }
 
+    const sessionToken = buildAuthSessionToken();
     user.lastLogin = new Date(now);
+    user.activeSession = {
+      token: sessionToken,
+      issuedAt: new Date(now)
+    };
     user.twoFactor.codeHash = undefined;
     user.twoFactor.expiresAt = undefined;
     user.twoFactor.attempts = 0;
@@ -505,7 +523,7 @@ export const verifyLoginTwoFactorCode = async (req, res, next) => {
     user.twoFactor.loginSessionTokenExpiresAt = undefined;
     await user.save();
 
-    const token = generateToken(user._id);
+    const token = generateToken(user._id, sessionToken);
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -2053,6 +2071,369 @@ export const resetPassword = async (req, res, next) => {
     });
   } catch (error) {
     console.error('Reset password error:', error);
+    next(error);
+  }
+};
+
+const clearPasswordChangeState = (user) => {
+  user.passwordChange = {
+    pendingHash: null,
+    codeHash: null,
+    codeExpiresAt: null,
+    codeAttempts: 0,
+    codeLastSentAt: null,
+    sessionTokenHash: null,
+    sessionTokenExpiresAt: null
+  };
+};
+
+const PASSWORD_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_CHANGE_RESEND_COOLDOWN_MS = 30 * 1000;
+const PASSWORD_CHANGE_SESSION_TTL_MS = 20 * 60 * 1000;
+const MAX_PASSWORD_CHANGE_ATTEMPTS = 5;
+
+// @desc    Initiate password change — verifies current password and emails a 2FA code.
+// @route   POST /api/auth/password-change/request
+// @access  Private
+export const requestPasswordChange = async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || '');
+    const newPassword = String(req.body.newPassword || '');
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current and new password are required.'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long.'
+      });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isCurrentCorrect = await user.comparePassword(currentPassword);
+    if (!isCurrentCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect.'
+      });
+    }
+
+    const isSameAsCurrent = await user.comparePassword(newPassword);
+    if (isSameAsCurrent) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must differ from your current password.'
+      });
+    }
+
+    const now = Date.now();
+    const lastSentAt = user.passwordChange?.codeLastSentAt
+      ? new Date(user.passwordChange.codeLastSentAt).getTime()
+      : null;
+    if (lastSentAt && now - lastSentAt < PASSWORD_CHANGE_RESEND_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (PASSWORD_CHANGE_RESEND_COOLDOWN_MS - (now - lastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSeconds}s before requesting another code.`,
+        cooldownSeconds: remainingSeconds
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const pendingHash = await bcrypt.hash(newPassword, salt);
+    const code = buildSecurityCode();
+    const verificationSessionToken = buildSessionToken();
+
+    user.passwordChange = {
+      pendingHash,
+      codeHash: hashValue(code),
+      codeExpiresAt: new Date(now + PASSWORD_CHANGE_CODE_TTL_MS),
+      codeAttempts: 0,
+      codeLastSentAt: new Date(now),
+      sessionTokenHash: hashValue(verificationSessionToken),
+      sessionTokenExpiresAt: new Date(now + PASSWORD_CHANGE_SESSION_TTL_MS)
+    };
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendTwoFactorCode({ to: user.email, code });
+    } catch (emailError) {
+      console.error('Password change 2FA email failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'password_change_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code,
+      emailAddress: user.email,
+      contextLabel: 'password-change',
+      cleanup: async () => {
+        clearPasswordChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: withDeliveryFallbackMessage(
+        `We sent a verification code to ${getMaskedEmail(user.email)}.`,
+        deliveryStatus
+      ),
+      verificationSessionToken,
+      cooldownSeconds: Math.ceil(PASSWORD_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(PASSWORD_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Request password change error:', error);
+    next(error);
+  }
+};
+
+// @desc    Resend password change verification code.
+// @route   POST /api/auth/password-change/resend
+// @access  Private
+export const resendPasswordChangeCode = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    if (!verificationSessionToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user || !user.passwordChange?.sessionTokenHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active password change request. Start again.'
+      });
+    }
+
+    const sessionExpiresAt = user.passwordChange.sessionTokenExpiresAt
+      ? new Date(user.passwordChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearPasswordChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Password change session expired. Start again.'
+      });
+    }
+
+    if (hashValue(verificationSessionToken) !== user.passwordChange.sessionTokenHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid password change session'
+      });
+    }
+
+    const now = Date.now();
+    const lastSentAt = user.passwordChange.codeLastSentAt
+      ? new Date(user.passwordChange.codeLastSentAt).getTime()
+      : null;
+    if (lastSentAt && now - lastSentAt < PASSWORD_CHANGE_RESEND_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (PASSWORD_CHANGE_RESEND_COOLDOWN_MS - (now - lastSentAt)) / 1000
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSeconds}s before requesting another code.`,
+        cooldownSeconds: remainingSeconds
+      });
+    }
+
+    const code = buildSecurityCode();
+    user.passwordChange.codeHash = hashValue(code);
+    user.passwordChange.codeExpiresAt = new Date(now + PASSWORD_CHANGE_CODE_TTL_MS);
+    user.passwordChange.codeAttempts = 0;
+    user.passwordChange.codeLastSentAt = new Date(now);
+    await user.save();
+
+    let emailResult = null;
+    try {
+      emailResult = await sendTwoFactorCode({ to: user.email, code });
+    } catch (emailError) {
+      console.error('Password change resend 2FA email failed:', emailError);
+      emailResult = {
+        sent: false,
+        reason: 'password_change_resend_send_exception',
+        error: emailError
+      };
+    }
+
+    const deliveryStatus = await handleCodeDeliveryResult({
+      emailResult,
+      code,
+      emailAddress: user.email,
+      contextLabel: 'password-change-resend',
+      cleanup: async () => {
+        clearPasswordChangeState(user);
+        await user.save();
+      }
+    });
+
+    if (!deliveryStatus.ok) {
+      return res.status(deliveryStatus.statusCode).json({
+        success: false,
+        message: deliveryStatus.message
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: withDeliveryFallbackMessage(
+        `A new code was sent to ${getMaskedEmail(user.email)}.`,
+        deliveryStatus
+      ),
+      cooldownSeconds: Math.ceil(PASSWORD_CHANGE_RESEND_COOLDOWN_MS / 1000),
+      expiresInSeconds: Math.ceil(PASSWORD_CHANGE_CODE_TTL_MS / 1000)
+    });
+  } catch (error) {
+    console.error('Resend password change code error:', error);
+    next(error);
+  }
+};
+
+// @desc    Verify the password change code and apply the queued password.
+// @route   POST /api/auth/password-change/verify
+// @access  Private
+export const verifyPasswordChange = async (req, res, next) => {
+  try {
+    const verificationSessionToken = String(req.body.verificationSessionToken || '').trim();
+    const code = String(req.body.code || '').trim();
+
+    if (!verificationSessionToken || !code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification session token and code are required.'
+      });
+    }
+
+    if (!/^\d{5}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide the 5-digit code'
+      });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user || !user.passwordChange?.sessionTokenHash || !user.passwordChange?.codeHash || !user.passwordChange?.pendingHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active password change request. Start again.'
+      });
+    }
+
+    const sessionExpiresAt = user.passwordChange.sessionTokenExpiresAt
+      ? new Date(user.passwordChange.sessionTokenExpiresAt).getTime()
+      : null;
+    if (!sessionExpiresAt || sessionExpiresAt < Date.now()) {
+      clearPasswordChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Password change session expired. Start again.'
+      });
+    }
+
+    if (hashValue(verificationSessionToken) !== user.passwordChange.sessionTokenHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid password change session'
+      });
+    }
+
+    const codeExpiresAt = user.passwordChange.codeExpiresAt
+      ? new Date(user.passwordChange.codeExpiresAt).getTime()
+      : null;
+    if (codeExpiresAt && codeExpiresAt < Date.now()) {
+      clearPasswordChangeState(user);
+      await user.save();
+      return res.status(410).json({
+        success: false,
+        message: 'Verification code expired. Start again.'
+      });
+    }
+
+    if ((user.passwordChange.codeAttempts || 0) >= MAX_PASSWORD_CHANGE_ATTEMPTS) {
+      clearPasswordChangeState(user);
+      await user.save();
+      return res.status(429).json({
+        success: false,
+        message: 'Too many attempts. Start the password change process again.'
+      });
+    }
+
+    if (hashValue(code) !== user.passwordChange.codeHash) {
+      user.passwordChange.codeAttempts = (user.passwordChange.codeAttempts || 0) + 1;
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid code. Please try again.',
+        remainingAttempts: Math.max(MAX_PASSWORD_CHANGE_ATTEMPTS - user.passwordChange.codeAttempts, 0)
+      });
+    }
+
+    const newPasswordHash = user.passwordChange.pendingHash;
+    const sessionToken = buildAuthSessionToken();
+
+    // Write the already-hashed password directly to bypass the User pre-save hook
+    // that would otherwise re-hash an already-hashed value.
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          password: newPasswordHash,
+          'activeSession.token': sessionToken,
+          'activeSession.issuedAt': new Date(),
+          'passwordChange.pendingHash': null,
+          'passwordChange.codeHash': null,
+          'passwordChange.codeExpiresAt': null,
+          'passwordChange.codeAttempts': 0,
+          'passwordChange.codeLastSentAt': null,
+          'passwordChange.sessionTokenHash': null,
+          'passwordChange.sessionTokenExpiresAt': null
+        }
+      }
+    );
+
+    const newToken = generateToken(user._id, sessionToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password updated successfully.',
+      token: newToken
+    });
+  } catch (error) {
+    console.error('Verify password change error:', error);
     next(error);
   }
 };

@@ -55,12 +55,22 @@ api.interceptors.response.use(
 
     // Only redirect on 401 if it's not a login/register attempt (those should handle their own errors)
     const isAuthEndpoint = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register');
-    
+
+    const sessionRevoked = error.response?.status === 401 && error.response?.data?.code === 'SESSION_REVOKED';
+
     if (error.response?.status === 401 && !isAuthEndpoint) {
       // Token expired or invalid - only redirect for authenticated endpoints
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      // Don't redirect to /login, just let the auth context handle it
+      if (sessionRevoked && typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('handshake:session-revoked', {
+            detail: { message: error.response?.data?.message || 'Signed in from another device.' }
+          }));
+        } catch (dispatchError) {
+          console.warn('Failed to dispatch session revoked event:', dispatchError);
+        }
+      }
       console.log('Unauthorized - token expired');
     }
     return Promise.reject(error);
@@ -146,6 +156,21 @@ export const authAPI = {
 
   verifyEmailChangeNewCode: async ({ verificationSessionToken, code }) => {
     const response = await api.post('/auth/email-change/verify-new', { verificationSessionToken, code });
+    return response.data;
+  },
+
+  requestPasswordChange: async ({ currentPassword, newPassword }) => {
+    const response = await api.post('/auth/password-change/request', { currentPassword, newPassword });
+    return response.data;
+  },
+
+  resendPasswordChangeCode: async (verificationSessionToken) => {
+    const response = await api.post('/auth/password-change/resend', { verificationSessionToken });
+    return response.data;
+  },
+
+  verifyPasswordChange: async ({ verificationSessionToken, code }) => {
+    const response = await api.post('/auth/password-change/verify', { verificationSessionToken, code });
     return response.data;
   },
 

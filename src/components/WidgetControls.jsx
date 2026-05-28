@@ -17,7 +17,7 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
 
   return (
     <div
-      className={`flex items-center justify-between h-[3.5rem] px-6 bg-n-8/80 rounded-[1.7rem] ${
+      className={`group flex items-center justify-between h-[3.5rem] px-6 bg-n-8/80 rounded-[1.7rem] transition-all duration-300 hover:bg-transparent ${
         className || ""
       } text-base`}
     >
@@ -25,7 +25,7 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
       <button
         onClick={handleRefresh}
         disabled={isRefreshing}
-        className="flex items-center gap-2 hover:opacity-80 transition-opacity disabled:opacity-50"
+        className="flex items-center gap-2 hover:opacity-80 transition-opacity disabled:opacity-50 relative z-10"
       >
         <svg
           className={`w-4 h-4 text-[#10B981] ${isRefreshing ? 'animate-spin' : ''}`}
@@ -46,7 +46,7 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
       {/* Dark Mode Toggle */}
       <button
         onClick={onToggleDarkMode}
-        className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+        className="flex items-center gap-3 hover:opacity-80 transition-opacity relative z-10"
       >
         {/* Sun Icon */}
         <svg

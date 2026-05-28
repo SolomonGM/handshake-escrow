@@ -18,7 +18,9 @@ const CurrencySelector = ({ className, selectedCurrency, onCurrencyChange }) => 
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const buttonRef = useRef(null);
-  
+  const containerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
   const currentCurrency = currencies.find(c => c.code === selectedCurrency) || currencies[1];
 
   const handleCurrencySelect = (currency) => {
@@ -41,7 +43,7 @@ const CurrencySelector = ({ className, selectedCurrency, onCurrencyChange }) => 
       updatePosition();
       window.addEventListener('scroll', updatePosition, true);
       window.addEventListener('resize', updatePosition);
-      
+
       return () => {
         window.removeEventListener('scroll', updatePosition, true);
         window.removeEventListener('resize', updatePosition);
@@ -49,12 +51,29 @@ const CurrencySelector = ({ className, selectedCurrency, onCurrencyChange }) => 
     }
   }, [isOpen]);
 
+  // Close on outside click only (not on hover).
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleDocumentMouseDown = (event) => {
+      const target = event.target;
+      const inContainer = containerRef.current && containerRef.current.contains(target);
+      const inDropdown = dropdownRef.current && dropdownRef.current.contains(target);
+      if (!inContainer && !inDropdown) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentMouseDown);
+    return () => document.removeEventListener('mousedown', handleDocumentMouseDown);
+  }, [isOpen]);
+
   return (
     <div
+      ref={containerRef}
       className={`${
         className || ""
       } flex items-center p-4 pr-6 bg-n-9/40 backdrop-blur border border-n-1/10 rounded-2xl gap-5 transition-all duration-300 hover:bg-transparent hover:border-transparent hover:backdrop-blur-none group`}
-      onMouseEnter={() => !isOpen && setIsOpen(false)}
     >
       <div className="flex-1 transition-opacity duration-300 group-hover:opacity-0">
         <div className="mb-1 text-base font-semibold text-n-1">
@@ -65,8 +84,7 @@ const CurrencySelector = ({ className, selectedCurrency, onCurrencyChange }) => 
         <div className="relative z-[100]">
           <button
             ref={buttonRef}
-            onClick={() => setIsOpen(!isOpen)}
-            onMouseEnter={() => setIsOpen(false)}
+            onClick={() => setIsOpen((prev) => !prev)}
             className="flex items-center gap-2 px-4 py-2 bg-n-7 hover:bg-n-6 rounded-lg transition-all duration-300 border border-n-1/10 group-hover:opacity-100"
           >
             <img src={currentCurrency.flag} alt={currentCurrency.code} className="w-6 h-6 rounded object-cover" />
@@ -82,11 +100,12 @@ const CurrencySelector = ({ className, selectedCurrency, onCurrencyChange }) => 
           </button>
 
           {isOpen && createPortal(
-            <div 
+            <div
+              ref={dropdownRef}
               className="fixed w-48 bg-n-8 border border-n-1/10 rounded-lg shadow-lg z-40 max-h-64 overflow-y-auto"
-              style={{ 
-                top: `${dropdownPosition.top}px`, 
-                right: `${dropdownPosition.right}px` 
+              style={{
+                top: `${dropdownPosition.top}px`,
+                right: `${dropdownPosition.right}px`
               }}
             >
               {currencies.map((currency) => (

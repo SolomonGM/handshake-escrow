@@ -336,16 +336,6 @@ const MyRequests = () => {
             Invitations {invitations.length > 0 && `(${invitations.length})`}
           </button>
           <button
-            onClick={() => setActiveTab('my-tickets')}
-            className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
-              activeTab === 'my-tickets'
-                ? 'bg-[#10B981] text-white shadow-lg shadow-[#10B981]/20'
-                : 'bg-n-7 text-n-3 hover:bg-n-6 border border-n-6'
-            }`}
-          >
-            My Tickets {myTickets.length > 0 && `(${myTickets.length})`}
-          </button>
-          <button
             onClick={() => setActiveTab('active')}
             className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
               activeTab === 'active'
@@ -354,6 +344,16 @@ const MyRequests = () => {
             }`}
           >
             Active {activeTickets.length > 0 && `(${activeTickets.length})`}
+          </button>
+          <button
+            onClick={() => setActiveTab('my-tickets')}
+            className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
+              activeTab === 'my-tickets'
+                ? 'bg-[#10B981] text-white shadow-lg shadow-[#10B981]/20'
+                : 'bg-n-7 text-n-3 hover:bg-n-6 border border-n-6'
+            }`}
+          >
+            My Tickets {myTickets.length > 0 && `(${myTickets.length})`}
           </button>
         </div>
 

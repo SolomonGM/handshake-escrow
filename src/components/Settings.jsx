@@ -8,6 +8,7 @@ import ModeratorPanel from './ModeratorPanel';
 import VerificationCodeInput from './VerificationCodeInput';
 import { discordAPI, passAPI } from '../services/api';
 import { getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
+import { discordIcon } from '../assets';
 
 const USERNAME_MIN_LENGTH = 3;
 const USERNAME_MAX_LENGTH = 20;
@@ -28,6 +29,9 @@ const Settings = () => {
     verifyEmailChangeCurrentCode,
     resendEmailChangeNewCode,
     verifyEmailChangeNewCode,
+    requestPasswordChange,
+    resendPasswordChangeCode,
+    verifyPasswordChange,
     refreshCurrentUser
   } = useAuth();
   const navigate = useNavigate();
@@ -63,6 +67,19 @@ const Settings = () => {
   const [emailChangeNewCooldown, setEmailChangeNewCooldown] = useState(0);
   const [emailChangeMessage, setEmailChangeMessage] = useState('');
   const [emailChangeError, setEmailChangeError] = useState('');
+  const [isPasswordChangeModalOpen, setIsPasswordChangeModalOpen] = useState(false);
+  const [passwordChangeStep, setPasswordChangeStep] = useState('credentials'); // 'credentials' | 'verify'
+  const [passwordChangeForm, setPasswordChangeForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordChangeCode, setPasswordChangeCode] = useState('');
+  const [passwordChangeSessionToken, setPasswordChangeSessionToken] = useState('');
+  const [passwordChangeCooldown, setPasswordChangeCooldown] = useState(0);
+  const [passwordChangeMessage, setPasswordChangeMessage] = useState('');
+  const [passwordChangeError, setPasswordChangeError] = useState('');
+  const [isPasswordChangeSubmitting, setIsPasswordChangeSubmitting] = useState(false);
   const [discordStatus, setDiscordStatus] = useState(user?.discord || null);
   const [isDiscordLoading, setIsDiscordLoading] = useState(false);
   const [isDiscordConnecting, setIsDiscordConnecting] = useState(false);
@@ -290,6 +307,14 @@ const Settings = () => {
     return () => clearInterval(timer);
   }, [emailChangeNewCooldown]);
 
+  useEffect(() => {
+    if (passwordChangeCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setPasswordChangeCooldown((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [passwordChangeCooldown]);
+
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -503,6 +528,14 @@ const Settings = () => {
 
     setIsEmailChangeModalOpen(false);
     resetEmailChangeFlow();
+    // Drop edit mode so the user must click Edit Profile again to redo the email change.
+    setIsEditing(false);
+    setFormData((prev) => ({
+      ...prev,
+      email: user?.email || ''
+    }));
+    setMessage('Email change canceled. Click Edit Profile to try again.');
+    setTimeout(() => setMessage(''), 4000);
   };
 
   const startEmailChangeFlow = async (nextEmail) => {
@@ -638,6 +671,8 @@ const Settings = () => {
       email: emailChangeTargetEmail
     }));
     setIsEditing(false);
+    // Pull a fresh user record so the new email is visible immediately.
+    refreshCurrentUser();
 
     setTimeout(() => {
       setIsEmailChangeModalOpen(false);
@@ -645,6 +680,149 @@ const Settings = () => {
     }, 900);
 
     setIsEmailChangeSubmitting(false);
+  };
+
+  const resetPasswordChangeFlow = () => {
+    setPasswordChangeStep('credentials');
+    setPasswordChangeForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    setPasswordChangeCode('');
+    setPasswordChangeSessionToken('');
+    setPasswordChangeCooldown(0);
+    setPasswordChangeMessage('');
+    setPasswordChangeError('');
+    setIsPasswordChangeSubmitting(false);
+  };
+
+  const openPasswordChangeModal = () => {
+    resetPasswordChangeFlow();
+    setIsPasswordChangeModalOpen(true);
+  };
+
+  const closePasswordChangeModal = () => {
+    if (isPasswordChangeSubmitting) {
+      return;
+    }
+    setIsPasswordChangeModalOpen(false);
+    resetPasswordChangeFlow();
+  };
+
+  const handleSubmitPasswordChangeCredentials = async () => {
+    if (isPasswordChangeSubmitting) return;
+
+    const currentPassword = passwordChangeForm.currentPassword;
+    const newPassword = passwordChangeForm.newPassword;
+    const confirmPassword = passwordChangeForm.confirmPassword;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordChangeError('Please fill in all fields.');
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordChangeError('New password must be at least 6 characters.');
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setPasswordChangeError('New password must differ from your current password.');
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeError('New passwords do not match.');
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    setIsPasswordChangeSubmitting(true);
+    setPasswordChangeError('');
+    setPasswordChangeMessage('');
+
+    const result = await requestPasswordChange({ currentPassword, newPassword });
+
+    if (!result.success) {
+      setPasswordChangeError(result.error || 'Failed to start password change.');
+      if (result.cooldownSeconds) {
+        setPasswordChangeCooldown(result.cooldownSeconds);
+      }
+      setIsPasswordChangeSubmitting(false);
+      return;
+    }
+
+    setPasswordChangeSessionToken(result.verificationSessionToken || '');
+    setPasswordChangeCooldown(result.cooldownSeconds || 30);
+    setPasswordChangeStep('verify');
+    setPasswordChangeCode('');
+    setPasswordChangeMessage(result.message || 'Verification code sent to your email.');
+    setIsPasswordChangeSubmitting(false);
+  };
+
+  const handleResendPasswordChangeCode = async () => {
+    if (isPasswordChangeSubmitting || passwordChangeCooldown > 0 || !passwordChangeSessionToken) {
+      return;
+    }
+
+    setIsPasswordChangeSubmitting(true);
+    setPasswordChangeError('');
+    setPasswordChangeMessage('');
+
+    const result = await resendPasswordChangeCode(passwordChangeSessionToken);
+    if (!result.success) {
+      setPasswordChangeError(result.error || 'Failed to resend code.');
+      if (result.cooldownSeconds) {
+        setPasswordChangeCooldown(result.cooldownSeconds);
+      }
+      setIsPasswordChangeSubmitting(false);
+      return;
+    }
+
+    setPasswordChangeCooldown(result.cooldownSeconds || 30);
+    setPasswordChangeMessage(result.message || 'New code sent.');
+    setIsPasswordChangeSubmitting(false);
+  };
+
+  const handleSubmitPasswordChangeCode = async () => {
+    if (isPasswordChangeSubmitting) return;
+
+    const code = passwordChangeCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH);
+    if (code.length !== SECURITY_CODE_LENGTH) {
+      setPasswordChangeError(`Please enter the ${SECURITY_CODE_LENGTH}-digit code.`);
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    if (!passwordChangeSessionToken) {
+      setPasswordChangeError('Password change session expired. Start again.');
+      setPasswordChangeMessage('');
+      return;
+    }
+
+    setIsPasswordChangeSubmitting(true);
+    setPasswordChangeError('');
+    setPasswordChangeMessage('');
+
+    const result = await verifyPasswordChange({
+      verificationSessionToken: passwordChangeSessionToken,
+      code
+    });
+
+    if (!result.success) {
+      setPasswordChangeError(result.error || 'Failed to verify code.');
+      setIsPasswordChangeSubmitting(false);
+      return;
+    }
+
+    setPasswordChangeMessage(result.message || 'Password updated successfully.');
+    setSecurityMessage('Password updated successfully.');
+    setSecurityError('');
+
+    setTimeout(() => {
+      setIsPasswordChangeModalOpen(false);
+      resetPasswordChangeFlow();
+    }, 1200);
   };
 
   const handleConnectDiscord = async () => {
@@ -1045,15 +1223,13 @@ const Settings = () => {
                     <div className="px-5 sm:px-6 py-5 border-b border-n-5/70 bg-n-7/70">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-[#5865F2]/20 border border-[#5865F2]/40 flex items-center justify-center text-[#8EA1FF]">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 8h2a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2h2m2 0V6a3 3 0 016 0v2m-6 0h6" />
-                            </svg>
+                          <div className="w-12 h-12 rounded-xl bg-[#5865F2]/15 border border-[#5865F2]/40 flex items-center justify-center overflow-hidden">
+                            <img src={discordIcon} alt="Discord" className="w-9 h-9 object-contain" />
                           </div>
                           <div>
-                            <h3 className="text-n-1 font-semibold">Discord Integration</h3>
+                            <h3 className="text-n-1 font-semibold">Connect Discord</h3>
                             <p className="text-n-4 text-sm mt-1">
-                              Connect your account to verify guild membership and keep Discord roles synced with Handshake.
+                              Link your Discord account to verify guild membership and keep your rank role in sync.
                             </p>
                           </div>
                         </div>
@@ -1461,7 +1637,12 @@ const Settings = () => {
                     )}
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Change Password</h3>
-                      <p className="text-n-3 text-sm">Use the &quot;Forgot Password?&quot; flow on sign-in to securely reset your password.</p>
+                      <p className="text-n-3 text-sm mb-4">
+                        Update your password securely. We will email you a 5-digit verification code to confirm the change.
+                      </p>
+                      <Button onClick={openPasswordChangeModal} className="min-w-[220px]">
+                        Change password
+                      </Button>
                     </div>
                     <div className="p-4 bg-n-6 rounded-lg">
                       <h3 className="text-n-1 font-semibold mb-2">Two-Factor Authentication</h3>
@@ -1611,6 +1792,169 @@ const Settings = () => {
                       Disable 2FA
                     </Button>
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPasswordChangeModalOpen && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-xl bg-n-8 border border-n-6 rounded-2xl shadow-2xl">
+            <div className="px-5 sm:px-6 py-4 border-b border-n-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-n-1 text-lg font-semibold">Change Password</h3>
+                <p className="text-xs text-n-4 mt-1">
+                  {passwordChangeStep === 'credentials'
+                    ? 'Enter your current and new password.'
+                    : 'Enter the 5-digit code we sent to your email.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePasswordChangeModal}
+                disabled={isPasswordChangeSubmitting}
+                className="text-n-4 hover:text-n-1 transition-colors disabled:opacity-50"
+                aria-label="Close password change modal"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-5 sm:px-6 py-5 space-y-5">
+              {(passwordChangeMessage || passwordChangeError) && (
+                <div
+                  className={`p-3 rounded-lg text-sm ${
+                    passwordChangeError
+                      ? 'bg-color-3/10 border border-color-3/50 text-color-3'
+                      : 'bg-color-4/10 border border-color-4/50 text-color-4'
+                  }`}
+                >
+                  {passwordChangeError || passwordChangeMessage}
+                </div>
+              )}
+
+              {passwordChangeStep === 'credentials' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                      Current password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordChangeForm.currentPassword}
+                      onChange={(event) => {
+                        setPasswordChangeForm((prev) => ({ ...prev, currentPassword: event.target.value }));
+                        setPasswordChangeError('');
+                        setPasswordChangeMessage('');
+                      }}
+                      autoComplete="current-password"
+                      className="w-full px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                      placeholder="Enter current password"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                      New password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordChangeForm.newPassword}
+                      onChange={(event) => {
+                        setPasswordChangeForm((prev) => ({ ...prev, newPassword: event.target.value }));
+                        setPasswordChangeError('');
+                        setPasswordChangeMessage('');
+                      }}
+                      autoComplete="new-password"
+                      className="w-full px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                      placeholder="At least 6 characters"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-code text-n-3 mb-2 uppercase tracking-wider">
+                      Confirm new password
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordChangeForm.confirmPassword}
+                      onChange={(event) => {
+                        setPasswordChangeForm((prev) => ({ ...prev, confirmPassword: event.target.value }));
+                        setPasswordChangeError('');
+                        setPasswordChangeMessage('');
+                      }}
+                      autoComplete="new-password"
+                      className="w-full px-4 py-3 bg-n-7 border border-n-5 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-n-1 focus:ring-1 focus:ring-n-1 transition-all"
+                      placeholder="Re-enter new password"
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2">
+                    <Button
+                      onClick={closePasswordChangeModal}
+                      disabled={isPasswordChangeSubmitting}
+                      white
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSubmitPasswordChangeCredentials}
+                      disabled={isPasswordChangeSubmitting}
+                      className="min-w-[200px]"
+                    >
+                      {isPasswordChangeSubmitting ? 'Sending code...' : 'Continue'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-n-3">
+                    Enter the 5-digit code sent to <span className="text-n-1 font-semibold">{user?.email}</span>.
+                  </p>
+                  <VerificationCodeInput
+                    value={passwordChangeCode}
+                    onChange={(nextCode) => {
+                      setPasswordChangeCode(nextCode.replace(/\D/g, '').slice(0, SECURITY_CODE_LENGTH));
+                      setPasswordChangeError('');
+                      setPasswordChangeMessage('');
+                    }}
+                    length={SECURITY_CODE_LENGTH}
+                    disabled={isPasswordChangeSubmitting}
+                    autoFocus
+                  />
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleResendPasswordChangeCode}
+                      disabled={isPasswordChangeSubmitting || passwordChangeCooldown > 0}
+                      className="text-sm text-[#10B981] hover:text-[#059669] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                    >
+                      {passwordChangeCooldown > 0
+                        ? `Resend in ${passwordChangeCooldown}s`
+                        : 'Resend code'}
+                    </button>
+                    <Button
+                      onClick={handleSubmitPasswordChangeCode}
+                      disabled={isPasswordChangeSubmitting}
+                      className="min-w-[220px]"
+                    >
+                      {isPasswordChangeSubmitting ? 'Updating password...' : 'Confirm & update'}
+                    </Button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordChangeStep('credentials');
+                      setPasswordChangeCode('');
+                      setPasswordChangeError('');
+                      setPasswordChangeMessage('');
+                    }}
+                    disabled={isPasswordChangeSubmitting}
+                    className="text-xs text-n-4 hover:text-n-2 transition-colors disabled:opacity-50"
+                  >
+                    Back to passwords
+                  </button>
                 </div>
               )}
             </div>

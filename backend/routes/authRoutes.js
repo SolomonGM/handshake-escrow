@@ -1,12 +1,12 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { 
+import {
   getSecurityConfig,
-  register, 
-  login, 
+  register,
+  login,
   verifyLoginTwoFactorCode,
   resendLoginTwoFactorCode,
-  getMe, 
+  getMe,
   updateProfile,
   getUserProfile,
   requestTwoFactorCode,
@@ -19,7 +19,10 @@ import {
   verifyEmailChangeNewCode,
   requestPasswordReset,
   verifyPasswordResetCode,
-  resetPassword
+  resetPassword,
+  requestPasswordChange,
+  resendPasswordChangeCode,
+  verifyPasswordChange
 } from '../controllers/authController.js';
 import { protect, protectAllowBanned } from '../middleware/authMiddleware.js';
 
@@ -96,6 +99,18 @@ const emailChangeVerifyLimiter = createLimiter(
   'Too many email verification attempts. Please try again in 10 minutes.'
 );
 
+const passwordChangeRequestLimiter = createLimiter(
+  10 * 60 * 1000,
+  10,
+  'Too many password change requests. Please try again in 10 minutes.'
+);
+
+const passwordChangeVerifyLimiter = createLimiter(
+  10 * 60 * 1000,
+  20,
+  'Too many password change attempts. Please try again in 10 minutes.'
+);
+
 // Public routes
 router.get('/security-config', getSecurityConfig);
 router.post('/register', registerLimiter, register);
@@ -118,5 +133,8 @@ router.post('/email-change/resend-current', emailChangeRequestLimiter, protect, 
 router.post('/email-change/verify-current', emailChangeVerifyLimiter, protect, verifyEmailChangeCurrentCode);
 router.post('/email-change/resend-new', emailChangeRequestLimiter, protect, resendEmailChangeNewCode);
 router.post('/email-change/verify-new', emailChangeVerifyLimiter, protect, verifyEmailChangeNewCode);
+router.post('/password-change/request', passwordChangeRequestLimiter, protect, requestPasswordChange);
+router.post('/password-change/resend', passwordChangeRequestLimiter, protect, resendPasswordChangeCode);
+router.post('/password-change/verify', passwordChangeVerifyLimiter, protect, verifyPasswordChange);
 
 export default router;
