@@ -130,8 +130,8 @@ const Hero = () => {
                 />
               </div>
 
-              <div className="absolute -left-[5.5rem] bottom-[7.5rem] hidden xl:block" style={{ zIndex: 100 }}>
-                <ul className="flex px-1 py-1 bg-n-9/40 backdrop-blur border border-n-1/10 rounded-2xl">
+              <div className="absolute -left-[5.5rem] bottom-[7.5rem] hidden xl:block group" style={{ zIndex: 100 }}>
+                <ul className="flex px-1 py-1 bg-n-9/40 backdrop-blur border border-n-1/10 rounded-2xl transition-all duration-300 group-hover:bg-transparent group-hover:border-transparent group-hover:backdrop-blur-none">
                   {heroIcons.map((icon, index) => (
                     <li className="p-5" key={index}>
                       <button
@@ -149,19 +149,19 @@ const Hero = () => {
                             console.log('Other button clicked - no action');
                           }
                         }}
-                        className={`transition-all duration-200 hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-n-9 ${
-                          index === 0 ? "focus:ring-green-500/50" : 
-                          index === 2 ? "focus:ring-red-500/50" : 
+                        className={`relative z-10 transition-all duration-200 hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-n-9 ${
+                          index === 0 ? "focus:ring-green-500/50" :
+                          index === 2 ? "focus:ring-red-500/50" :
                           "focus:ring-n-1/20"
                         } rounded-lg cursor-pointer ${
                           isAnimating && (index === 0 || index === 2) ? "opacity-50 cursor-wait" : ""
                         }`}
                         disabled={isAnimating && (index === 0 || index === 2)}
                       >
-                        <img 
-                          src={icon} 
-                          width={24} 
-                          height={24} 
+                        <img
+                          src={icon}
+                          width={24}
+                          height={24}
                           alt={index === 0 ? "Buy" : index === 2 ? "Sell" : `Icon ${index}`}
                           style={{ pointerEvents: 'none' }}
                         />

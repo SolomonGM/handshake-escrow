@@ -191,10 +191,6 @@ const Leaderboard = () => {
       <div className="container md:pb-10">
         {/* Leaderboard Header */}
         <div className="mb-10 text-center md:mb-16">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#10B981]/10 border border-[#10B981]/30 mb-4">
-            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
-            <span className="text-xs font-code uppercase tracking-[0.25em] text-[#10B981]">Live Rankings</span>
-          </div>
           <h2 className="h2 mb-4">Top Whales</h2>
           <p className="body-2 text-n-4 max-w-3xl mx-auto">
             The biggest movers on Handshake — top 3 traders by total USD volume.
