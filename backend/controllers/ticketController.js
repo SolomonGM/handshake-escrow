@@ -406,7 +406,7 @@ const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networ
           type: 'embed',
           embedData: {
             title: 'Broadcast Privacy',
-            description: 'Before we broadcast this completed trade, choose how your name appears on the public feed. You can choose <strong>Anonymous</strong> or <strong>Global</strong>.',
+            description: 'Before we broadcast this completed trade, choose how your name appears on the public feed. You can choose <strong>Anonymous</strong> or <strong>Global</strong>. If no selection is made within 10 minutes, the ticket auto-closes and any unchosen side defaults to <strong>Anonymous</strong>.',
             color: 'blue',
             requiresAction: true,
             actionType: 'privacy-selection'
@@ -414,6 +414,7 @@ const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networ
           timestamp: new Date()
         });
         ticket.privacyPromptShown = true;
+        ticket.privacyPromptShownAt = new Date();
       }
 
       await ticket.save();

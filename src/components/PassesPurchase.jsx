@@ -10,6 +10,7 @@ import axios from "axios";
 import { toast } from "../utils/toast";
 import { QRCodeSVG } from 'qrcode.react';
 import socketService from "../services/socket";
+import { cryptoBrandLogos } from "../assets/currencies";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const normalizeNetworkMode = (value, fallback) => {
@@ -784,22 +785,19 @@ const PassesPurchase = () => {
                     }`}
                   >
                     <div className="flex flex-col items-center gap-3">
-                      <div className="relative w-16 h-16">
+                      <div className="relative w-16 h-16 flex items-center justify-center">
                         <div
-                          className="absolute inset-0 rounded-full blur-md opacity-50"
+                          className="absolute inset-0 rounded-full blur-xl opacity-30"
                           style={{ backgroundColor: crypto.color }}
                         ></div>
-                        <div
-                          className="relative w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg"
-                          style={{ 
-                            backgroundColor: crypto.color,
-                            boxShadow: `0 4px 14px 0 ${crypto.color}40`
-                          }}
-                        >
-                          {crypto.symbol === 'BTC' && 'B'}
-                          {crypto.symbol === 'ETH' && 'E'}
-                          {crypto.symbol === 'LTC' && 'L'}
-                        </div>
+                        <img
+                          src={cryptoBrandLogos[crypto.value]}
+                          alt={crypto.label}
+                          className={`relative w-14 h-14 object-contain drop-shadow-lg ${
+                            isAvailable ? '' : 'grayscale opacity-60'
+                          }`}
+                          style={{ filter: isAvailable ? `drop-shadow(0 4px 12px ${crypto.color}40)` : undefined }}
+                        />
                       </div>
                       <span className={`font-semibold ${isAvailable ? 'text-n-1' : 'text-n-4'}`}>{crypto.label}</span>
                       {!isAvailable && (

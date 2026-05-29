@@ -1,5 +1,5 @@
 ﻿import DocsLayout from "./docs/DocsLayout";
-import { currencyFlags } from "../assets/currencies";
+import { cryptoBrandLogos } from "../assets/currencies";
 
 const sections = [
   { label: "What is Handshake?", href: "#what-is-handshake" },
@@ -31,31 +31,37 @@ const supportedAssets = [
     name: "Bitcoin",
     symbol: "BTC",
     network: "Native",
-    icon: currencyFlags.btc,
+    icon: cryptoBrandLogos.bitcoin,
   },
   {
     name: "Ethereum",
     symbol: "ETH",
     network: "Native",
-    icon: currencyFlags.eth,
+    icon: cryptoBrandLogos.ethereum,
   },
   {
     name: "Litecoin",
     symbol: "LTC",
     network: "Native",
-    icon: currencyFlags.ltc,
+    icon: cryptoBrandLogos.litecoin,
   },
   {
     name: "Solana",
     symbol: "SOL",
     network: "Native",
-    icon: currencyFlags.sol,
+    icon: cryptoBrandLogos.solana,
   },
   {
-    name: "USDT",
+    name: "Tether",
     symbol: "USDT",
     network: "ERC-20",
-    icon: currencyFlags.usdt,
+    icon: cryptoBrandLogos['usdt-erc20'],
+  },
+  {
+    name: "Tether",
+    symbol: "USDT",
+    network: "SOL",
+    icon: cryptoBrandLogos['usdt-sol'],
   },
 ];
 

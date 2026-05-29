@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
 import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
-import { cryptoLogos } from '../assets/currencies';
+import { cryptoBrandLogos } from '../assets/currencies';
 
 const AdminPanel = () => {
   const [users, setUsers] = useState([]);
@@ -82,8 +82,8 @@ const AdminPanel = () => {
     { key: 'solana', label: 'Solana', code: 'SOL', chain: 'solana' },
     { key: 'usdt-erc20', label: 'USDT', code: 'ERC-20', chain: 'ethereum' },
     { key: 'usdc-erc20', label: 'USDC', code: 'ERC-20', chain: 'ethereum' },
-    { key: 'usdt-spl', label: 'USDT', code: 'SPL', chain: 'solana' },
-    { key: 'usdc-spl', label: 'USDC', code: 'SPL', chain: 'solana' }
+    { key: 'usdt-spl', label: 'USDT', code: 'SOL', chain: 'solana' },
+    { key: 'usdc-spl', label: 'USDC', code: 'SOL', chain: 'solana' }
   ];
   const runtimeTicketCoins = runtimeWalletCoins;
   const runtimeNetworkModes = [
@@ -962,7 +962,7 @@ const AdminPanel = () => {
                 {(walletInfrastructure?.chains || []).map((chain) => {
                   const isRevealed = revealedAddressChain === chain.chain;
                   const chainLabel = { bitcoin: 'Bitcoin', litecoin: 'Litecoin', ethereum: 'Ethereum', solana: 'Solana' }[chain.chain];
-                  const logo = cryptoLogos[chain.chain];
+                  const logo = cryptoBrandLogos[chain.chain];
                   return (
                     <div
                       key={chain.chain}
@@ -1063,7 +1063,7 @@ const AdminPanel = () => {
                     const enabled = Boolean(runtimeDraft.ticketAvailability?.[coin.key]);
                     const chainConfigured = (walletInfrastructure?.chains || []).find((c) => c.chain === coin.chain)?.configured;
                     const blocked = !chainConfigured;
-                    const logo = cryptoLogos[coin.key];
+                    const logo = cryptoBrandLogos[coin.key];
                     return (
                       <button
                         type="button"
@@ -1112,13 +1112,13 @@ const AdminPanel = () => {
                     <span className={`h-1.5 w-1.5 rounded-full ${
                       walletInfrastructure?.solana?.splMintsConfigured?.['usdt-spl'] ? 'bg-[#10B981]' : 'bg-n-3'
                     }`} />
-                    <span className="text-n-3">USDT-SPL mint</span>
+                    <span className="text-n-3">USDT-SOL mint</span>
                   </span>
                   <span className="flex items-center gap-1">
                     <span className={`h-1.5 w-1.5 rounded-full ${
                       walletInfrastructure?.solana?.splMintsConfigured?.['usdc-spl'] ? 'bg-[#10B981]' : 'bg-n-3'
                     }`} />
-                    <span className="text-n-3">USDC-SPL mint</span>
+                    <span className="text-n-3">USDC-SOL mint</span>
                   </span>
                 </div>
               </div>
@@ -1132,13 +1132,13 @@ const AdminPanel = () => {
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <img src={cryptoLogos['usdt-erc20']} alt="USDT" className="h-4 w-4 rounded-full" />
+                    <img src={cryptoBrandLogos['usdt-erc20']} alt="USDT" className="h-4 w-4 rounded-full" />
                     <code className="flex-1 truncate text-[11px] font-mono text-n-2">
                       {walletInfrastructure?.ethereum?.contracts?.['usdt-erc20'] || '—'}
                     </code>
                   </div>
                   <div className="flex items-center gap-2">
-                    <img src={cryptoLogos['usdc-erc20']} alt="USDC" className="h-4 w-4 rounded-full" />
+                    <img src={cryptoBrandLogos['usdc-erc20']} alt="USDC" className="h-4 w-4 rounded-full" />
                     <code className="flex-1 truncate text-[11px] font-mono text-n-2">
                       {walletInfrastructure?.ethereum?.contracts?.['usdc-erc20'] || '—'}
                     </code>

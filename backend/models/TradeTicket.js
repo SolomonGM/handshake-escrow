@@ -279,6 +279,12 @@ const tradeTicketSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  privacyPromptShownAt: {
+    // Used to auto-close a completed ticket 10 minutes after the Broadcast
+    // Privacy prompt was shown if neither participant has made a selection.
+    type: Date,
+    default: null
+  },
   transactionCompletedAt: {
     type: Date,
     default: null
