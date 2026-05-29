@@ -174,7 +174,7 @@ const AppShell = () => {
 
   return (
     <>
-      <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-x-hidden transition-[margin] duration-300 ${
+      <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-x-clip transition-[margin] duration-300 ${
         isChatOpen ? 'ml-0 lg:ml-80' : 'ml-0'
       }`}>
         <Routes>

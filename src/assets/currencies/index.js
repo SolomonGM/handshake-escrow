@@ -25,6 +25,22 @@ import ltcBrand from '../svg/litecoin-ltc-logo.png';
 import solBrand from '../svg/solana-sol-logo.png';
 import usdtErcBrand from '../svg/tether-erc-logo.png';
 import usdtSolBrand from '../svg/tether-sol-logo.png';
+import usdcErcBrand from '../svg/usdc-erc-logo.png';
+import usdcSolBrand from '../svg/usdc-sol-logo.png';
+
+// Trade-hub payment method logos. Used by the Create Trade Request modal and
+// the trade request cards so every payment method renders with a real brand
+// mark instead of a unicode glyph or single letter.
+import btcPay from '../svg/bitcoin-btc-logo.png';
+import ltcPay from '../svg/litecoin-ltc-logo.png';
+import ethPay from '../svg/Ethereum_Logo.png';
+import solPay from '../svg/solana-sol-logo.png';
+import usdtPay from '../svg/tether-usdt-logo.png';
+import usdcPay from '../svg/usd-coin-usdc-logo.png';
+import bankPay from '../svg/chase-bank.png';
+import paypalPay from '../svg/paypal_PNG7.png';
+import wisePay from '../svg/470451-Frame 39321-0745ed-medium-1677657684.png';
+import zellePay from '../svg/1659810938zelle-icon-png.png';
 
 export const currencyFlags = {
   usd,
@@ -64,9 +80,28 @@ export const cryptoBrandLogos = {
   ethereum: ethBrand,
   solana: solBrand,
   'usdt-erc20': usdtErcBrand,
-  'usdc-erc20': usdc,
+  'usdc-erc20': usdcErcBrand,
   'usdt-sol': usdtSolBrand,
   'usdt-spl': usdtSolBrand,
-  'usdc-sol': usdc,
-  'usdc-spl': usdc,
+  'usdc-sol': usdcSolBrand,
+  'usdc-spl': usdcSolBrand,
+};
+
+// Logo + display label for every payment method offered in the Trade Hub.
+// Keys map to the values stored on TradeRequest.paymentMethods. Render via
+// <img className="object-contain"> at a fixed box so unequal source aspect
+// ratios crop cleanly without distortion.
+export const paymentMethodLogos = {
+  bitcoin: { logo: btcPay, label: 'Bitcoin' },
+  ethereum: { logo: ethPay, label: 'Ethereum' },
+  litecoin: { logo: ltcPay, label: 'Litecoin' },
+  solana: { logo: solPay, label: 'Solana' },
+  'usdt-erc20': { logo: usdtPay, label: 'USDT' },
+  'usdc-erc20': { logo: usdcPay, label: 'USDC' },
+  usdt: { logo: usdtPay, label: 'USDT' },
+  usdc: { logo: usdcPay, label: 'USDC' },
+  'bank-transfer': { logo: bankPay, label: 'Bank Transfer' },
+  paypal: { logo: paypalPay, label: 'PayPal' },
+  wise: { logo: wisePay, label: 'Wise' },
+  zelle: { logo: zellePay, label: 'Zelle' },
 };

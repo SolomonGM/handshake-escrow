@@ -59,7 +59,7 @@ export const createTradeRequest = async (req, res) => {
     await tradeRequest.save();
 
     // This populates creator details.
-    await tradeRequest.populate('creator', 'username avatar badges totalTrades completedTrades');
+    await tradeRequest.populate('creator', 'username userId avatar badges totalTrades completedTrades');
 
     res.status(201).json({
       success: true,
@@ -86,7 +86,7 @@ export const getTradeRequests = async (req, res) => {
     if (maxAmount) filter.minTrade = { $lte: parseInt(maxAmount) };
 
     let tradeRequests = await TradeRequest.find(filter)
-      .populate('creator', 'username avatar badges totalTrades completedTrades')
+      .populate('creator', 'username userId avatar badges totalTrades completedTrades')
       .sort({ createdAt: -1 })
       .limit(100);
 
@@ -113,7 +113,7 @@ export const getTradeRequest = async (req, res) => {
     const { requestId } = req.params;
 
     const tradeRequest = await TradeRequest.findById(requestId)
-      .populate('creator', 'username avatar badges totalTrades completedTrades');
+      .populate('creator', 'username userId avatar badges totalTrades completedTrades');
 
     if (!tradeRequest) {
       return res.status(404).json({ message: 'Trade request not found' });
@@ -202,7 +202,7 @@ export const updateTradeRequest = async (req, res) => {
     });
 
     await tradeRequest.save();
-    await tradeRequest.populate('creator', 'username avatar badges totalTrades completedTrades');
+    await tradeRequest.populate('creator', 'username userId avatar badges totalTrades completedTrades');
 
     res.json({
       success: true,

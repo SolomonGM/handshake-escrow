@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import { toast } from "../utils/toast";
+import { paymentMethodLogos } from "../assets/currencies";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -43,17 +44,21 @@ const CreateTradeRequestModal = ({ isOpen, onClose, onSuccess }) => {
   ];
 
   const paymentMethodOptions = [
-    { value: 'bitcoin', label: 'Bitcoin', icon: '₿' },
-    { value: 'ethereum', label: 'Ethereum', icon: 'Ξ' },
-    { value: 'litecoin', label: 'Litecoin', icon: 'Ł' },
-    { value: 'solana', label: 'Solana', icon: '◎' },
-    { value: 'usdt-erc20', label: 'USDT', icon: '₮' },
-    { value: 'usdc-erc20', label: 'USDC', icon: '$' },
-    { value: 'bank-transfer', label: 'Bank Transfer', icon: '🏦' },
-    { value: 'paypal', label: 'PayPal', icon: 'P' },
-    { value: 'zelle', label: 'Zelle', icon: 'Z' },
-    { value: 'wise', label: 'Wise', icon: 'W' },
-  ];
+    { value: 'bitcoin' },
+    { value: 'ethereum' },
+    { value: 'litecoin' },
+    { value: 'solana' },
+    { value: 'usdt-erc20' },
+    { value: 'usdc-erc20' },
+    { value: 'bank-transfer' },
+    { value: 'paypal' },
+    { value: 'zelle' },
+    { value: 'wise' },
+  ].map((m) => ({
+    ...m,
+    label: paymentMethodLogos[m.value]?.label || m.value,
+    logo: paymentMethodLogos[m.value]?.logo || null,
+  }));
 
   const warrantyOptions = [
     { value: 'none', label: 'No Warranty' },
@@ -235,21 +240,36 @@ const CreateTradeRequestModal = ({ isOpen, onClose, onSuccess }) => {
           <div>
             <label className="block mb-3 text-sm font-semibold text-n-3">Payment Methods (select all that apply)</label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {paymentMethodOptions.map(method => (
-                <button
-                  key={method.value}
-                  type="button"
-                  onClick={() => handlePaymentMethodToggle(method.value)}
-                  className={`px-3 py-2 rounded-lg border transition-all text-sm font-medium ${
-                    formData.paymentMethods.includes(method.value)
-                      ? 'border-[#10B981] bg-[#10B981]/10 text-[#10B981]'
-                      : 'border-n-6 bg-n-7 text-n-3 hover:border-n-5'
-                  }`}
-                >
-                  <span className="mr-2">{method.icon}</span>
-                  {method.label}
-                </button>
-              ))}
+              {paymentMethodOptions.map(method => {
+                const isSelected = formData.paymentMethods.includes(method.value);
+                return (
+                  <button
+                    key={method.value}
+                    type="button"
+                    onClick={() => handlePaymentMethodToggle(method.value)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-all text-sm font-medium ${
+                      isSelected
+                        ? 'border-[#10B981] bg-[#10B981]/10 text-[#10B981]'
+                        : 'border-n-6 bg-n-7 text-n-3 hover:border-n-5'
+                    }`}
+                  >
+                    {method.logo ? (
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/95 p-1">
+                        <img
+                          src={method.logo}
+                          alt={method.label}
+                          className="h-full w-full object-contain"
+                        />
+                      </span>
+                    ) : (
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-n-6 text-xs font-bold">
+                        {method.label.charAt(0)}
+                      </span>
+                    )}
+                    <span className="truncate">{method.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

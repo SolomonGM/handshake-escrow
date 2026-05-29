@@ -63,6 +63,18 @@ const supportedAssets = [
     network: "SOL",
     icon: cryptoBrandLogos['usdt-sol'],
   },
+  {
+    name: "USD Coin",
+    symbol: "USDC",
+    network: "ERC-20",
+    icon: cryptoBrandLogos['usdc-erc20'],
+  },
+  {
+    name: "USD Coin",
+    symbol: "USDC",
+    network: "SOL",
+    icon: cryptoBrandLogos['usdc-sol'],
+  },
 ];
 
 const Docs = () => {

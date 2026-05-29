@@ -32,6 +32,17 @@ const TradeHub = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreateTradeRequestModalOpen, setIsCreateTradeRequestModalOpen] = useState(false);
   const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
+
+  const MAX_ACTIVE_TRADE_REQUESTS = 5;
+  const myActiveRequestsCount = (user && tradeRequests.length)
+    ? tradeRequests.filter((req) => {
+        const creatorId = req.creator?._id || req.creator;
+        const sameUser = creatorId && (creatorId === user.id || creatorId === user._id);
+        const stillActive = req.status === 'active' && new Date(req.expiresAt) > new Date();
+        return sameUser && stillActive;
+      }).length
+    : 0;
+  const atRequestCap = myActiveRequestsCount >= MAX_ACTIVE_TRADE_REQUESTS;
   
   const requireAuth = (message) => {
     if (isAuthenticated) return true;
@@ -406,16 +417,44 @@ const TradeHub = () => {
               </div>
             )}
           </div>
-          <Button 
-            className="px-8" 
+          <Button
+            className="px-8"
             onClick={() => {
               if (!requireAuth('Please sign in to create a trade request.')) return;
+              if (atRequestCap) {
+                toast.error(`You have ${MAX_ACTIVE_TRADE_REQUESTS}/${MAX_ACTIVE_TRADE_REQUESTS} active requests. Wait for one to expire or delete one to create a new listing.`);
+                return;
+              }
               setIsCreateTradeRequestModalOpen(true);
             }}
           >
             Create Trade Request
           </Button>
         </div>
+
+        {/* User's own active-request counter — visible only to the signed-in user */}
+        {user && (
+          <div className="max-w-3xl mx-auto -mt-6 mb-12 flex items-center justify-center">
+            <div
+              className={`inline-flex items-center gap-3 rounded-full border px-4 py-1.5 text-xs font-semibold ${
+                atRequestCap
+                  ? 'border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]'
+                  : 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]'
+              }`}
+              title="Only you can see this"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+              <span>
+                Your active listings: {myActiveRequestsCount}/{MAX_ACTIVE_TRADE_REQUESTS}
+              </span>
+              {atRequestCap && (
+                <span className="text-n-3 font-normal">
+                  · cap reached, wait for one to expire
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="max-w-3xl mx-auto mb-12">
