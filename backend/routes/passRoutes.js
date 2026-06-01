@@ -5,7 +5,8 @@ import {
   getPassOrder,
   cancelPassOrder,
   getPassPaymentAvailability,
-  getPassTransactionHistory
+  getPassTransactionHistory,
+  adminRefundPassOrder
 } from '../controllers/passController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -31,5 +32,8 @@ router.get('/transactions', getPassTransactionHistory);
 
 // This gets single pass order by ID.
 router.get('/order/:orderId', getPassOrder);
+
+// Staff-only: record a manual refund for a pass order.
+router.post('/admin-refund', adminRefundPassOrder);
 
 export default router;

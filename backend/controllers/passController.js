@@ -488,6 +488,103 @@ export const cancelPassOrder = async (req, res) => {
   }
 };
 
+// @desc    Admin records a manual refund / return for a pass order. The on-chain
+//          transfer is performed off-system (admin signs from cold storage or
+//          via the rotating treasury wallet). This endpoint just persists the
+//          decision, the destination address, the tx hash, and adjusts pass
+//          balance if the order had already been fulfilled.
+// @route   POST /api/passes/admin-refund
+// @access  Private (staff)
+export const adminRefundPassOrder = async (req, res) => {
+  try {
+    // Inline staff check so we don't introduce a circular import.
+    const userRank = String(req.user?.rank || '').toLowerCase();
+    const userRole = String(req.user?.role || '').toLowerCase();
+    const isStaff = ['admin', 'developer', 'owner', 'manager', 'moderator'].includes(userRank)
+      || ['admin', 'moderator'].includes(userRole);
+    if (!isStaff) {
+      return res.status(403).json({ success: false, message: 'Only staff can issue refunds.' });
+    }
+
+    const orderId = String(req.body?.orderId || '').trim();
+    const refundAddress = String(req.body?.refundAddress || '').trim();
+    const refundTransactionHash = String(req.body?.refundTransactionHash || '').trim();
+    const refundReason = String(req.body?.refundReason || '').trim();
+    const refundCoin = String(req.body?.refundCoin || '').trim();
+    const revokePasses = Boolean(req.body?.revokePasses);
+
+    if (!orderId || !refundAddress) {
+      return res.status(400).json({ success: false, message: 'orderId and refundAddress are required.' });
+    }
+
+    const order = await PassOrder.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Pass order not found.' });
+    }
+    if (order.status === 'refunded') {
+      return res.status(400).json({ success: false, message: 'Order has already been refunded.' });
+    }
+
+    // If the order was completed and the admin wants to claw back the passes
+    // they granted (e.g. payment was a chargeback or otherwise disputed),
+    // decrement the user's pass balance.
+    if (revokePasses && order.status === 'completed') {
+      const user = await User.findById(order.user);
+      if (user) {
+        const currentPasses = Number(user.passes || 0);
+        const passesToRevoke = Number(order.passCount || 0);
+        user.passes = Math.max(0, currentPasses - passesToRevoke);
+        await user.save();
+      }
+    }
+
+    order.status = 'refunded';
+    order.refundedAt = new Date();
+    order.refundedBy = req.user._id;
+    order.refundAddress = refundAddress;
+    if (refundTransactionHash) {
+      order.refundTransactionHash = refundTransactionHash;
+    }
+    if (refundCoin) {
+      order.refundCoin = refundCoin;
+    }
+    if (refundReason) {
+      order.refundMessage = refundReason;
+    }
+
+    order.adminActions = order.adminActions || [];
+    order.adminActions.push({
+      action: 'refund',
+      actor: req.user._id,
+      details: refundReason || 'Manual refund issued by staff',
+      metadata: {
+        refundAddress,
+        refundTransactionHash: refundTransactionHash || null,
+        refundCoin: refundCoin || null,
+        revokePasses
+      }
+    });
+
+    await order.save();
+
+    return res.json({
+      success: true,
+      message: 'Refund recorded.',
+      order: {
+        orderId: order.orderId,
+        status: order.status,
+        refundedAt: order.refundedAt,
+        refundAddress,
+        refundTransactionHash: refundTransactionHash || null,
+        refundCoin: refundCoin || null
+      }
+    });
+  } catch (error) {
+    console.error('Admin refund pass order error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to record refund.' });
+  }
+};
+
 export default {
   createPassOrder,
   getUserPassOrders,
@@ -495,7 +592,8 @@ export default {
   getPassPaymentAvailability,
   getPassTransactionHistory,
   completePassOrder,
-  cancelPassOrder
+  cancelPassOrder,
+  adminRefundPassOrder
 };
 
 

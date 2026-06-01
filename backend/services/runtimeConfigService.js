@@ -6,20 +6,48 @@ import {
   LTC_NETWORK_MODE,
   UTXO_NETWORKS
 } from '../config/wallets.js';
+import { selfTest as hdSelfTest } from './hdWalletService.js';
 
 const CONFIG_KEY = 'runtime';
 const CACHE_TTL_MS = 5000;
 const NETWORK_MODES = ['mainnet', 'testnet'];
-const WALLET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20'];
-const TICKET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20'];
+const WALLET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
+const TICKET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
+
+// Map each user-facing currency to the underlying HD chain so the admin
+// validator can recognise "this currency uses Solana's xpub" etc.
+const COIN_TO_CHAIN = {
+  bitcoin: 'bitcoin',
+  litecoin: 'litecoin',
+  ethereum: 'ethereum',
+  solana: 'solana',
+  'usdt-erc20': 'ethereum',
+  'usdc-erc20': 'ethereum',
+  'usdt-spl': 'solana',
+  'usdc-spl': 'solana'
+};
+
+// HD configuration is read live from the underlying service so admin changes
+// to env take effect immediately. Cached briefly inside hdWalletService.
+const isChainHdConfigured = (chain) => {
+  try {
+    const results = hdSelfTest();
+    return Boolean(results?.[chain]?.ok);
+  } catch (error) {
+    return false;
+  }
+};
 
 const DEFAULT_NETWORK_MODES = {
-  bitcoin: normalizeNetworkMode(BTC_NETWORK_MODE, 'testnet'),
+  bitcoin: normalizeNetworkMode(BTC_NETWORK_MODE, 'mainnet'),
   litecoin: normalizeNetworkMode(LTC_NETWORK_MODE, 'mainnet'),
-  ethereum: normalizeNetworkMode(ETH_NETWORK_MODE, 'testnet'),
+  ethereum: normalizeNetworkMode(ETH_NETWORK_MODE, 'mainnet'),
   solana: normalizeNetworkMode(process.env.SOL_NETWORK_MODE || 'mainnet', 'mainnet')
 };
 
+// Legacy wallet map. Kept for backward compatibility with the older monitor
+// flow; new deposits all come from HD derivation per ticket/order. Empty
+// entries are fine — the validator skips them when HD is configured.
 const DEFAULT_WALLETS = {
   bitcoin: {
     mainnet: String(process.env.BTC_MAINNET_WALLET || '').trim(),
@@ -44,16 +72,29 @@ const DEFAULT_WALLETS = {
   'usdc-erc20': {
     mainnet: String(process.env.USDC_MAINNET_WALLET || process.env.ETH_MAINNET_WALLET || '').trim(),
     testnet: String(process.env.USDC_TESTNET_WALLET || process.env.ETH_TESTNET_WALLET || '').trim()
+  },
+  'usdt-spl': {
+    mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
+  },
+  'usdc-spl': {
+    mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
   }
 };
 
+// All currencies default to enabled in production. Admins can toggle individual
+// coins off in the panel; the HD self-test will auto-lock any currency whose
+// underlying chain hasn't been configured.
 const DEFAULT_TICKET_AVAILABILITY = {
-  bitcoin: false,
-  litecoin: false,
+  bitcoin: true,
+  litecoin: true,
   ethereum: true,
-  solana: false,
-  'usdt-erc20': false,
-  'usdc-erc20': false
+  solana: true,
+  'usdt-erc20': true,
+  'usdc-erc20': true,
+  'usdt-spl': true,
+  'usdc-spl': true
 };
 
 let cachedRuntimeConfig = null;
@@ -136,6 +177,14 @@ const hasRequiredWallets = (networkModes, wallets, ticketAvailability = DEFAULT_
       return;
     }
 
+    // HD-derived chains don't use the legacy single-wallet map. If the
+    // underlying chain's xpub/mnemonic is configured in env, every deposit
+    // for this currency will be derived per-ticket — skip the legacy check.
+    const underlyingChain = COIN_TO_CHAIN[coin];
+    if (underlyingChain && isChainHdConfigured(underlyingChain)) {
+      return;
+    }
+
     const mode = getActiveNetworkModeForCoin(coin, { networkModes });
     const wallet = wallets?.[coin]?.[mode];
     if (!wallet) {
@@ -187,6 +236,13 @@ const validateWalletFormats = (networkModes, wallets, ticketAvailability = DEFAU
 
   WALLET_COIN_KEYS.forEach((coin) => {
     if (!ticketAvailability?.[coin]) {
+      return;
+    }
+
+    // Same HD bypass as hasRequiredWallets — the address comes from a fresh
+    // derivation, so we never need to validate a legacy hardcoded wallet.
+    const underlyingChain = COIN_TO_CHAIN[coin];
+    if (underlyingChain && isChainHdConfigured(underlyingChain)) {
       return;
     }
 

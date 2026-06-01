@@ -33,6 +33,20 @@ const TOKEN_CONTRACTS = {
 const DECIMALS_FALLBACK = { 'usdt-erc20': 6, 'usdc-erc20': 6 };
 const SCAN_BACK_BLOCKS = 1500; // ~5 hours on Ethereum, plenty for fresh orders
 const CONFIRMATIONS_REQUIRED = ETH_RPC_CONFIG[ETH_NETWORK_MODE]?.confirmationsRequired ?? 2;
+// 2% slippage tolerance — same as the native ETH + UTXO monitors so price
+// fluctuations between order creation and settlement don't bounce a
+// near-correct deposit into manual review.
+const PAYMENT_SLIPPAGE_TOLERANCE = 0.02;
+const isWithinSlippage = (received, expected) => {
+  if (!Number.isFinite(received) || !Number.isFinite(expected) || expected <= 0) {
+    return false;
+  }
+  return received >= expected - expected * PAYMENT_SLIPPAGE_TOLERANCE;
+};
+const buildEtherscanTxUrl = (txHash) => {
+  const explorer = ETH_RPC_CONFIG[ETH_NETWORK_MODE]?.blockExplorer || 'https://etherscan.io';
+  return `${explorer.replace(/\/$/, '')}/tx/${txHash}`;
+};
 
 let cachedProvider = null;
 const getProvider = () => {
@@ -92,7 +106,7 @@ const scanErc20Deposit = async ({ currency, depositAddress, expectedAmount }) =>
     const value = event.args?.value ?? event.args?.[2];
     if (!value) continue;
     const received = Number(ethers.formatUnits(value, decimals));
-    if (received + 1e-6 < expectedAmount) continue;
+    if (!isWithinSlippage(received, expectedAmount)) continue;
 
     const txHash = event.transactionHash;
     const blockNumber = event.blockNumber;
@@ -106,7 +120,8 @@ const scanErc20Deposit = async ({ currency, depositAddress, expectedAmount }) =>
       tokenAmountRaw: value.toString(),
       decimals,
       from: event.args?.from || null,
-      contractAddress: contract.target
+      contractAddress: contract.target,
+      explorerUrl: buildEtherscanTxUrl(txHash)
     };
   }
 
@@ -125,7 +140,7 @@ const persistOrderConfirmation = async (order, hit) => {
     expectedAmount: order.cryptoAmount,
     fromAddress: hit.from,
     blockHeight: hit.blockNumber,
-    paymentNotes: `${order.cryptocurrency} via ${hit.contractAddress}`
+    paymentNotes: `${order.cryptocurrency} via ${hit.contractAddress} - ${hit.explorerUrl}`
   };
   await order.save();
 

@@ -44,6 +44,27 @@ const SPL_MINTS = {
 const SOL_CONFIRMATIONS_REQUIRED = 1;
 const SOL_SIGNATURE_FETCH_LIMIT = 25;
 const SOL_LAMPORT_DUST = 1_000n; // ignore <0.000001 SOL deposits as dust
+// Match the 2% slippage tolerance the BTC/LTC/ETH monitors use so that price
+// movements between order creation and on-chain settlement don't bounce a
+// near-correct deposit into manual-review.
+const PAYMENT_SLIPPAGE_TOLERANCE = 0.02;
+const SOLSCAN_URL_BY_MODE = {
+  mainnet: 'https://solscan.io/tx',
+  devnet: 'https://solscan.io/tx',
+  testnet: 'https://solscan.io/tx'
+};
+const buildSolscanUrl = (signature) => {
+  const base = SOLSCAN_URL_BY_MODE[SOL_NETWORK_MODE] || SOLSCAN_URL_BY_MODE.mainnet;
+  const query = SOL_NETWORK_MODE === 'mainnet' ? '' : `?cluster=${SOL_NETWORK_MODE}`;
+  return `${base}/${signature}${query}`;
+};
+const isWithinSlippage = (received, expected) => {
+  if (!Number.isFinite(received) || !Number.isFinite(expected) || expected <= 0) {
+    return false;
+  }
+  const tolerance = expected * PAYMENT_SLIPPAGE_TOLERANCE;
+  return received >= expected - tolerance;
+};
 
 let cachedConnection = null;
 const getConnection = () => {
@@ -100,8 +121,8 @@ const scanNativeSolDeposit = async ({ depositAddress, expectedSol }) => {
     if (delta <= SOL_LAMPORT_DUST) continue;
 
     const receivedSol = Number(delta) / LAMPORTS_PER_SOL;
-    if (receivedSol + 1e-9 < expectedSol) {
-      // Underpayment — log it as a near miss but skip. Admin can reconcile.
+    if (!isWithinSlippage(receivedSol, expectedSol)) {
+      // Underpaid beyond the 2% slippage window — skip and let admin reconcile.
       continue;
     }
 
@@ -111,6 +132,7 @@ const scanNativeSolDeposit = async ({ depositAddress, expectedSol }) => {
       blockTime: sigInfo.blockTime,
       lamportsReceived: delta.toString(),
       solReceived: receivedSol,
+      explorerUrl: buildSolscanUrl(sigInfo.signature),
       confirmations: sigInfo.confirmationStatus === 'finalized' ? 32 : (sigInfo.confirmationStatus === 'confirmed' ? 1 : 0)
     };
   }
@@ -167,7 +189,10 @@ const scanSplDeposit = async ({ depositAddress, currency, expectedAmount }) => {
 
     const decimals = post.uiTokenAmount?.decimals ?? 6;
     const received = Number(delta) / 10 ** decimals;
-    if (received + 1e-6 < expectedAmount) {
+    // Stablecoins typically don't move much, but the 2% slippage keeps the
+    // behaviour consistent across all chains and absorbs minor rounding /
+    // bridge-fee variance.
+    if (!isWithinSlippage(received, expectedAmount)) {
       continue;
     }
 
@@ -178,6 +203,7 @@ const scanSplDeposit = async ({ depositAddress, currency, expectedAmount }) => {
       tokenAmountRaw: delta.toString(),
       tokenAmount: received,
       decimals,
+      explorerUrl: buildSolscanUrl(sigInfo.signature),
       confirmations: sigInfo.confirmationStatus === 'finalized' ? 32 : (sigInfo.confirmationStatus === 'confirmed' ? 1 : 0)
     };
   }
@@ -199,7 +225,7 @@ const persistOrderConfirmation = async (order, hit) => {
     actualAmountReceived: hit.lamportsReceived || hit.tokenAmountRaw,
     actualAmountReceivedCrypto: hit.solReceived || hit.tokenAmount,
     expectedAmount: order.cryptoAmount,
-    paymentNotes: `Solana ${SOL_NETWORK_MODE} tx ${hit.signature}`
+    paymentNotes: `Solana ${SOL_NETWORK_MODE} - ${hit.explorerUrl || hit.signature}`
   };
   await order.save();
 

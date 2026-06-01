@@ -531,8 +531,9 @@ const TradeHub = () => {
           </div>
         )}
 
-        {/* Bottom gradient effect */}
-        <div className="relative mt-20">
+        {/* Bottom gradient effect — bounded so the absolute aspect-square
+            glow does not extend past the actual page content on wide viewports */}
+        <div className="relative mt-12 h-24 sm:h-32 overflow-hidden">
           <GradientLight />
         </div>
       </div>

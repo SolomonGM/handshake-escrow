@@ -19,11 +19,16 @@ const normalizeNetworkMode = (value, fallback) => {
 };
 const BTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
 const LTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
-const PASS_PAYMENT_METHODS = ['litecoin', 'bitcoin', 'ethereum'];
+const PASS_PAYMENT_METHODS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
 const DEFAULT_PASS_PAYMENT_AVAILABILITY = {
-  litecoin: true,
   bitcoin: true,
-  ethereum: true
+  litecoin: true,
+  ethereum: true,
+  solana: true,
+  'usdt-erc20': true,
+  'usdc-erc20': true,
+  'usdt-spl': true,
+  'usdc-spl': true
 };
 
 const PassesPurchase = () => {
@@ -58,9 +63,14 @@ const PassesPurchase = () => {
   };
 
   const cryptoOptions = [
-    { value: 'litecoin', label: 'Litecoin (LTC)', symbol: 'LTC', color: '#345D9D' },
     { value: 'bitcoin', label: 'Bitcoin (BTC)', symbol: 'BTC', color: '#F7931A' },
     { value: 'ethereum', label: 'Ethereum (ETH)', symbol: 'ETH', color: '#627EEA' },
+    { value: 'litecoin', label: 'Litecoin (LTC)', symbol: 'LTC', color: '#345D9D' },
+    { value: 'solana', label: 'Solana (SOL)', symbol: 'SOL', color: '#14F195' },
+    { value: 'usdt-erc20', label: 'USDT (ERC-20)', symbol: 'USDT', color: '#26A17B' },
+    { value: 'usdc-erc20', label: 'USDC (ERC-20)', symbol: 'USDC', color: '#2775CA' },
+    { value: 'usdt-spl', label: 'USDT (SOL)', symbol: 'USDT', color: '#26A17B' },
+    { value: 'usdc-spl', label: 'USDC (SOL)', symbol: 'USDC', color: '#2775CA' },
   ];
 
   useEffect(() => {
@@ -758,7 +768,7 @@ const PassesPurchase = () => {
                   No payment methods are currently available. Please try again later.
                 </div>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {cryptoOptions.map((crypto) => (
                   (() => {
                     const isAvailable = isPaymentMethodAvailable(crypto.value);

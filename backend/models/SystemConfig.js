@@ -44,7 +44,7 @@ const systemConfigSchema = new mongoose.Schema(
       bitcoin: {
         type: String,
         enum: ['mainnet', 'testnet'],
-        default: 'testnet'
+        default: 'mainnet'
       },
       litecoin: {
         type: String,
@@ -54,7 +54,7 @@ const systemConfigSchema = new mongoose.Schema(
       ethereum: {
         type: String,
         enum: ['mainnet', 'testnet'],
-        default: 'testnet'
+        default: 'mainnet'
       },
       solana: {
         type: String,
@@ -70,11 +70,11 @@ const systemConfigSchema = new mongoose.Schema(
     ticketAvailability: {
       bitcoin: {
         type: Boolean,
-        default: false
+        default: true
       },
       litecoin: {
         type: Boolean,
-        default: false
+        default: true
       },
       ethereum: {
         type: Boolean,
@@ -82,23 +82,23 @@ const systemConfigSchema = new mongoose.Schema(
       },
       solana: {
         type: Boolean,
-        default: false
+        default: true
       },
       'usdt-erc20': {
         type: Boolean,
-        default: false
+        default: true
       },
       'usdc-erc20': {
         type: Boolean,
-        default: false
+        default: true
       },
       'usdt-spl': {
         type: Boolean,
-        default: false
+        default: true
       },
       'usdc-spl': {
         type: Boolean,
-        default: false
+        default: true
       }
     },
     updatedBy: {
