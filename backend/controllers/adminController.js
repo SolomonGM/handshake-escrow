@@ -1125,7 +1125,9 @@ export const getWalletInfrastructure = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const hdResults = hdSelfTest();
+    // Admin "Reload" button is the canonical way to re-check env, so always
+    // bypass the cache when this endpoint is called.
+    const hdResults = hdSelfTest({ force: true });
     const counters = await HdAddressCounter.find({}).select('chain nextIndex updatedAt').lean();
     const counterByChain = counters.reduce((acc, c) => {
       acc[c.chain] = { nextIndex: c.nextIndex, updatedAt: c.updatedAt };

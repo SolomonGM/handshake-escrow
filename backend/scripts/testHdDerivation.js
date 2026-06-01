@@ -8,7 +8,7 @@ dotenv.config();
 
 import { selfTest, deriveAddressForChain } from '../services/hdWalletService.js';
 
-const results = selfTest();
+const results = selfTest({ force: true });
 console.log('\nHD Derivation Self-Test');
 console.log('=======================\n');
 

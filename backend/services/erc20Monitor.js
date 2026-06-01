@@ -12,6 +12,7 @@ import TradeTicket from '../models/TradeTicket.js';
 import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
+import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
 
 const ERC20_ABI = [
   'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -153,7 +154,7 @@ const persistOrderConfirmation = async (order, hit) => {
 export const monitorErc20PassOrder = async (orderId, io) => {
   const order = await PassOrder.findOne({ orderId });
   if (!order) return;
-  if (['cancelled', 'refunded', 'returned', 'completed'].includes(order.status)) return;
+  if (await expirePassOrderIfTimedOut(order, io)) return;
   if (!order.paymentAddress) return;
 
   const currency = String(order.cryptocurrency || '').toLowerCase();

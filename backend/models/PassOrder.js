@@ -170,5 +170,13 @@ const passOrderSchema = new mongoose.Schema({
 passOrderSchema.index({ user: 1, status: 1 });
 passOrderSchema.index({ paymentAddress: 1 });
 passOrderSchema.index({ status: 1, expiresAt: 1 });
+// Hot monitor path: every 3s the transactionMonitor cron does
+//   PassOrder.find({ cryptocurrency: X, status: { $in: [...] } })
+// per chain. Compound index keeps that query cheap even with thousands
+// of historical (terminal) orders sitting in the collection.
+passOrderSchema.index({ cryptocurrency: 1, status: 1 });
+// Pass-order timeout sweep filter — quickly finds orders nearing their
+// 10-min deadline without scanning terminal-state rows.
+passOrderSchema.index({ status: 1, 'timeoutDetails.timeoutAt': 1 });
 
 export default mongoose.model('PassOrder', passOrderSchema);

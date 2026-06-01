@@ -87,11 +87,37 @@ const PassesPurchase = () => {
     }
   }, [step, showExitConfirm]);
 
-  // Countdown timer removed — pass orders no longer expire. The deposit
-  // address watches indefinitely; user can cancel from the order page.
+  // 10-min countdown for pass purchases. Tickets do NOT use this (they're
+  // warranty-bound) but pass purchases are simple buys — abandoned orders
+  // would otherwise burn monitor cycles forever.
   useEffect(() => {
-    setTimeRemaining(null);
-  }, [step]);
+    if (step !== 'payment' || !purchaseData) {
+      setTimeRemaining(null);
+      return;
+    }
+    if (transactionStatus.detected) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const created = new Date(purchaseData.createdAt || Date.now()).getTime();
+      const deadline = created + 10 * 60 * 1000;
+      const diff = deadline - Date.now();
+
+      if (diff <= 0) {
+        setTimeRemaining({ minutes: 0, seconds: 0, total: 0, expired: true });
+        return;
+      }
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setTimeRemaining({ minutes, seconds, total: diff, expired: false });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [step, purchaseData, transactionStatus.detected]);
 
   // This gets pass from URL or default to first pass.
   useEffect(() => {

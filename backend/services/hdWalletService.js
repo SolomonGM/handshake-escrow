@@ -252,8 +252,20 @@ export const allocateDepositAddress = async (currency) => {
 };
 
 // Self-test helper — used by a CLI script to confirm env is wired correctly
-// before any tickets are created.
-export const selfTest = () => {
+// before any tickets are created. Results are cached for SELF_TEST_TTL_MS
+// because runtimeConfigService calls this on every admin write to gate the
+// HD-aware validator path; recomputing from env + re-deriving addresses on
+// every call would burn CPU + log noise unnecessarily. Pass `force: true`
+// to bypass the cache (used by the admin "Reload" button).
+const SELF_TEST_TTL_MS = 60_000;
+let cachedSelfTest = null;
+let cachedSelfTestAt = 0;
+
+export const selfTest = ({ force = false } = {}) => {
+  if (!force && cachedSelfTest && Date.now() - cachedSelfTestAt < SELF_TEST_TTL_MS) {
+    return cachedSelfTest;
+  }
+
   const results = {};
   for (const chain of ['bitcoin', 'litecoin', 'ethereum', 'solana']) {
     try {
@@ -263,5 +275,13 @@ export const selfTest = () => {
       results[chain] = { ok: false, error: error.message, code: error.code || null };
     }
   }
+
+  cachedSelfTest = results;
+  cachedSelfTestAt = Date.now();
   return results;
+};
+
+export const invalidateSelfTestCache = () => {
+  cachedSelfTest = null;
+  cachedSelfTestAt = 0;
 };

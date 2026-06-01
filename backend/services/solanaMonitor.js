@@ -16,6 +16,7 @@ import TradeTicket from '../models/TradeTicket.js';
 import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
+import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
 
 const SOL_NETWORK_MODE = (String(process.env.HD_SOL_NETWORK || 'devnet').trim().toLowerCase() === 'mainnet')
   ? 'mainnet'
@@ -239,9 +240,8 @@ export const monitorSolanaPassOrder = async (orderId, io) => {
   const order = await PassOrder.findOne({ orderId });
   if (!order) return;
 
-  if (['cancelled', 'refunded', 'returned', 'completed'].includes(order.status)) {
-    return;
-  }
+  // 10-min no-detection timeout (passes only).
+  if (await expirePassOrderIfTimedOut(order, io)) return;
   if (!order.paymentAddress) return;
 
   const currency = String(order.cryptocurrency || '').toLowerCase();

@@ -413,6 +413,13 @@ tradeTicketSchema.index({ creator: 1, status: 1 });
 tradeTicketSchema.index({ 'participants.user': 1 });
 tradeTicketSchema.index({ botWalletAddress: 1, awaitingTransaction: 1 });
 tradeTicketSchema.index({ status: 1, closeScheduledAt: 1 });
+// Hot monitor scan: every 3s transactionMonitor pulls
+//   { awaitingTransaction: true, transactionConfirmed: false }
+// then dispatches per depositChain. Covering compound index removes
+// any need to scan the full collection as tickets accumulate.
+tradeTicketSchema.index({ awaitingTransaction: 1, transactionConfirmed: 1, depositChain: 1 });
+// Broadcast Privacy auto-close sweep filter.
+tradeTicketSchema.index({ status: 1, privacyPromptShownAt: 1 });
 
 tradeTicketSchema.pre('validate', function(next) {
   if (Array.isArray(this.messages)) {

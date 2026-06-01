@@ -223,10 +223,15 @@ export const createPassOrder = async (req, res) => {
       });
     }
 
-    // Long-lived pass purchases: keep an explicit `expiresAt` because the
-    // existing controllers/UI rely on the field, but set it far enough into
-    // the future (~10 years) that it never fires in practice. A separate cron
-    // we'll add later can sweep truly abandoned orders manually.
+    // Pass orders auto-expire after 10 minutes of no transaction so we don't
+    // burn monitor cycles on abandoned checkouts. Tickets are the long-lived
+    // ones (warranties); pass purchases are simple buys — if a user hasn't
+    // sent funds in 10 minutes they've abandoned the flow.
+    const PASS_ORDER_TIMEOUT_MINUTES = 10;
+    const timeoutAt = new Date(Date.now() + PASS_ORDER_TIMEOUT_MINUTES * 60 * 1000);
+    // `expiresAt` is kept as a backstop far in the future so terminal-state
+    // queries that still reference it continue to work — the real expiry
+    // is driven by `timeoutDetails.timeoutAt`.
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 10);
 
@@ -245,6 +250,11 @@ export const createPassOrder = async (req, res) => {
       depositToken: paymentAddressData.token,
       depositIndex: paymentAddressData.derivationIndex,
       expiresAt,
+      timeoutDetails: {
+        timeoutAt,
+        timedOut: false,
+        staffContactRequested: false
+      },
       transactionDetails: {
         expectedAmount: parseFloat(cryptoAmount)
       }

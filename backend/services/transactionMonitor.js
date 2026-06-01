@@ -30,6 +30,7 @@ import {
   monitorErc20Ticket,
   getErc20MonitorStatus
 } from './erc20Monitor.js';
+import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
 
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
@@ -796,10 +797,8 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // Pass-order timeouts (10-min "no detection" + 30-min "expired") are
-    // intentionally disabled. Orders live until they are paid, cancelled by
-    // the user, or refunded by an admin.
-    if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'returned') {
+    // 10-min no-detection timeout (passes only; tickets are warranty-bound).
+    if (await expirePassOrderIfTimedOut(order, io)) {
       return;
     }
 
@@ -1240,8 +1239,8 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
       : null;
     
-    // Pass-order timeouts disabled — orders live until paid, cancelled, or refunded.
-    if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'returned') {
+    // 10-min no-detection timeout (passes only; tickets are warranty-bound).
+    if (await expirePassOrderIfTimedOut(order, io)) {
       return;
     }
 
