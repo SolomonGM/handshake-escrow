@@ -3,23 +3,29 @@ import { useNavigate } from "react-router-dom";
 import useTransactionFeed from "../hooks/useTransactionFeed";
 import Section from "./Section";
 import { currencyFlags } from "../assets/currencies";
-import { formatTransactionId, getExplorerUrl, getExplorerName } from "../utils/blockchainUtils";
+import {
+  formatTransactionId,
+  getExplorerUrl,
+  getExplorerName,
+} from "../utils/blockchainUtils";
 
 const BASE_COIN_FILTERS = ["BTC", "ETH", "LTC", "SOL", "USDT", "USDC"];
 
 const RecentTransactions = () => {
   const navigate = useNavigate();
-  const { transactions } = useTransactionFeed({ includePlaceholders: false, limit: 30 });
-  const [sortBy, setSortBy] = useState("recent"); // "recent" or "price"
-  const [filterCoin, setFilterCoin] = useState("all"); // "all", "BTC", "ETH", "LTC", "SOL"
+  const { transactions, loading } = useTransactionFeed({
+    includePlaceholders: false,
+    limit: 30,
+  });
+  const [sortBy, setSortBy] = useState("recent");
+  const [filterCoin, setFilterCoin] = useState("all");
 
   const getCoinLogo = (coin) => {
     const coinKey = String(coin || "").trim().toLowerCase();
-    if (coinKey === "usdc") return currencyFlags.usdt;
+    if (coinKey === "usdc") return currencyFlags.usdc;
     return currencyFlags[coinKey] || currencyFlags.btc;
   };
 
-  // This gets unique coins from transactions.
   const availableCoins = useMemo(() => {
     const dynamicCoins = transactions
       .map((transaction) => String(transaction.coinReceived || "").toUpperCase())
@@ -36,18 +42,16 @@ const RecentTransactions = () => {
     });
   }, [transactions]);
 
-  // This filters and sort transactions.
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
 
-    // This filters by coin.
     if (filterCoin !== "all") {
       filtered = filtered.filter(
-        (transaction) => String(transaction.coinReceived || "").toUpperCase() === filterCoin
+        (transaction) =>
+          String(transaction.coinReceived || "").toUpperCase() === filterCoin
       );
     }
 
-    // This sorts by price or recent.
     if (sortBy === "price") {
       filtered.sort((a, b) => b.usdValue - a.usdValue);
     }
@@ -58,185 +62,217 @@ const RecentTransactions = () => {
   return (
     <Section className="overflow-hidden" id="recent-transactions">
       <div className="container relative z-2">
-        <div className="text-center mb-[3rem] md:mb-12 lg:mb-[4rem]">
-          <h2 className="h2 mb-4">Recent Exchanges</h2>
-          <p className="body-2 text-n-3">
-            Live transactions from our peer-to-peer exchange platform
-          </p>
-        </div>
+        <div className="pointer-events-none absolute inset-x-5 top-12 h-40 rounded-full bg-radial-gradient from-[#10B981]/10 to-transparent blur-2xl" />
 
-        {/* Filter Controls */}
-        <div className="flex flex-wrap items-center justify-center gap-4 mb-10 max-w-[60rem] mx-auto">
-          {/* Sort By Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-n-3 text-sm font-code">Sort by:</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSortBy("recent")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  sortBy === "recent"
-                    ? "bg-[#0D5C3D] text-n-1"
-                    : "bg-n-7 text-n-3 hover:bg-n-6"
-                }`}
-              >
-                Recent
-              </button>
-              <button
-                onClick={() => setSortBy("price")}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  sortBy === "price"
-                    ? "bg-[#0D5C3D] text-n-1"
-                    : "bg-n-7 text-n-3 hover:bg-n-6"
-                }`}
-              >
-                Top Deals
-              </button>
+        <div className="relative mb-8 overflow-hidden rounded-3xl border border-n-1/10 bg-n-8/70 p-5 backdrop-blur md:p-8 lg:p-10">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#10B981]/70 to-transparent" />
+
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-[42rem]">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#10B981]/10 px-3 py-1.5 text-xs font-code font-bold uppercase tracking-wider text-[#6EE7B7]">
+                <span className="h-2 w-2 rounded-full bg-[#10B981]" />
+                Live settlement feed
+              </div>
+              <h2 className="h2 mb-4">Recent Exchanges</h2>
+              <p className="body-2 text-n-3">
+                Completed trades from the Handshake network, with explorer
+                links for independent blockchain verification.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap lg:justify-end">
+              <div className="rounded-2xl border border-n-1/10 bg-n-7/45 p-2">
+                <div className="mb-2 px-2 text-[0.65rem] font-code uppercase tracking-wider text-n-4">
+                  Sort by
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: "recent", label: "Recent" },
+                    { value: "price", label: "Top Deals" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setSortBy(option.value)}
+                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+                        sortBy === option.value
+                          ? "bg-[#0D5C3D] text-n-1 shadow-[0_0_24px_rgba(16,185,129,0.16)]"
+                          : "text-n-3 hover:bg-n-6 hover:text-n-1"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-n-1/10 bg-n-7/45 p-2">
+                <label
+                  htmlFor="recent-coin-filter"
+                  className="mb-2 block px-2 text-[0.65rem] font-code uppercase tracking-wider text-n-4"
+                >
+                  Asset
+                </label>
+                <select
+                  id="recent-coin-filter"
+                  value={filterCoin}
+                  onChange={(event) => setFilterCoin(event.target.value)}
+                  className="h-10 min-w-[10rem] rounded-xl border border-n-1/10 bg-n-8 px-4 text-sm font-semibold text-n-1 outline-none transition-colors hover:border-n-5 focus:border-[#10B981]"
+                >
+                  <option value="all">All Coins</option>
+                  {availableCoins.map((coin) => (
+                    <option key={coin} value={coin}>
+                      {coin}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex min-w-[8rem] items-center justify-center rounded-2xl border border-n-1/10 bg-n-7/45 px-5 py-4 text-center">
+                <div>
+                  <div className="text-2xl font-semibold text-n-1">
+                    {filteredTransactions.length}
+                  </div>
+                  <div className="text-[0.65rem] font-code uppercase tracking-wider text-n-4">
+                    Results
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* Coin Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-n-3 text-sm font-code">Coin:</span>
-            <select
-              value={filterCoin}
-              onChange={(e) => setFilterCoin(e.target.value)}
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-n-7 text-n-1 border border-n-6 hover:border-n-5 transition-colors cursor-pointer focus:outline-none focus:border-[#0D5C3D]"
-            >
-              <option value="all">All Coins</option>
-              {availableCoins.map((coin) => (
-                <option key={coin} value={coin}>
-                  {coin}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Results Count */}
-          <div className="text-n-4 text-sm">
-            {filteredTransactions.length} {filteredTransactions.length === 1 ? 'transaction' : 'transactions'}
-          </div>
         </div>
 
-        <div className="flex flex-wrap gap-6 justify-center max-w-[80rem] mx-auto">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filteredTransactions.length > 0 ? (
-            filteredTransactions.map((transaction) => (
-              <div
+            filteredTransactions.slice(0, 9).map((transaction) => (
+              <article
                 key={transaction.id}
-                className="relative bg-n-8 border border-n-6 rounded-3xl p-6 w-full md:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)] hover:border-n-5 transition-colors"
+                className="group relative overflow-hidden rounded-2xl border border-n-1/10 bg-n-8/80 p-5 shadow-[0_18px_70px_rgba(0,0,0,0.25)] backdrop-blur transition-all duration-300 hover:-translate-y-1 hover:border-[#10B981]/35"
               >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-code text-n-3 uppercase tracking-wider">
-                    {transaction.blockchain}
-                  </span>
-                  <span className="inline-flex items-center px-2 py-1 bg-[#0D5C3D]/20 text-[#0D5C3D] text-xs rounded-lg font-bold">
-                    APP
-                  </span>
+                <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-radial-gradient from-[#10B981]/18 to-transparent blur-xl transition-opacity group-hover:opacity-100" />
+
+                <div className="relative mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-n-1/10 bg-n-7/70 px-3 py-1 text-[0.65rem] font-code uppercase tracking-wider text-n-3">
+                        {transaction.blockchain}
+                      </span>
+                      <span className="rounded-full bg-[#10B981]/15 px-3 py-1 text-[0.65rem] font-code font-bold uppercase tracking-wider text-[#6EE7B7]">
+                        Complete
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-semibold text-n-1">
+                      {transaction.coinReceived} Deal Complete
+                    </h3>
+                  </div>
+
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-n-7/70">
+                    <img
+                      src={getCoinLogo(transaction.coinReceived)}
+                      alt={transaction.coinReceived}
+                      className="h-14 w-14 object-contain"
+                      loading="lazy"
+                      decoding="async"
+                      onError={(event) => {
+                        event.target.style.display = "none";
+                      }}
+                    />
+                  </div>
                 </div>
-                <span className="text-xs text-n-4">{transaction.timestamp}</span>
-              </div>
 
-              {/* Title */}
-              <h3 className="h5 mb-6 text-[#0D5C3D]">
-                {transaction.coinReceived} Deal Complete
-              </h3>
-
-              {/* Coin Logo */}
-              <div className="flex justify-end mb-6">
-                <div className="w-24 h-24 flex-shrink-0 rounded-2xl flex items-center justify-center">
-                  <img
-                    src={getCoinLogo(transaction.coinReceived)}
-                    alt={transaction.coinReceived}
-                    className="w-24 h-24 object-contain"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
+                <div className="relative mb-5 rounded-2xl border border-n-1/10 bg-n-7/35 p-4">
+                  <div className="mb-1 text-xs font-code uppercase tracking-wider text-n-4">
+                    Amount settled
+                  </div>
+                  <div className="text-lg font-semibold text-n-1">
+                    {transaction.amount} {transaction.coinReceived}
+                  </div>
+                  <div className="text-sm text-n-4">
+                    ${transaction.usdValue.toFixed(2)} USD
+                  </div>
                 </div>
-              </div>
 
-              {/* Amount */}
-              <div className="mb-6">
-                <h6 className="font-semibold text-n-3 text-sm mb-2">Amount</h6>
-                <p className="text-n-1 text-lg">
-                  {transaction.amount} {transaction.coinReceived}{" "}
-                  <span className="text-n-4 text-sm">
-                    (${transaction.usdValue.toFixed(2)} USD)
-                  </span>
-                </p>
-              </div>
-
-              {/* Sender & Receiver */}
-              <div className="flex justify-between mb-6">
-                <div className="flex-1">
-                  <h6 className="font-semibold text-n-3 text-sm mb-2">Sender</h6>
-                  <p className="text-n-1 text-sm break-all">
-                    {transaction.sender === "Anonymous" ? (
-                      <span className="text-n-4">Anonymous</span>
-                    ) : (
-                      <span className="text-[#4A9EFF]">{transaction.sender}</span>
-                    )}
-                  </p>
+                <div className="relative mb-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    { label: "Sender", value: transaction.sender },
+                    { label: "Receiver", value: transaction.receiver },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-xl border border-n-1/10 bg-n-7/25 p-3"
+                    >
+                      <div className="mb-1 text-xs font-code uppercase tracking-wider text-n-4">
+                        {item.label}
+                      </div>
+                      <div className="truncate text-sm text-n-1">
+                        {item.value === "Anonymous" ? (
+                          <span className="text-n-4">Anonymous</span>
+                        ) : (
+                          <span className="text-[#4A9EFF]">{item.value}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex-1 ml-4">
-                  <h6 className="font-semibold text-n-3 text-sm mb-2">Receiver</h6>
-                  <p className="text-n-1 text-sm break-all">
-                    {transaction.receiver === "Anonymous" ? (
-                      <span className="text-n-4">Anonymous</span>
-                    ) : (
-                      <span className="text-[#4A9EFF]">{transaction.receiver}</span>
-                    )}
-                  </p>
-                </div>
-              </div>
 
-              {/* Transaction ID with Link */}
-              <div className="mb-4">
-                <h6 className="font-semibold text-n-3 text-sm mb-2">Transaction</h6>
-                <div className="flex items-center justify-between">
-                  {transaction.transactionId && transaction.transactionId !== 'N/A' ? (
-                    <>
-                      <code className="text-n-1 text-sm font-mono">
+                <div className="relative flex items-center justify-between gap-3 border-t border-n-1/10 pt-4">
+                  <div className="min-w-0">
+                    <div className="mb-1 text-xs font-code uppercase tracking-wider text-n-4">
+                      Transaction
+                    </div>
+                    {transaction.transactionId &&
+                    transaction.transactionId !== "N/A" ? (
+                      <code className="block truncate text-sm text-n-2">
                         {formatTransactionId(transaction.transactionId)}
                       </code>
+                    ) : (
+                      <span className="text-sm text-n-4">N/A</span>
+                    )}
+                  </div>
+
+                  {transaction.transactionId &&
+                    transaction.transactionId !== "N/A" && (
                       <a
-                        href={getExplorerUrl(transaction.blockchain, transaction.transactionId, transaction.networkMode)}
+                        href={getExplorerUrl(
+                          transaction.blockchain,
+                          transaction.transactionId,
+                          transaction.networkMode
+                        )}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#4A9EFF] hover:text-[#6BB6FF] transition-colors text-sm font-semibold ml-2"
+                        className="shrink-0 rounded-full border border-[#4A9EFF]/25 bg-[#4A9EFF]/10 px-3 py-2 text-xs font-semibold text-[#6BB6FF] transition-colors hover:bg-[#4A9EFF]/20"
                       >
-                        (View on {getExplorerName(transaction.blockchain)})
+                        {getExplorerName(transaction.blockchain)}
                       </a>
-                    </>
-                  ) : (
-                    <span className="text-n-4 text-sm">N/A</span>
-                  )}
+                    )}
                 </div>
-              </div>
-            </div>
-          ))
+              </article>
+            ))
           ) : (
-            <div className="w-full text-center py-20">
-              <p className="text-n-3 text-lg">No transactions found matching your filters.</p>
-              <button
-                onClick={() => {
-                  setSortBy("recent");
-                  setFilterCoin("all");
-                }}
-                className="mt-4 text-[#4A9EFF] hover:text-[#6BB6FF] transition-colors font-semibold"
-              >
-                Clear Filters
-              </button>
+            <div className="col-span-full rounded-3xl border border-n-1/10 bg-n-8/70 py-16 text-center">
+              <p className="text-lg text-n-3">
+                {loading
+                  ? "Loading recent exchanges..."
+                  : "No transactions found matching your filters."}
+              </p>
+              {!loading && (
+                <button
+                  onClick={() => {
+                    setSortBy("recent");
+                    setFilterCoin("all");
+                  }}
+                  className="mt-4 font-semibold text-[#4A9EFF] transition-colors hover:text-[#6BB6FF]"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           )}
         </div>
 
-        {/* View More Button */}
         <div className="flex justify-center mt-10">
           <button
             onClick={() => navigate("/transactions")}
-            className="button relative inline-flex items-center justify-center h-11 px-7 text-n-1 transition-colors hover:text-color-1"
+            className="button inline-flex h-11 items-center justify-center rounded-full border border-n-1/10 bg-n-7/50 px-7 text-n-1 transition-all hover:border-[#10B981]/40 hover:bg-[#10B981]/10 hover:text-[#6EE7B7]"
           >
             View All Transactions
           </button>

@@ -31,6 +31,8 @@ const TransactionLiveFeed = ({ className }) => {
                   src={getCoinLogo(transaction.coinReceived)}
                   alt={transaction.coinReceived}
                   className="w-14 h-14 object-contain"
+                  loading="lazy"
+                  decoding="async"
                   onError={(e) => {
                     e.target.style.display = 'none';
                   }}

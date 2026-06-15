@@ -16,13 +16,11 @@ import {
   disc02,
   discordBlack,
   facebook,
-  file02,
   homeSmile,
   instagram,
   notification2,
   notification3,
   notification4,
-  plusSquare,
   buyIcon,
   sellIcon,
   walletIcon,
@@ -32,7 +30,6 @@ import {
   roadmap2,
   roadmap3,
   roadmap4,
-  searchMd,
   sliders04,
   telegram,
   twitter,
@@ -50,8 +47,8 @@ import {
 export const navigation = [
   {
     id: "0",
-    title: "About",
-    url: "#about",
+    title: "Home",
+    url: "#hero",
   },
   {
     id: "1",

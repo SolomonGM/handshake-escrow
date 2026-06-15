@@ -1,30 +1,31 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import ButtonGradient from "./assets/svg/ButtonGradient";
-import About from "./components/About";
-import BlockchainVerification from "./components/BlockchainVerification";
 import Footer from "./components/Footer";
 import Header from "./components/Header";
 import Hero from "./components/Hero";
-import Passes from "./components/Passes";
-import Leaderboard from "./components/Leaderboard";
-import RecentTransactions from "./components/RecentTransactions";
-import Settings from "./components/Settings";
-import Support from "./components/Support";
 import ProtectedRoute from "./components/ProtectedRoute";
-import LiveChat from "./components/LiveChat";
-import TradeHub from "./components/TradeHub";
-import TradeTicket from "./components/TradeTicket";
-import MyRequests from "./components/MyRequests";
-import PassesPurchase from "./components/PassesPurchase";
-import Docs from "./components/Docs";
-import DocsBot from "./components/docs/DocsBot";
-import DocsFees from "./components/docs/DocsFees";
-import DocsOther from "./components/docs/DocsOther";
-import DocsTerms from "./components/docs/DocsTerms";
-import AllTransactions from "./components/AllTransactions";
 import BanLockOverlay from "./components/BanLockOverlay";
+
+const About = lazy(() => import("./components/About"));
+const BlockchainVerification = lazy(() => import("./components/BlockchainVerification"));
+const Passes = lazy(() => import("./components/Passes"));
+const Leaderboard = lazy(() => import("./components/Leaderboard"));
+const RecentTransactions = lazy(() => import("./components/RecentTransactions"));
+const Settings = lazy(() => import("./components/Settings"));
+const Support = lazy(() => import("./components/Support"));
+const LiveChat = lazy(() => import("./components/LiveChat"));
+const TradeHub = lazy(() => import("./components/TradeHub"));
+const TradeTicket = lazy(() => import("./components/TradeTicket"));
+const MyRequests = lazy(() => import("./components/MyRequests"));
+const PassesPurchase = lazy(() => import("./components/PassesPurchase"));
+const Docs = lazy(() => import("./components/Docs"));
+const DocsBot = lazy(() => import("./components/docs/DocsBot"));
+const DocsFees = lazy(() => import("./components/docs/DocsFees"));
+const DocsOther = lazy(() => import("./components/docs/DocsOther"));
+const DocsTerms = lazy(() => import("./components/docs/DocsTerms"));
+const AllTransactions = lazy(() => import("./components/AllTransactions"));
 
 const PageLayout = ({ children }) => (
   <div className="min-h-[calc(100vh-4.75rem)] lg:min-h-[calc(100vh-5.25rem)] flex flex-col">
@@ -32,17 +33,40 @@ const PageLayout = ({ children }) => (
   </div>
 );
 
+const PageFallback = () => (
+  <div className="flex min-h-[45vh] items-center justify-center px-6 text-center text-sm font-code uppercase tracking-wider text-n-4">
+    Loading
+  </div>
+);
+
+const SectionFallback = ({ className = "" }) => (
+  <div className={`container py-16 ${className}`}>
+    <div className="h-40 animate-pulse rounded-3xl border border-n-1/10 bg-n-7/30" />
+  </div>
+);
+
 // Home Page Component
 const HomePage = () => (
   <PageLayout>
     <Header />
-    <main className="flex-1 flex flex-col">
+    <main className="relative flex-1 flex flex-col overflow-hidden bg-[linear-gradient(180deg,#0E0C15_0%,#11101A_42%,#0E0C15_100%)]">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:48px_48px] opacity-30" />
       <Hero />
-      <About />
-      <RecentTransactions />
-      <BlockchainVerification />
-      <Passes />
-      <Leaderboard />
+      <Suspense fallback={<SectionFallback />}>
+        <About />
+      </Suspense>
+      <Suspense fallback={<SectionFallback />}>
+        <RecentTransactions />
+      </Suspense>
+      <Suspense fallback={<SectionFallback />}>
+        <BlockchainVerification />
+      </Suspense>
+      <Suspense fallback={<SectionFallback />}>
+        <Passes />
+      </Suspense>
+      <Suspense fallback={<SectionFallback />}>
+        <Leaderboard />
+      </Suspense>
     </main>
     <Footer />
   </PageLayout>
@@ -177,47 +201,50 @@ const AppShell = () => {
       <div className={`pt-[4.75rem] lg:pt-[5.25rem] overflow-x-clip transition-[margin] duration-300 ${
         isChatOpen ? 'ml-0 lg:ml-80' : 'ml-0'
       }`}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/trade-hub" element={<TradeHubPage />} />
-          <Route path="/docs" element={<DocsPage />} />
-          <Route path="/docs/bot" element={<DocsBotPage />} />
-          <Route path="/docs/fees" element={<DocsFeesPage />} />
-          <Route path="/docs/other" element={<DocsOtherPage />} />
-          <Route path="/docs/terms" element={<DocsTermsPage />} />
-          <Route path="/transactions" element={<AllTransactionsPage />} />
-          <Route path="/trade-ticket" element={<TradeTicketPage />} />
-          <Route 
-            path="/my-requests" 
-            element={
-              <ProtectedRoute>
-                <MyRequestsPage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/passes/purchase" 
-            element={
-              <ProtectedRoute>
-                <PassesPurchasePage />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/settings" 
-            element={
-              <ProtectedRoute>
-                <Settings />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/support" element={<Support />} />
-          {/* Redirect /login to home (we use modal-based auth) */}
-          <Route path="/login" element={<HomePage />} />
-          <Route path="/register" element={<HomePage />} />
-        </Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/trade-hub" element={<TradeHubPage />} />
+            <Route path="/docs" element={<DocsPage />} />
+            <Route path="/docs/bot" element={<DocsBotPage />} />
+            <Route path="/docs/fees" element={<DocsFeesPage />} />
+            <Route path="/docs/other" element={<DocsOtherPage />} />
+            <Route path="/docs/terms" element={<DocsTermsPage />} />
+            <Route path="/transactions" element={<AllTransactionsPage />} />
+            <Route path="/trade-ticket" element={<TradeTicketPage />} />
+            <Route
+              path="/my-requests"
+              element={
+                <ProtectedRoute>
+                  <MyRequestsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/passes/purchase"
+              element={
+                <ProtectedRoute>
+                  <PassesPurchasePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/support" element={<Support />} />
+            <Route path="/login" element={<HomePage />} />
+            <Route path="/register" element={<HomePage />} />
+          </Routes>
+        </Suspense>
       </div>
-      <LiveChat isOpen={isChatOpen} onClose={toggleChat} />
+      <Suspense fallback={null}>
+        <LiveChat isOpen={isChatOpen} onClose={toggleChat} />
+      </Suspense>
       <ButtonGradient />
       <BanLockOverlay banDetails={activeBan} />
     </>

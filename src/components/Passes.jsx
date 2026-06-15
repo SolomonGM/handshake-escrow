@@ -8,28 +8,35 @@ const Passes = () => {
   return (
     <Section className="overflow-hidden" id="passes">
       <div className="container relative z-2">
-        <div className="hidden relative justify-center mb-[6.5rem] lg:flex">
+        <div className="pointer-events-none absolute left-1/2 top-20 h-[34rem] w-[48rem] -translate-x-1/2 rounded-full bg-radial-gradient from-[#10B981]/10 to-transparent blur-2xl" />
+
+        <div className="hidden relative justify-center mb-[5rem] lg:flex">
           <img
             src={passes}
-            className="relative z-1"
+            className="relative z-1 drop-shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
             width={510}
             height={510}
             alt="Passes"
+            loading="lazy"
+            decoding="async"
           />
           <div className="absolute top-1/2 left-1/2 w-[60rem] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
             <img
               src={cryptocoins}
-              className="w-full"
+              className="w-full opacity-90"
               width={950}
               height={400}
               alt="Coins"
+              loading="lazy"
+              decoding="async"
             />
           </div>
         </div>
 
         <Heading
+          className="relative z-2"
           tag="Skip the fees, trade more freely"
-          title="Passes"
+          title="Fee passes for active traders"
         />
 
         <div className="relative">

@@ -188,9 +188,14 @@ const Leaderboard = () => {
 
   return (
     <Section className="overflow-hidden" id="leaderboard">
-      <div className="container md:pb-10">
+      <div className="container relative md:pb-10">
+        <div className="pointer-events-none absolute left-1/2 top-12 h-[32rem] w-[52rem] -translate-x-1/2 rounded-full bg-radial-gradient from-[#10B981]/10 to-transparent blur-2xl" />
         {/* Leaderboard Header */}
-        <div className="mb-10 text-center md:mb-16">
+        <div className="relative z-2 mb-10 text-center md:mb-16">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#10B981]/10 px-3 py-1.5 text-xs font-code font-bold uppercase tracking-wider text-[#6EE7B7]">
+            <span className="h-2 w-2 rounded-full bg-[#10B981]" />
+            Exchange volume leaders
+          </div>
           <h2 className="h2 mb-4">Top Whales</h2>
           <p className="body-2 text-n-4 max-w-3xl mx-auto">
             The biggest movers on Handshake — top 3 traders by total USD volume.
@@ -198,7 +203,7 @@ const Leaderboard = () => {
         </div>
 
         {/* Podium Section */}
-        <div className="relative mx-auto mb-16 max-w-5xl md:mb-32">
+        <div className="relative z-2 mx-auto mb-16 max-w-5xl md:mb-32">
           <div className="flex flex-col items-stretch justify-center gap-6 md:flex-row md:items-end md:gap-6">
             {podiumTiers.map((tier) => (
               <div
@@ -209,7 +214,7 @@ const Leaderboard = () => {
                   {/* Outer glow */}
                   <div className={`absolute -inset-1 rounded-3xl bg-gradient-to-br ${tier.glowClass} opacity-60 blur-xl transition-opacity duration-500 group-hover:opacity-100 pointer-events-none`} />
 
-                  <div className={`relative rounded-2xl border ${tier.borderClass} bg-gradient-to-br from-[#1B1B25] via-[#15151E] to-[#0E0C15] p-6 transition-all duration-300 group-hover:-translate-y-1 ${tier.rank === 1 ? 'pt-9 md:p-7 md:pt-10' : ''}`}>
+                  <div className={`relative rounded-2xl border ${tier.borderClass} bg-gradient-to-br from-[#1B1B25] via-[#15151E] to-[#0E0C15] p-6 shadow-[0_18px_70px_rgba(0,0,0,0.25)] transition-all duration-300 group-hover:-translate-y-1 ${tier.rank === 1 ? 'pt-9 md:p-7 md:pt-10' : ''}`}>
                     {/* Rank badge */}
                     <div className="absolute -top-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
                       {tier.crown && (
@@ -227,6 +232,8 @@ const Leaderboard = () => {
                           src={getAvatar(tier.entry)}
                           alt={tier.entry.username}
                           className="w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                           onError={(e) => {
                             e.target.src = getAvatar({ username: tier.entry.username });
                           }}
@@ -260,15 +267,17 @@ const Leaderboard = () => {
         </div>
 
         {/* Staff Section */}
-        <div className="max-w-xl mx-auto">
+        <div className="relative z-2 max-w-xl mx-auto">
           <h3 className="h3 text-center mb-10">Meet the Team</h3>
-          <div className="relative bg-[#0E0C15] rounded-3xl overflow-hidden border-2 border-n-1/5">
+          <div className="relative bg-[#0E0C15] rounded-3xl overflow-hidden border border-n-1/10 shadow-[0_24px_90px_rgba(0,0,0,0.35)]">
             {/* Banner */}
             <div className="h-32 relative overflow-hidden bg-[#0E0C15]">
               <img 
                 src={staff.banner} 
                 alt="Banner"
                 className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.parentElement.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
@@ -286,6 +295,8 @@ const Leaderboard = () => {
                     src={staff.avatar} 
                     alt={staff.username}
                     className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     onError={(e) => {
                       e.target.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=REGEN';
                     }}

@@ -17,7 +17,7 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
 
   return (
     <div
-      className={`group flex items-center justify-between h-[3.5rem] px-6 bg-n-8/80 rounded-[1.7rem] transition-all duration-300 hover:bg-transparent ${
+      className={`group flex h-[3.5rem] items-center justify-between gap-3 rounded-[1.7rem] bg-n-8/80 px-3 transition-all duration-300 hover:bg-transparent sm:px-6 ${
         className || ""
       } text-base`}
     >
@@ -40,7 +40,7 @@ const WidgetControls = ({ className, isDarkMode, onToggleDarkMode, onRefresh }) 
             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
           />
         </svg>
-        <span className="text-n-3 text-sm">Refresh Prices</span>
+        <span className="hidden text-sm text-n-3 sm:inline">Refresh Prices</span>
       </button>
 
       {/* Dark Mode Toggle */}
