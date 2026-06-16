@@ -19,7 +19,8 @@ import {
   pauseTicketWorkflow,
   resumeTicketWorkflow,
   updateRuntimeConfiguration,
-  getWalletInfrastructure
+  getWalletInfrastructure,
+  getAdminOverview
 } from '../controllers/adminController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -27,6 +28,7 @@ const router = express.Router();
 
 // All routes are protected and require developer rank
 router.get('/users', protect, getAllUsers);
+router.get('/overview', protect, getAdminOverview);
 router.get('/stats', protect, getSiteStats);
 router.put('/users/rank', protect, updateUserRank);
 router.put('/users/role', protect, updateUserRole);

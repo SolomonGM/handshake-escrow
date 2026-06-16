@@ -168,11 +168,11 @@ const Settings = () => {
     } else if (tab === 'security') {
       setActiveTab('security');
     } else if (tab === 'admin' && user?.rank === 'developer') {
-      setActiveTab('admin');
-    } else if (tab === 'moderator' && user?.role === 'moderator') {
-      setActiveTab('moderator');
+      navigate('/admin', { replace: true });
+    } else if (tab === 'moderator' && (user?.rank === 'developer' || user?.role === 'admin' || user?.role === 'moderator')) {
+      navigate('/moderator', { replace: true });
     }
-  }, [searchParams, user]);
+  }, [searchParams, user, navigate]);
 
   useEffect(() => {
     setDiscordStatus(user?.discord || null);
@@ -1077,7 +1077,7 @@ const Settings = () => {
                   <>
                     <div className="border-t border-n-6 my-2"></div>
                     <button
-                      onClick={() => setActiveTab('admin')}
+                      onClick={() => navigate('/admin')}
                       className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
                         activeTab === 'admin' ? 'bg-[#ef4444]/20 text-[#ef4444]' : 'text-[#ef4444]/70 hover:bg-[#ef4444]/10 hover:text-[#ef4444]'
                       }`}
@@ -1093,11 +1093,11 @@ const Settings = () => {
                 )}
 
                 {/* Moderator Panel */}
-                {user?.role === 'moderator' && (
+                {(user?.rank === 'developer' || user?.role === 'admin' || user?.role === 'moderator') && (
                   <>
                     <div className="border-t border-n-6 my-2"></div>
                     <button
-                      onClick={() => setActiveTab('moderator')}
+                      onClick={() => navigate('/moderator')}
                       className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
                         activeTab === 'moderator' ? 'bg-[#10B981]/20 text-[#10B981]' : 'text-[#10B981]/70 hover:bg-[#10B981]/10 hover:text-[#10B981]'
                       }`}

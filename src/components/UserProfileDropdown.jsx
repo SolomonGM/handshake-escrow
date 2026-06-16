@@ -171,7 +171,7 @@ const UserProfileDropdown = () => {
             {/* Admin Panel - Only for developers */}
             {user?.rank === 'developer' && (
               <button
-                onClick={() => handleNavigation('/settings?tab=admin')}
+                onClick={() => handleNavigation('/admin')}
                 className="w-full px-4 py-3 text-left text-[#ef4444] hover:bg-n-7/50 transition-colors duration-200 flex items-center gap-3"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,9 +181,9 @@ const UserProfileDropdown = () => {
               </button>
             )}
 
-            {user?.role === 'moderator' && (
+            {(user?.rank === 'developer' || user?.role === 'admin' || user?.role === 'moderator') && (
               <button
-                onClick={() => handleNavigation('/settings?tab=moderator')}
+                onClick={() => handleNavigation('/moderator')}
                 className="w-full px-4 py-3 text-left text-[#10B981] hover:bg-n-7/50 transition-colors duration-200 flex items-center gap-3"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

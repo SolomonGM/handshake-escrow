@@ -1,9 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
 
+const PAGE_SIZE = 10;
+
+const ticketStatusOptions = [
+  ['all', 'All Statuses'],
+  ['open', 'Open'],
+  ['in-progress', 'In Progress'],
+  ['awaiting-close', 'Awaiting Close'],
+  ['closing', 'Closing'],
+  ['completed', 'Completed'],
+  ['cancelled', 'Cancelled'],
+  ['disputed', 'Disputed'],
+  ['refunded', 'Refunded']
+];
+
 const ModeratorPanel = () => {
+  const [overview, setOverview] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [ticketSearchTerm, setTicketSearchTerm] = useState('');
   const [debouncedTicketSearch, setDebouncedTicketSearch] = useState('');
@@ -16,7 +31,7 @@ const ModeratorPanel = () => {
   const [ticketSortOrder, setTicketSortOrder] = useState('desc');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const PAGE_SIZE = 10;
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,9 +41,14 @@ const ModeratorPanel = () => {
     return () => clearTimeout(timer);
   }, [ticketSearchTerm]);
 
-  const loadTickets = async () => {
+  const loadOverview = async () => {
+    const overviewData = await adminAPI.getOverview();
+    setOverview(overviewData);
+  };
+
+  const loadTickets = async ({ showLoading = true } = {}) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const tradeTicketsData = await adminAPI.getTradeTickets({
         search: debouncedTicketSearch,
         page: ticketsPage,
@@ -44,18 +64,34 @@ const ModeratorPanel = () => {
       if (tradeTicketsData.page && tradeTicketsData.page !== ticketsPage) {
         setTicketsPage(tradeTicketsData.page);
       }
+      setLastRefreshedAt(new Date());
     } catch (error) {
       setMessage('Error loading tickets: ' + (error.response?.data?.message || error.message));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  const refreshAll = async ({ showLoading = true } = {}) => {
+    try {
+      if (showLoading) setLoading(true);
+      await Promise.all([loadOverview(), loadTickets({ showLoading: false })]);
+      setLastRefreshedAt(new Date());
+    } catch (error) {
+      setMessage('Error loading moderator console: ' + (error.response?.data?.message || error.message));
+    } finally {
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTickets();
-  }, [debouncedTicketSearch, ticketsPage, ticketStatusFilter, ticketSortBy, ticketSortOrder]);
+    refreshAll();
+  }, []);
 
-  const filteredTickets = tickets;
+  useEffect(() => {
+    if (loading) return;
+    loadTickets({ showLoading: false });
+  }, [debouncedTicketSearch, ticketsPage, ticketStatusFilter, ticketSortBy, ticketSortOrder]);
 
   const getTicketStatusStyle = (status) => {
     const styles = {
@@ -71,6 +107,38 @@ const ModeratorPanel = () => {
     return styles[status] || 'bg-n-5 text-n-3';
   };
 
+  const formatNumber = (value) => Number(value || 0).toLocaleString();
+  const lastRefreshLabel = lastRefreshedAt
+    ? lastRefreshedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'Not refreshed yet';
+
+  const setQuickStatus = (status) => {
+    setTicketStatusFilter(status);
+    setTicketsPage(1);
+  };
+
+  const renderMetricCard = ({ label, value, detail, status, tone = 'neutral' }) => {
+    const toneClass = {
+      neutral: 'border-n-5 bg-n-7/70',
+      green: 'border-[#10B981]/30 bg-[#10B981]/10',
+      amber: 'border-amber-400/30 bg-amber-400/10',
+      red: 'border-red-400/30 bg-red-400/10',
+      purple: 'border-purple-400/30 bg-purple-400/10'
+    }[tone] || 'border-n-5 bg-n-7/70';
+
+    return (
+      <button
+        type="button"
+        onClick={() => status && setQuickStatus(status)}
+        className={`rounded-lg border p-4 text-left transition-colors hover:border-n-3 ${toneClass}`}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider text-n-4">{label}</p>
+        <p className="mt-3 text-2xl font-semibold text-n-1">{value}</p>
+        <p className="mt-1 text-xs text-n-3">{detail}</p>
+      </button>
+    );
+  };
+
   const renderPagination = ({ page, totalPages, totalCount, onPageChange }) => {
     if (totalPages <= 1) return null;
     return (
@@ -78,17 +146,15 @@ const ModeratorPanel = () => {
         <button
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            page <= 1
-              ? 'bg-n-6 text-n-4 cursor-not-allowed'
-              : 'bg-n-7 text-n-1 hover:bg-n-5'
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            page <= 1 ? 'cursor-not-allowed bg-n-6 text-n-4' : 'bg-n-7 text-n-1 hover:bg-n-5'
           }`}
         >
           Previous
         </button>
-        <div className="text-n-4 text-sm">
-          Page <span className="text-n-1 font-semibold">{page}</span> of{' '}
-          <span className="text-n-1 font-semibold">{totalPages}</span>
+        <div className="text-sm text-n-4">
+          Page <span className="font-semibold text-n-1">{page}</span> of{' '}
+          <span className="font-semibold text-n-1">{totalPages}</span>
           {Number.isFinite(totalCount) && totalCount > 0 ? (
             <span className="ml-2 text-n-5">({totalCount} total)</span>
           ) : null}
@@ -96,10 +162,8 @@ const ModeratorPanel = () => {
         <button
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            page >= totalPages
-              ? 'bg-n-6 text-n-4 cursor-not-allowed'
-              : 'bg-n-7 text-n-1 hover:bg-n-5'
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            page >= totalPages ? 'cursor-not-allowed bg-n-6 text-n-4' : 'bg-n-7 text-n-1 hover:bg-n-5'
           }`}
         >
           Next
@@ -111,133 +175,182 @@ const ModeratorPanel = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-n-3">Loading moderator panel...</div>
+        <div className="text-n-3">Loading moderator console...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-w-0">
-      <div className="flex items-center justify-between mb-6">
+    <div className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mb-6 flex flex-col gap-4 border-b border-n-6 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="h3 text-[#10B981]">Moderator Panel</h2>
-          <p className="text-n-4 text-sm">Review trade tickets and assist live</p>
+          <div className="mb-2 inline-flex rounded-md border border-[#10B981]/30 bg-[#10B981]/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-[#10B981]">
+            Staff Console
+          </div>
+          <h2 className="text-2xl font-semibold text-n-1 md:text-3xl">Moderator Operations</h2>
+          <p className="mt-1 text-sm text-n-4">Live ticket queue, escalation review, and staff handoff context.</p>
         </div>
-        <Button onClick={loadTickets}>Refresh Tickets</Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-n-4">Last refresh: <span className="text-n-2">{lastRefreshLabel}</span></span>
+          <Button onClick={() => refreshAll({ showLoading: false })}>Refresh Queue</Button>
+        </div>
       </div>
 
       {message && (
-        <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/50 text-red-400">
+        <div className="mb-6 rounded-lg border border-red-500/50 bg-red-500/10 p-4 text-red-400">
           {message}
         </div>
       )}
 
-      <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <input
-          type="text"
-          placeholder="Search tickets by sender, receiver, or ticket ID..."
-          value={ticketSearchTerm}
-          onChange={(e) => {
-            setTicketSearchTerm(e.target.value);
-            setTicketsPage(1);
-          }}
-          className="w-full xl:col-span-2 px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 placeholder-n-4 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-        />
-        <select
-          value={ticketStatusFilter}
-          onChange={(e) => {
-            setTicketStatusFilter(e.target.value);
-            setTicketsPage(1);
-          }}
-          className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-        >
-          <option value="all">All Statuses</option>
-          <option value="open">Open</option>
-          <option value="in-progress">In Progress</option>
-          <option value="awaiting-close">Awaiting Close</option>
-          <option value="closing">Closing</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="disputed">Disputed</option>
-          <option value="refunded">Refunded</option>
-        </select>
-        <div className="flex gap-3 md:col-span-2">
-          <select
-            value={ticketSortBy}
-            onChange={(e) => {
-              setTicketSortBy(e.target.value);
-              setTicketsPage(1);
-            }}
-            className="w-full px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-          >
-            <option value="updatedAt">Sort: Updated</option>
-            <option value="createdAt">Sort: Created</option>
-            <option value="status">Sort: Status</option>
-            <option value="ticketId">Sort: Ticket ID</option>
-            <option value="cryptocurrency">Sort: Coin</option>
-          </select>
-          <select
-            value={ticketSortOrder}
-            onChange={(e) => {
-              setTicketSortOrder(e.target.value);
-              setTicketsPage(1);
-            }}
-            className="px-4 py-3 bg-n-6 border border-n-6 rounded-lg text-n-1 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-          >
-            <option value="desc">Desc</option>
-            <option value="asc">Asc</option>
-          </select>
-        </div>
+      <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {renderMetricCard({
+          label: 'Open',
+          value: formatNumber(overview?.tickets?.open),
+          detail: 'New tickets waiting for progress',
+          status: 'open',
+          tone: 'green'
+        })}
+        {renderMetricCard({
+          label: 'In Progress',
+          value: formatNumber(overview?.tickets?.inProgress),
+          detail: 'Active escrow workflows',
+          status: 'in-progress',
+          tone: 'neutral'
+        })}
+        {renderMetricCard({
+          label: 'Awaiting Close',
+          value: formatNumber(overview?.tickets?.awaitingClose),
+          detail: 'Needs completion attention',
+          status: 'awaiting-close',
+          tone: 'amber'
+        })}
+        {renderMetricCard({
+          label: 'Disputed',
+          value: formatNumber(overview?.tickets?.disputed),
+          detail: `${formatNumber(overview?.tickets?.recentlyUpdated)} tickets updated in 24h`,
+          status: 'disputed',
+          tone: overview?.tickets?.disputed ? 'red' : 'purple'
+        })}
       </div>
 
-      <div className="bg-n-6 rounded-lg border border-n-5 overflow-hidden">
-        <div className="px-4 py-2 border-b border-n-5 bg-n-7/50 text-xs text-n-4">
-          Scroll sideways to view all ticket columns.
+      <div className="rounded-lg border border-n-5 bg-n-6">
+        <div className="border-b border-n-5 px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-n-1">Ticket Queue</h3>
+              <p className="text-xs text-n-4">Search by ticket ID, sender, or receiver.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {['all', 'open', 'in-progress', 'awaiting-close', 'disputed'].map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setQuickStatus(status)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                    ticketStatusFilter === status
+                      ? 'bg-n-1 text-n-8'
+                      : 'bg-n-7 text-n-3 hover:bg-n-5 hover:text-n-1'
+                  }`}
+                >
+                  {status.replaceAll('-', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <input
+              type="text"
+              placeholder="Search tickets by sender, receiver, or ticket ID..."
+              value={ticketSearchTerm}
+              onChange={(event) => {
+                setTicketSearchTerm(event.target.value);
+                setTicketsPage(1);
+              }}
+              className="w-full rounded-lg border border-n-5 bg-n-7 px-4 py-3 text-n-1 placeholder-n-4 transition-all focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981] xl:col-span-2"
+            />
+            <select
+              value={ticketStatusFilter}
+              onChange={(event) => {
+                setTicketStatusFilter(event.target.value);
+                setTicketsPage(1);
+              }}
+              className="w-full rounded-lg border border-n-5 bg-n-7 px-4 py-3 text-n-1 transition-all focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]"
+            >
+              {ticketStatusOptions.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 md:col-span-2">
+              <select
+                value={ticketSortBy}
+                onChange={(event) => {
+                  setTicketSortBy(event.target.value);
+                  setTicketsPage(1);
+                }}
+                className="w-full rounded-lg border border-n-5 bg-n-7 px-4 py-3 text-n-1 transition-all focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]"
+              >
+                <option value="updatedAt">Sort: Updated</option>
+                <option value="createdAt">Sort: Created</option>
+                <option value="status">Sort: Status</option>
+                <option value="ticketId">Sort: Ticket ID</option>
+                <option value="cryptocurrency">Sort: Coin</option>
+              </select>
+              <select
+                value={ticketSortOrder}
+                onChange={(event) => {
+                  setTicketSortOrder(event.target.value);
+                  setTicketsPage(1);
+                }}
+                className="rounded-lg border border-n-5 bg-n-7 px-4 py-3 text-n-1 transition-all focus:border-[#10B981] focus:outline-none focus:ring-1 focus:ring-[#10B981]"
+              >
+                <option value="desc">Desc</option>
+                <option value="asc">Asc</option>
+              </select>
+            </div>
+          </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[960px]">
-            <thead className="bg-n-7 border-b border-n-5">
+            <thead className="border-b border-n-5 bg-n-7">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Ticket ID</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Sender</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Receiver</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Crypto</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Updated</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Ticket ID</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Sender</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Receiver</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Crypto</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Updated</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-n-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-n-5">
-              {filteredTickets.map((ticket) => (
-                <tr key={ticket._id} className="hover:bg-n-7/50 transition-colors">
-                  <td className="px-4 py-4 whitespace-nowrap text-xs text-n-2 font-mono">
-                    {ticket.ticketId}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1 max-w-[220px]">
+              {tickets.map((ticket) => (
+                <tr key={ticket._id} className="transition-colors hover:bg-n-7/50">
+                  <td className="whitespace-nowrap px-4 py-4 font-mono text-xs text-n-2">{ticket.ticketId}</td>
+                  <td className="max-w-[220px] whitespace-nowrap px-4 py-4 text-sm text-n-1">
                     <span className="block truncate" title={ticket.sender?.username ? `@${ticket.sender.username}` : 'Pending'}>
                       {ticket.sender?.username ? `@${ticket.sender.username}` : 'Pending'}
                     </span>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-n-1 max-w-[220px]">
+                  <td className="max-w-[220px] whitespace-nowrap px-4 py-4 text-sm text-n-1">
                     <span className="block truncate" title={ticket.receiver?.username ? `@${ticket.receiver.username}` : 'Pending'}>
                       {ticket.receiver?.username ? `@${ticket.receiver.username}` : 'Pending'}
                     </span>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${getTicketStatusStyle(ticket.status)}`}>
+                  <td className="whitespace-nowrap px-4 py-4">
+                    <span className={`rounded px-2 py-1 text-xs font-semibold capitalize ${getTicketStatusStyle(ticket.status)}`}>
                       {ticket.status}
                     </span>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-n-2 uppercase">
-                    {ticket.cryptocurrency}
+                  <td className="whitespace-nowrap px-4 py-4 text-sm uppercase text-n-2">{ticket.cryptocurrency}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-sm text-n-3">
+                    {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString() : 'N/A'}
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-n-3">
-                    {ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-4 py-4">
                     <button
                       onClick={() => navigate(`/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}`)}
-                      className="text-color-4 hover:text-color-4/80 text-sm font-semibold"
+                      className="text-sm font-semibold text-color-4 hover:text-color-4/80"
                     >
                       View Ticket
                     </button>
@@ -262,10 +375,8 @@ const ModeratorPanel = () => {
         onPageChange: setTicketsPage
       })}
 
-      {filteredTickets.length === 0 && (
-        <div className="text-center py-8 text-n-4">
-          No trade tickets found matching your search.
-        </div>
+      {tickets.length === 0 && (
+        <div className="py-8 text-center text-n-4">No trade tickets found matching your filters.</div>
       )}
     </div>
   );

@@ -21,6 +21,7 @@ import { getErc20MonitorStatus } from '../services/erc20Monitor.js';
 import HdAddressCounter from '../models/HdAddressCounter.js';
 import TradeTicketModel from '../models/TradeTicket.js';
 import PassOrder from '../models/PassOrder.js';
+import SystemConfig from '../models/SystemConfig.js';
 
 const MAX_RECENT_PAGES = 10;
 
@@ -451,6 +452,194 @@ export const getSiteStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get site stats error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const getAdminOverview = async (req, res) => {
+  try {
+    if (!isStaffUser(req.user)) {
+      return res.status(403).json({ message: 'Access denied. Staff only.' });
+    }
+
+    const developerView = req.user.rank === 'developer';
+    const now = new Date();
+    const recentWindowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [
+      totalUsers,
+      adminUsers,
+      moderatorUsers,
+      twoFactorUsers,
+      totalTickets,
+      ticketStatusCounts,
+      recentlyUpdatedTickets,
+      totalTradeRequests,
+      tradeRequestStatusCounts,
+      activeBanUsers,
+      permanentBanUsers,
+      temporaryBanUsers,
+      recentActionsCount,
+      latestTickets,
+      latestModerationActions,
+      runtimeConfig
+    ] = await Promise.all([
+      developerView ? User.countDocuments() : Promise.resolve(null),
+      developerView ? User.countDocuments({ role: 'admin' }) : Promise.resolve(null),
+      developerView ? User.countDocuments({ role: 'moderator' }) : Promise.resolve(null),
+      developerView ? User.countDocuments({ 'twoFactor.enabled': true }) : Promise.resolve(null),
+      TradeTicket.countDocuments(),
+      TradeTicket.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      TradeTicket.countDocuments({ updatedAt: { $gte: recentWindowStart } }),
+      developerView ? TradeRequest.countDocuments() : Promise.resolve(null),
+      developerView
+        ? TradeRequest.aggregate([
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+          ])
+        : Promise.resolve([]),
+      developerView
+        ? User.countDocuments({
+            'chatModeration.isBanned': true,
+            $or: [
+              { 'chatModeration.bannedUntil': null },
+              { 'chatModeration.bannedUntil': { $gt: now } }
+            ]
+          })
+        : Promise.resolve(null),
+      developerView
+        ? User.countDocuments({
+            'chatModeration.isBanned': true,
+            'chatModeration.bannedUntil': null
+          })
+        : Promise.resolve(null),
+      developerView
+        ? User.countDocuments({
+            'chatModeration.isBanned': true,
+            'chatModeration.bannedUntil': { $gt: now }
+          })
+        : Promise.resolve(null),
+      developerView
+        ? ModerationAction.countDocuments({ createdAt: { $gte: recentWindowStart } })
+        : Promise.resolve(null),
+      TradeTicket.find()
+        .select('ticketId status cryptocurrency updatedAt creator creatorRole rolesConfirmed participants')
+        .populate('creator', 'username userId avatar')
+        .populate('participants.user', 'username userId avatar')
+        .sort({ updatedAt: -1, _id: -1 })
+        .limit(5)
+        .lean(),
+      developerView
+        ? ModerationAction.find()
+            .select('actionType scope targetUser moderatorUser reason ticketId createdAt')
+            .populate('targetUser', 'username userId avatar role rank')
+            .populate('moderatorUser', 'username userId avatar role rank')
+            .sort({ createdAt: -1, _id: -1 })
+            .limit(5)
+            .lean()
+        : Promise.resolve([]),
+      developerView ? getPublicRuntimeConfig() : SystemConfig.findOne({ key: 'runtime' }).lean()
+    ]);
+
+    const countMap = (rows) => rows.reduce((acc, row) => {
+      if (row?._id) {
+        acc[row._id] = row.count;
+      }
+      return acc;
+    }, {});
+
+    const ticketCounts = countMap(ticketStatusCounts);
+    const requestCounts = countMap(tradeRequestStatusCounts);
+    const enabledCurrencies = runtimeConfig?.ticketAvailability
+      ? Object.values(runtimeConfig.ticketAvailability).filter(Boolean).length
+      : 0;
+    const configuredChains = developerView
+      ? Object.values(hdSelfTest({ force: false })).filter((result) => result?.ok).length
+      : null;
+
+    res.json({
+      users: developerView
+        ? {
+            total: totalUsers,
+            admins: adminUsers,
+            moderators: moderatorUsers,
+            twoFactorEnabled: twoFactorUsers
+          }
+        : null,
+      tickets: {
+        total: totalTickets,
+        open: ticketCounts.open || 0,
+        inProgress: ticketCounts['in-progress'] || 0,
+        awaitingClose: ticketCounts['awaiting-close'] || 0,
+        disputed: ticketCounts.disputed || 0,
+        refunded: ticketCounts.refunded || 0,
+        completed: ticketCounts.completed || 0,
+        recentlyUpdated: recentlyUpdatedTickets
+      },
+      tradeRequests: developerView
+        ? {
+            total: totalTradeRequests,
+            active: requestCounts.active || 0,
+            paused: requestCounts.paused || 0,
+            expired: requestCounts.expired || 0,
+            sold: requestCounts.sold || 0
+          }
+        : null,
+      moderation: developerView
+        ? {
+            activeBans: activeBanUsers,
+            permanentBans: permanentBanUsers,
+            temporaryBans: temporaryBanUsers,
+            recentActions: recentActionsCount
+          }
+        : null,
+      payments: {
+        ticketWorkflowPaused: Boolean(runtimeConfig?.ticketWorkflowPaused),
+        enabledCurrencies,
+        configuredChains,
+        generatedAt: now.toISOString()
+      },
+      activity: {
+        latestTickets: latestTickets.map((ticket) => {
+          const senderUser = resolveTicketRoleUser(ticket, 'sender');
+          const receiverUser = resolveTicketRoleUser(ticket, 'receiver');
+          return {
+            _id: ticket._id,
+            ticketId: ticket.ticketId,
+            status: ticket.status,
+            cryptocurrency: ticket.cryptocurrency,
+            updatedAt: ticket.updatedAt,
+            sender: formatTicketUser(senderUser),
+            receiver: formatTicketUser(receiverUser)
+          };
+        }),
+        latestModerationActions: latestModerationActions.map((action) => ({
+          _id: action._id,
+          actionType: action.actionType,
+          scope: action.scope,
+          reason: action.reason,
+          ticketId: action.ticketId,
+          createdAt: action.createdAt,
+          targetUser: action.targetUser
+            ? {
+                _id: action.targetUser._id,
+                username: action.targetUser.username,
+                userId: action.targetUser.userId
+              }
+            : null,
+          moderatorUser: action.moderatorUser
+            ? {
+                _id: action.moderatorUser._id,
+                username: action.moderatorUser.username,
+                userId: action.moderatorUser.userId
+              }
+            : null
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Get admin overview error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

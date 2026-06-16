@@ -8,9 +8,12 @@ import { cryptoBrandLogos } from '../assets/currencies';
 const AdminPanel = () => {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
+  const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [message, setMessage] = useState('');
+  const [activeSection, setActiveSection] = useState('overview');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
@@ -229,7 +232,8 @@ const AdminPanel = () => {
   const loadUsersAndStats = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadUsers(), loadStats(), loadRuntimeConfig(), loadWalletInfrastructure()]);
+      await Promise.all([loadUsers(), loadStats(), loadOverview(), loadRuntimeConfig(), loadWalletInfrastructure()]);
+      setLastRefreshedAt(new Date());
     } catch (error) {
       setMessage('Error loading data: ' + (error.response?.data?.message || error.message));
     } finally {
@@ -241,6 +245,11 @@ const AdminPanel = () => {
   const loadStats = async () => {
     const statsData = await adminAPI.getSiteStats();
     setStats(statsData);
+  };
+
+  const loadOverview = async () => {
+    const overviewData = await adminAPI.getOverview();
+    setOverview(overviewData);
   };
 
   const cloneRuntimeConfigForDraft = (runtime) => {
@@ -831,6 +840,142 @@ const AdminPanel = () => {
     'usdc-erc20'
   ];
 
+  const formatNumber = (value) => Number(value || 0).toLocaleString();
+  const lastRefreshLabel = lastRefreshedAt
+    ? lastRefreshedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'Not refreshed yet';
+
+  const consoleSections = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'tickets', label: 'Tickets', count: (overview?.tickets?.open || 0) + (overview?.tickets?.inProgress || 0) + (overview?.tickets?.awaitingClose || 0) },
+    { key: 'users', label: 'Users', count: overview?.users?.total },
+    { key: 'trade-requests', label: 'Trade Requests', count: overview?.tradeRequests?.active },
+    { key: 'moderation', label: 'Moderation', count: overview?.moderation?.activeBans },
+    { key: 'infrastructure', label: 'Infrastructure', count: overview?.payments?.enabledCurrencies }
+  ];
+
+  const renderMetricCard = ({ label, value, detail, tone = 'neutral' }) => {
+    const toneClass = {
+      neutral: 'border-n-5 bg-n-7/70',
+      green: 'border-[#10B981]/30 bg-[#10B981]/10',
+      amber: 'border-amber-400/30 bg-amber-400/10',
+      red: 'border-red-400/30 bg-red-400/10',
+      cyan: 'border-cyan-400/30 bg-cyan-400/10'
+    }[tone] || 'border-n-5 bg-n-7/70';
+
+    return (
+      <div className={`rounded-lg border p-4 ${toneClass}`}>
+        <p className="text-xs font-semibold uppercase tracking-wider text-n-4">{label}</p>
+        <p className="mt-3 text-2xl font-semibold text-n-1">{value}</p>
+        {detail ? <p className="mt-1 text-xs text-n-3">{detail}</p> : null}
+      </div>
+    );
+  };
+
+  const renderOverview = () => (
+    <div className={activeSection === 'overview' ? 'space-y-6' : 'hidden'}>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {renderMetricCard({
+          label: 'Ticket Queue',
+          value: formatNumber((overview?.tickets?.open || 0) + (overview?.tickets?.inProgress || 0)),
+          detail: `${formatNumber(overview?.tickets?.disputed)} disputed, ${formatNumber(overview?.tickets?.awaitingClose)} awaiting close`,
+          tone: overview?.tickets?.disputed ? 'red' : 'green'
+        })}
+        {renderMetricCard({
+          label: 'Users',
+          value: formatNumber(overview?.users?.total),
+          detail: `${formatNumber(overview?.users?.admins)} admins, ${formatNumber(overview?.users?.moderators)} moderators`,
+          tone: 'cyan'
+        })}
+        {renderMetricCard({
+          label: 'Active Bans',
+          value: formatNumber(overview?.moderation?.activeBans),
+          detail: `${formatNumber(overview?.moderation?.temporaryBans)} temporary, ${formatNumber(overview?.moderation?.permanentBans)} permanent`,
+          tone: overview?.moderation?.activeBans ? 'amber' : 'neutral'
+        })}
+        {renderMetricCard({
+          label: 'Payments',
+          value: overview?.payments?.ticketWorkflowPaused ? 'Paused' : 'Active',
+          detail: `${formatNumber(overview?.payments?.enabledCurrencies)} currencies enabled, ${formatNumber(overview?.payments?.configuredChains)} chains configured`,
+          tone: overview?.payments?.ticketWorkflowPaused ? 'amber' : 'green'
+        })}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-lg border border-n-5 bg-n-6">
+          <div className="flex items-center justify-between border-b border-n-5 px-5 py-4">
+            <div>
+              <h3 className="text-base font-semibold text-n-1">Recent Tickets</h3>
+              <p className="text-xs text-n-4">Latest queue movement across all escrow tickets</p>
+            </div>
+            <button onClick={() => setActiveSection('tickets')} className="text-xs font-semibold text-color-4 hover:text-color-4/80">
+              View queue
+            </button>
+          </div>
+          <div className="divide-y divide-n-5">
+            {(overview?.activity?.latestTickets || []).map((ticket) => (
+              <button
+                key={ticket._id}
+                type="button"
+                onClick={() => navigate(`/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}`)}
+                className="grid w-full gap-2 px-5 py-4 text-left transition-colors hover:bg-n-7/60 sm:grid-cols-[1fr_auto]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs text-n-2">{ticket.ticketId}</p>
+                  <p className="mt-1 truncate text-sm text-n-1">
+                    @{ticket.sender?.username || 'Pending'} to @{ticket.receiver?.username || 'Pending'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 sm:justify-end">
+                  <span className={`rounded px-2 py-1 text-xs font-semibold ${getTicketStatusStyle(ticket.status)}`}>
+                    {ticket.status}
+                  </span>
+                  <span className="text-xs uppercase text-n-4">{ticket.cryptocurrency}</span>
+                </div>
+              </button>
+            ))}
+            {(overview?.activity?.latestTickets || []).length === 0 && (
+              <div className="px-5 py-8 text-center text-sm text-n-4">No recent tickets.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-n-5 bg-n-6">
+          <div className="flex items-center justify-between border-b border-n-5 px-5 py-4">
+            <div>
+              <h3 className="text-base font-semibold text-n-1">Audit Activity</h3>
+              <p className="text-xs text-n-4">Latest moderation and operational records</p>
+            </div>
+            <button onClick={() => setActiveSection('moderation')} className="text-xs font-semibold text-color-4 hover:text-color-4/80">
+              View audit
+            </button>
+          </div>
+          <div className="divide-y divide-n-5">
+            {(overview?.activity?.latestModerationActions || []).map((action) => (
+              <div key={action._id} className="px-5 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded px-2 py-1 text-xs font-semibold ${getModerationActionStyle(action.actionType)}`}>
+                    {String(action.actionType || 'unknown').replaceAll('_', ' ')}
+                  </span>
+                  <span className={`rounded px-2 py-1 text-xs font-semibold uppercase ${getModerationScopeStyle(action.scope)}`}>
+                    {action.scope || 'system'}
+                  </span>
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm text-n-2">{action.reason || 'No reason provided'}</p>
+                <p className="mt-1 text-xs text-n-4">
+                  {action.createdAt ? new Date(action.createdAt).toLocaleString() : 'N/A'}
+                </p>
+              </div>
+            ))}
+            {(overview?.activity?.latestModerationActions || []).length === 0 && (
+              <div className="px-5 py-8 text-center text-sm text-n-4">No audit activity.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -840,18 +985,32 @@ const AdminPanel = () => {
   }
 
   return (
-    <div className="min-w-0">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="h3 text-[#ef4444]">Administrator Panel</h2>
-        <Button onClick={() => {
-          loadUsersAndStats();
-          loadTradeTickets();
-          loadTradeRequests();
-          loadModerationActions();
-          loadActiveBans();
-        }}>
-          Refresh Data
-        </Button>
+    <div className="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mb-6 flex flex-col gap-4 border-b border-n-6 pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="mb-2 inline-flex rounded-md border border-red-400/30 bg-red-400/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-red-300">
+            Developer Console
+          </div>
+          <h2 className="text-2xl font-semibold text-n-1 md:text-3xl">Administration</h2>
+          <p className="mt-1 text-sm text-n-4">
+            Site operations, user controls, moderation audit, and payment infrastructure.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-n-4">Last refresh: <span className="text-n-2">{lastRefreshLabel}</span></span>
+          <Button onClick={async () => {
+            await Promise.all([
+              loadUsersAndStats(),
+              loadTradeTickets(),
+              loadTradeRequests(),
+              loadModerationActions(),
+              loadActiveBans()
+            ]);
+            setLastRefreshedAt(new Date());
+          }}>
+            Refresh Data
+          </Button>
+        </div>
       </div>
 
       {message && (
@@ -860,9 +1019,37 @@ const AdminPanel = () => {
         </div>
       )}
 
+      <div className="mb-6 overflow-x-auto">
+        <div className="flex min-w-max gap-2 rounded-lg border border-n-6 bg-n-7/40 p-1">
+          {consoleSections.map((section) => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => setActiveSection(section.key)}
+              className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                activeSection === section.key
+                  ? 'bg-n-1 text-n-8'
+                  : 'text-n-3 hover:bg-n-6 hover:text-n-1'
+              }`}
+            >
+              {section.label}
+              {Number.isFinite(section.count) ? (
+                <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${
+                  activeSection === section.key ? 'bg-n-8/10 text-n-8' : 'bg-n-6 text-n-3'
+                }`}>
+                  {formatNumber(section.count)}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {renderOverview()}
+
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className={activeSection === 'overview' ? 'grid grid-cols-1 md:grid-cols-4 gap-4 mt-6 mb-8' : 'hidden'}>
           <div className="bg-n-6 p-4 rounded-lg border border-n-5">
             <p className="text-n-4 text-sm mb-1">Total Users</p>
             <p className="text-3xl font-bold text-n-1">{stats.totalUsers}</p>
@@ -890,7 +1077,7 @@ const AdminPanel = () => {
       )}
 
       {/* Payment Infrastructure Section */}
-      <div className="mb-10 rounded-lg border border-n-5 bg-n-6">
+      <div className={activeSection === 'infrastructure' ? 'mb-10 rounded-lg border border-n-5 bg-n-6' : 'hidden'}>
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-n-5 px-5 py-4">
           <div>
@@ -1173,6 +1360,7 @@ const AdminPanel = () => {
         )}
       </div>
 
+      <div className={activeSection === 'users' ? '' : 'hidden'}>
       {/* User Controls */}
       <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <input
@@ -1431,9 +1619,10 @@ const AdminPanel = () => {
           No users found matching your search.
         </div>
       )}
+      </div>
 
       {/* Trade Tickets Section */}
-      <div className="mt-12">
+      <div className={activeSection === 'tickets' ? '' : 'hidden'}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="h4 text-n-1">Trade Tickets</h3>
@@ -1572,15 +1761,15 @@ const AdminPanel = () => {
           onPageChange: setTicketsPage
         })}
 
-        {filteredTickets.length === 0 && (
-          <div className="text-center py-8 text-n-4">
-            No trade tickets found matching your search.
-          </div>
-        )}
+      {filteredTickets.length === 0 && (
+        <div className="text-center py-8 text-n-4">
+          No trade tickets found matching your search.
+        </div>
+      )}
       </div>
 
       {/* Active Bans Section */}
-      <div className="mt-12">
+      <div className={activeSection === 'moderation' ? 'mt-0' : 'hidden'}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="h4 text-n-1">Active Bans</h3>
@@ -1703,7 +1892,7 @@ const AdminPanel = () => {
       </div>
 
       {/* Moderation Actions Section */}
-      <div className="mt-12">
+      <div className={activeSection === 'moderation' ? 'mt-8' : 'hidden'}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="h4 text-n-1">Moderation Actions</h3>
@@ -1852,7 +2041,7 @@ const AdminPanel = () => {
       </div>
 
       {/* Trade Requests Section */}
-      <div className="mt-12">
+      <div className={activeSection === 'trade-requests' ? '' : 'hidden'}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="h4 text-n-1">Trade Requests</h3>
           <Button onClick={loadTradeRequests}>Refresh Trade Requests</Button>

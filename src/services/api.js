@@ -219,6 +219,11 @@ const buildAdminListParams = ({
 };
 
 export const adminAPI = {
+  getOverview: async () => {
+    const response = await api.get('/admin/overview');
+    return response.data;
+  },
+
   getAllUsers: async (options = {}) => {
     const response = await api.get('/admin/users', {
       params: buildAdminListParams(options)

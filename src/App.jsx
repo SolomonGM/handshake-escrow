@@ -6,6 +6,7 @@ import Footer from "./components/Footer";
 import Header from "./components/Header";
 import Hero from "./components/Hero";
 import ProtectedRoute from "./components/ProtectedRoute";
+import StaffRoute from "./components/StaffRoute";
 import BanLockOverlay from "./components/BanLockOverlay";
 
 const About = lazy(() => import("./components/About"));
@@ -26,6 +27,8 @@ const DocsFees = lazy(() => import("./components/docs/DocsFees"));
 const DocsOther = lazy(() => import("./components/docs/DocsOther"));
 const DocsTerms = lazy(() => import("./components/docs/DocsTerms"));
 const AllTransactions = lazy(() => import("./components/AllTransactions"));
+const AdminPanel = lazy(() => import("./components/AdminPanel"));
+const ModeratorPanel = lazy(() => import("./components/ModeratorPanel"));
 
 const PageLayout = ({ children }) => (
   <div className="min-h-[calc(100vh-4.75rem)] lg:min-h-[calc(100vh-5.25rem)] flex flex-col">
@@ -176,6 +179,24 @@ const AllTransactionsPage = () => (
   </PageLayout>
 );
 
+const AdminConsolePage = () => (
+  <PageLayout>
+    <Header />
+    <main className="flex-1 bg-n-8">
+      <AdminPanel />
+    </main>
+  </PageLayout>
+);
+
+const ModeratorConsolePage = () => (
+  <PageLayout>
+    <Header />
+    <main className="flex-1 bg-n-8">
+      <ModeratorPanel />
+    </main>
+  </PageLayout>
+);
+
 const AppShell = () => {
   const { user } = useAuth();
 
@@ -211,6 +232,22 @@ const AppShell = () => {
             <Route path="/docs/other" element={<DocsOtherPage />} />
             <Route path="/docs/terms" element={<DocsTermsPage />} />
             <Route path="/transactions" element={<AllTransactionsPage />} />
+            <Route
+              path="/admin"
+              element={
+                <StaffRoute requireDeveloper>
+                  <AdminConsolePage />
+                </StaffRoute>
+              }
+            />
+            <Route
+              path="/moderator"
+              element={
+                <StaffRoute>
+                  <ModeratorConsolePage />
+                </StaffRoute>
+              }
+            />
             <Route path="/trade-ticket" element={<TradeTicketPage />} />
             <Route
               path="/my-requests"
