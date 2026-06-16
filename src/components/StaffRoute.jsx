@@ -1,15 +1,18 @@
 import PropTypes from 'prop-types';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import LoadingState from './LoadingState';
 
 const StaffRoute = ({ children, requireDeveloper = false }) => {
   const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-color-1" />
-      </div>
+      <LoadingState
+        variant="page"
+        label="Checking staff access"
+        detail="Verifying your console permissions."
+      />
     );
   }
 

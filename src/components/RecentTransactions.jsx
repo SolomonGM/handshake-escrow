@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import useTransactionFeed from "../hooks/useTransactionFeed";
 import Section from "./Section";
+import LoadingState from "./LoadingState";
 import { currencyFlags } from "../assets/currencies";
 import {
   formatTransactionId,
@@ -247,24 +248,27 @@ const RecentTransactions = () => {
                 </div>
               </article>
             ))
+          ) : loading ? (
+            <div className="col-span-full">
+              <LoadingState
+                variant="panel"
+                label="Loading recent exchanges"
+                detail="Pulling the latest completed deals into view."
+                className="rounded-lg border border-n-6"
+              />
+            </div>
           ) : (
             <div className="col-span-full rounded-3xl border border-n-1/10 bg-n-8/70 py-16 text-center">
-              <p className="text-lg text-n-3">
-                {loading
-                  ? "Loading recent exchanges..."
-                  : "No transactions found matching your filters."}
-              </p>
-              {!loading && (
-                <button
-                  onClick={() => {
-                    setSortBy("recent");
-                    setFilterCoin("all");
-                  }}
-                  className="mt-4 font-semibold text-[#4A9EFF] transition-colors hover:text-[#6BB6FF]"
-                >
-                  Clear Filters
-                </button>
-              )}
+              <p className="text-lg text-n-3">No transactions found matching your filters.</p>
+              <button
+                onClick={() => {
+                  setSortBy("recent");
+                  setFilterCoin("all");
+                }}
+                className="mt-4 font-semibold text-[#4A9EFF] transition-colors hover:text-[#6BB6FF]"
+              >
+                Clear Filters
+              </button>
             </div>
           )}
         </div>

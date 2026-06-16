@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import Section from "./Section";
+import LoadingState from "./LoadingState";
 import { toast } from "../utils/toast";
 import { QRCodeSVG } from 'qrcode.react';
 import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from "../utils/rankDisplay";
@@ -990,11 +991,13 @@ const TradeTicket = () => {
   if (isLoading) {
     return (
       <Section className="pt-[12rem] -mt-[5.25rem] pb-12 flex-1" crosses crossesOffset="lg:translate-y-[5.25rem]" customPaddings>
-        <div className="container relative z-2 flex items-center justify-center min-h-[600px]">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-[#10B981] border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-n-3">Loading ticket...</p>
-          </div>
+        <div className="container relative z-2">
+          <LoadingState
+            variant="section"
+            label="Loading ticket"
+            detail="Opening the secure escrow conversation."
+            className="rounded-lg border border-n-6"
+          />
         </div>
       </Section>
     );

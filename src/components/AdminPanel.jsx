@@ -4,6 +4,7 @@ import { adminAPI } from '../services/api';
 import Button from './Button';
 import { getRankLabel, normalizeRank } from '../utils/rankDisplay';
 import { cryptoBrandLogos } from '../assets/currencies';
+import LoadingState from './LoadingState';
 
 const AdminPanel = () => {
   const [users, setUsers] = useState([]);
@@ -978,9 +979,11 @@ const AdminPanel = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-n-3">Loading admin panel...</div>
-      </div>
+      <LoadingState
+        variant="page"
+        label="Loading admin console"
+        detail="Preparing site metrics, audit trails, and infrastructure controls."
+      />
     );
   }
 
@@ -1130,7 +1133,12 @@ const AdminPanel = () => {
         </div>
 
         {(runtimeLoading || walletInfrastructureLoading) && !walletInfrastructure ? (
-          <div className="px-5 py-8 text-center text-sm text-n-4">Loading payment infrastructure...</div>
+          <LoadingState
+            variant="panel"
+            label="Loading infrastructure"
+            detail="Checking wallets, chains, and live payment monitors."
+            className="rounded-none border-0"
+          />
         ) : (
           <div className="p-5 space-y-5">
 

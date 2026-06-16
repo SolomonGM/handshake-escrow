@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import ButtonGradient from "./assets/svg/ButtonGradient";
 import Footer from "./components/Footer";
@@ -8,6 +8,7 @@ import Hero from "./components/Hero";
 import ProtectedRoute from "./components/ProtectedRoute";
 import StaffRoute from "./components/StaffRoute";
 import BanLockOverlay from "./components/BanLockOverlay";
+import LoadingState from "./components/LoadingState";
 
 const About = lazy(() => import("./components/About"));
 const BlockchainVerification = lazy(() => import("./components/BlockchainVerification"));
@@ -29,6 +30,7 @@ const DocsTerms = lazy(() => import("./components/docs/DocsTerms"));
 const AllTransactions = lazy(() => import("./components/AllTransactions"));
 const AdminPanel = lazy(() => import("./components/AdminPanel"));
 const ModeratorPanel = lazy(() => import("./components/ModeratorPanel"));
+const NotFound = lazy(() => import("./components/NotFound"));
 
 const PageLayout = ({ children }) => (
   <div className="min-h-[calc(100vh-4.75rem)] lg:min-h-[calc(100vh-5.25rem)] flex flex-col">
@@ -37,14 +39,21 @@ const PageLayout = ({ children }) => (
 );
 
 const PageFallback = () => (
-  <div className="flex min-h-[45vh] items-center justify-center px-6 text-center text-sm font-code uppercase tracking-wider text-n-4">
-    Loading
-  </div>
+  <LoadingState
+    variant="page"
+    label="Loading Handshake"
+    detail="Preparing the next secure workspace."
+  />
 );
 
 const SectionFallback = ({ className = "" }) => (
   <div className={`container py-16 ${className}`}>
-    <div className="h-40 animate-pulse rounded-3xl border border-n-1/10 bg-n-7/30" />
+    <LoadingState
+      variant="panel"
+      label="Syncing content"
+      detail="Fetching the latest exchange data."
+      className="rounded-lg border border-n-6"
+    />
   </div>
 );
 
@@ -197,6 +206,50 @@ const ModeratorConsolePage = () => (
   </PageLayout>
 );
 
+const routeRedirects = {
+  "/dashbaord": "/",
+  "/dashboard": "/",
+  "/home": "/",
+  "/index": "/",
+  "/tradehub": "/trade-hub",
+  "/trades": "/trade-hub",
+  "/trade": "/trade-hub",
+  "/tickets": "/my-requests",
+  "/mytickets": "/my-requests",
+  "/myrequest": "/my-requests",
+  "/requests": "/my-requests",
+  "/passes": "/passes/purchase",
+  "/pass": "/passes/purchase",
+  "/docs/term": "/docs/terms",
+  "/terms": "/docs/terms",
+  "/fees": "/docs/fees",
+  "/bot": "/docs/bot",
+  "/chat": "/support",
+  "/help": "/support"
+};
+
+const NotFoundPage = () => (
+  <PageLayout>
+    <Header />
+    <main className="flex-1">
+      <NotFound />
+    </main>
+    <Footer />
+  </PageLayout>
+);
+
+const RouteFallbackPage = () => {
+  const location = useLocation();
+  const normalizedPath = location.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+  const redirectTarget = routeRedirects[normalizedPath];
+
+  if (redirectTarget) {
+    return <Navigate to={redirectTarget} replace state={{ redirectedFrom: location.pathname }} />;
+  }
+
+  return <NotFoundPage />;
+};
+
 const AppShell = () => {
   const { user } = useAuth();
 
@@ -276,6 +329,7 @@ const AppShell = () => {
             <Route path="/support" element={<Support />} />
             <Route path="/login" element={<HomePage />} />
             <Route path="/register" element={<HomePage />} />
+            <Route path="*" element={<RouteFallbackPage />} />
           </Routes>
         </Suspense>
       </div>

@@ -6,6 +6,7 @@ import Section from "./Section";
 import Heading from "./Heading";
 import TicketInvitationCard from "./TicketInvitationCard";
 import CreateTradeModal from "./CreateTradeModal";
+import LoadingState from "./LoadingState";
 import { toast } from "../utils/toast";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -304,11 +305,13 @@ const MyRequests = () => {
   if (isLoading) {
     return (
       <Section className="pt-[12rem] -mt-[5.25rem] pb-12 flex-1" crosses crossesOffset="lg:translate-y-[5.25rem]" customPaddings>
-        <div className="container relative z-2 flex items-center justify-center min-h-[600px]">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-[#10B981] border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-n-3">Loading requests...</p>
-          </div>
+        <div className="container relative z-2">
+          <LoadingState
+            variant="section"
+            label="Loading requests"
+            detail="Checking your active tickets, invitations, and completed deals."
+            className="rounded-lg border border-n-6"
+          />
         </div>
       </Section>
     );

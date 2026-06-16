@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import Section from "./Section";
 import Heading from "./Heading";
 import Button from "./Button";
+import LoadingState from "./LoadingState";
 import { check } from "../assets";
 import { passes } from "../constants";
 import axios from "axios";
@@ -689,10 +690,12 @@ const PassesPurchase = () => {
     return (
       <Section className="pt-[12rem] -mt-[5.25rem] flex-1" crosses crossesOffset="lg:translate-y-[5.25rem]">
         <div className="container relative z-2">
-          <div className="flex flex-col items-center justify-center min-h-[400px]">
-            <div className="w-16 h-16 border-4 border-[#10B981] border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-n-3">Checking for active payments...</p>
-          </div>
+          <LoadingState
+            variant="section"
+            label="Checking payments"
+            detail="Looking for active pass orders and available deposit networks."
+            className="rounded-lg border border-n-6"
+          />
         </div>
       </Section>
     );

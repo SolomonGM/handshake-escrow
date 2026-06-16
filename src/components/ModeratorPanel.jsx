@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
+import LoadingState from './LoadingState';
 
 const PAGE_SIZE = 10;
 
@@ -174,9 +175,11 @@ const ModeratorPanel = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-n-3">Loading moderator console...</div>
-      </div>
+      <LoadingState
+        variant="page"
+        label="Loading staff queue"
+        detail="Collecting open tickets and recent queue movement."
+      />
     );
   }
 

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toast } from '../utils/toast';
+import LoadingState from './LoadingState';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -17,9 +18,11 @@ const ProtectedRoute = ({ children }) => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-color-1"></div>
-      </div>
+      <LoadingState
+        variant="page"
+        label="Checking session"
+        detail="Verifying your Handshake access."
+      />
     );
   }
 

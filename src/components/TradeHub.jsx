@@ -7,6 +7,7 @@ import TradeRequestCard from "./TradeRequestCard";
 import { GradientLight } from "./design/TradeHub";
 import { searchMd, plusSquare } from "../assets";
 import Button from "./Button";
+import LoadingState from "./LoadingState";
 import CreateTradeModal from "./CreateTradeModal";
 import CreateTradeRequestModal from "./CreateTradeRequestModal";
 import { useAuth } from "../context/AuthContext";
@@ -498,12 +499,12 @@ const TradeHub = () => {
 
         {/* Trade Requests Grid */}
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-[#10B981] border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-n-3">Loading trade requests...</p>
-            </div>
-          </div>
+          <LoadingState
+            variant="section"
+            label="Loading trade requests"
+            detail="Fetching active marketplace offers."
+            className="rounded-lg border border-n-6"
+          />
         ) : filteredRequests.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 mb-6 rounded-full bg-n-7 flex items-center justify-center">

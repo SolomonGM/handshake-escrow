@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import socketService from "../services/socket";
 import { currencyFlags } from "../assets/currencies";
 import { formatTransactionId, getExplorerName, getExplorerUrl } from "../utils/blockchainUtils";
+import LoadingState from "./LoadingState";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
 const PAGE_SIZE = 10;
@@ -265,7 +266,12 @@ const AllTransactions = () => {
 
                 <div className="h-full overflow-hidden">
                   {loading ? (
-                    <div className="flex h-full items-center justify-center text-n-3">Loading transactions...</div>
+                    <LoadingState
+                      variant="panel"
+                      label="Loading transactions"
+                      detail="Syncing the latest completed exchanges."
+                      className="h-full rounded-none border-0"
+                    />
                   ) : (
                     paddedRows.map((transaction) => {
                       if (transaction.isPlaceholder) {
