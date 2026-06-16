@@ -17,6 +17,7 @@ import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
 import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
+import { updateTicketTransactionConfirmations } from './ticketDepositLifecycle.js';
 
 const SOL_NETWORK_MODE = (String(process.env.HD_SOL_NETWORK || 'devnet').trim().toLowerCase() === 'mainnet')
   ? 'mainnet'
@@ -275,7 +276,9 @@ export const monitorSolanaPassOrder = async (orderId, io) => {
 };
 
 export const monitorSolanaTicket = async (ticketId) => {
-  const ticket = await TradeTicket.findOne({ ticketId });
+  const ticket = await TradeTicket.findOne({ ticketId })
+    .populate('creator', 'username userId avatar')
+    .populate('participants.user', 'username userId avatar');
   if (!ticket) return;
   if (ticket.depositChain !== 'solana') return;
   if (!ticket.awaitingTransaction || ticket.transactionConfirmed) return;
@@ -296,13 +299,12 @@ export const monitorSolanaTicket = async (ticketId) => {
 
     if (!hit || hit.skipped) return;
 
-    ticket.senderTransactionHash = hit.signature;
-    ticket.confirmationCount = hit.confirmations;
-    ticket.transactionDetected = true;
-    if (hit.confirmations >= SOL_CONFIRMATIONS_REQUIRED) {
-      ticket.transactionConfirmed = true;
-    }
-    await ticket.save();
+    await updateTicketTransactionConfirmations(
+      ticket,
+      hit.signature,
+      hit.confirmations,
+      SOL_CONFIRMATIONS_REQUIRED
+    );
   } catch (error) {
     console.error(`[solana-monitor] ticket ${ticketId} (${currency}) error: ${error.message}`);
   }

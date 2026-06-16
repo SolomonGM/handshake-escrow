@@ -180,6 +180,13 @@ const deriveEthereumAddress = (index) => {
   return ethers.getAddress(child.address);
 };
 
+export const deriveEthereumWallet = (index, provider = null) => {
+  const mnemonic = requireEnv('HD_ETH_MNEMONIC');
+  const path = `m/44'/60'/0'/0/${index}`;
+  const wallet = ethers.HDNodeWallet.fromPhrase(mnemonic, undefined, path);
+  return provider ? wallet.connect(provider) : wallet;
+};
+
 const deriveSolanaAddress = (index) => {
   // Solana uses ed25519, not secp256k1, so we use Solana's standard
   // SLIP-0010 derivation. Mnemonic is required (no xpub equivalent for ed25519).
@@ -189,6 +196,14 @@ const deriveSolanaAddress = (index) => {
   const { key } = derivePath(path, seed.toString('hex'));
   const keypair = Keypair.fromSeed(key);
   return keypair.publicKey.toBase58();
+};
+
+export const deriveSolanaKeypair = (index) => {
+  const mnemonic = requireEnv('HD_SOL_MNEMONIC');
+  const seed = mnemonicToSeedSync(mnemonic, '');
+  const path = `m/44'/501'/${index}'/0'`;
+  const { key } = derivePath(path, seed.toString('hex'));
+  return Keypair.fromSeed(key);
 };
 
 // ============================================================================

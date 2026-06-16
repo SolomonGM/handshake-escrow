@@ -9,6 +9,10 @@ const walletModesSchema = new mongoose.Schema(
     testnet: {
       type: String,
       default: ''
+    },
+    devnet: {
+      type: String,
+      default: ''
     }
   },
   { _id: false }
@@ -58,7 +62,7 @@ const systemConfigSchema = new mongoose.Schema(
       },
       solana: {
         type: String,
-        enum: ['mainnet', 'testnet'],
+        enum: ['mainnet', 'testnet', 'devnet'],
         default: 'mainnet'
       }
     },

@@ -10,7 +10,7 @@ import { selfTest as hdSelfTest } from './hdWalletService.js';
 
 const CONFIG_KEY = 'runtime';
 const CACHE_TTL_MS = 5000;
-const NETWORK_MODES = ['mainnet', 'testnet'];
+const NETWORK_MODES = ['mainnet', 'testnet', 'devnet'];
 const WALLET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
 const TICKET_COIN_KEYS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
 
@@ -42,7 +42,7 @@ const DEFAULT_NETWORK_MODES = {
   bitcoin: normalizeNetworkMode(BTC_NETWORK_MODE, 'mainnet'),
   litecoin: normalizeNetworkMode(LTC_NETWORK_MODE, 'mainnet'),
   ethereum: normalizeNetworkMode(ETH_NETWORK_MODE, 'mainnet'),
-  solana: normalizeNetworkMode(process.env.SOL_NETWORK_MODE || 'mainnet', 'mainnet')
+  solana: normalizeNetworkMode(process.env.HD_SOL_NETWORK || process.env.SOL_NETWORK_MODE || 'mainnet', 'mainnet')
 };
 
 // Legacy wallet map. Kept for backward compatibility with the older monitor
@@ -63,7 +63,8 @@ const DEFAULT_WALLETS = {
   },
   solana: {
     mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim(),
+    devnet: String(process.env.SOL_DEVNET_WALLET || process.env.SOL_TESTNET_WALLET || '').trim()
   },
   'usdt-erc20': {
     mainnet: String(process.env.USDT_MAINNET_WALLET || process.env.ETH_MAINNET_WALLET || '').trim(),
@@ -75,11 +76,13 @@ const DEFAULT_WALLETS = {
   },
   'usdt-spl': {
     mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim(),
+    devnet: String(process.env.SOL_DEVNET_WALLET || process.env.SOL_TESTNET_WALLET || '').trim()
   },
   'usdc-spl': {
     mainnet: String(process.env.SOL_MAINNET_WALLET || '').trim(),
-    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim()
+    testnet: String(process.env.SOL_TESTNET_WALLET || '').trim(),
+    devnet: String(process.env.SOL_DEVNET_WALLET || process.env.SOL_TESTNET_WALLET || '').trim()
   }
 };
 
@@ -373,7 +376,7 @@ export const getActiveNetworkModeForCoin = (coin, runtimeConfig) => {
   if (normalizedCoin === 'litecoin') {
     return normalizeNetworkMode(modes.litecoin, DEFAULT_NETWORK_MODES.litecoin);
   }
-  if (normalizedCoin === 'solana') {
+  if (normalizedCoin === 'solana' || normalizedCoin === 'usdt-spl' || normalizedCoin === 'usdc-spl') {
     return normalizeNetworkMode(modes.solana, DEFAULT_NETWORK_MODES.solana);
   }
   if (

@@ -147,11 +147,6 @@ const passManagementCommands = [
     example: '/pass-complete 12345678901234567 PASS-1234 0xabc123 manual fix'
   },
   {
-    command: '/refund <user> <address|prompt> <coin> <message>',
-    description: 'Mark a pass order refunded, optionally prompting for address first',
-    example: '/refund @client 0xabc... eth internal bot mismatch'
-  },
-  {
     command: '/pass-order <user> [orderId]',
     description: 'Inspect latest pass order context for a user',
     example: '/pass-order @client'
@@ -168,11 +163,6 @@ const ticketManagementCommands = [
     command: '/close-ticket <ticketId>',
     description: 'Admin only: mark a ticket as cancelled',
     example: '/close-ticket #1234567'
-  },
-  {
-    command: '/release <ticketId> <sender|receiver> [reason]',
-    description: 'Force-mark ticket as refunded and assign refund target role',
-    example: '/release #1234567 sender sender requested manual refund'
   }
 ];
 
@@ -1602,6 +1592,11 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
     return true;
   }
 
+  if (command === '/refund' || command === '/release') {
+    emitPrivateBotMessage(socket, 'Refund and release commands are ticket-only. Open the ticket and use the ticket staff controls.');
+    return true;
+  }
+
   if (command === '/pin') {
     if (!roleFlags.isStaff) {
       emitPrivateBotMessage(socket, 'Only moderators and admins can use /pin.');
@@ -1822,7 +1817,7 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
     });
   }
 
-  if (command === '/join-ticket' || command === '/release') {
+  if (command === '/join-ticket') {
     if (!roleFlags.isStaff) {
       emitPrivateBotMessage(socket, 'Only moderators and admins can use ticket commands.');
       return true;
@@ -1839,7 +1834,6 @@ const handleSlashCommand = async ({ io, socket, command, args, rawArgs, roleFlag
   if (
     command === '/pass-return' ||
     command === '/pass-complete' ||
-    command === '/refund' ||
     command === '/pass-order'
   ) {
     if (!roleFlags.isAdmin) {

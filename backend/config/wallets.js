@@ -167,12 +167,112 @@ export const EXCHANGE_RATES = {
   litecoin: 75, // 1 LTC = $75 USD (TESTNET uses same rate for simplicity)
   solana: 100, // 1 SOL = $100 USD
   'usdt-erc20': 1, // 1 USDT = $1 USD
-  'usdc-erc20': 1  // 1 USDC = $1 USD
+  'usdc-erc20': 1, // 1 USDC = $1 USD
+  'usdt-spl': 1,
+  'usdc-spl': 1
+};
+
+const COINGECKO_IDS_BY_COIN = {
+  bitcoin: 'bitcoin',
+  ethereum: 'ethereum',
+  litecoin: 'litecoin',
+  solana: 'solana',
+  'usdt-erc20': 'tether',
+  'usdc-erc20': 'usd-coin',
+  'usdt-spl': 'tether',
+  'usdc-spl': 'usd-coin'
+};
+
+const RATE_CACHE_TTL_MS = parsePositiveNumber(process.env.EXCHANGE_RATE_CACHE_TTL_MS, 60_000);
+const RATE_REFRESH_INTERVAL_MS = parsePositiveNumber(process.env.EXCHANGE_RATE_REFRESH_INTERVAL_MS, 60_000);
+const RATE_FETCH_TIMEOUT_MS = parsePositiveNumber(process.env.EXCHANGE_RATE_FETCH_TIMEOUT_MS, 4_000);
+
+let liveExchangeRates = {};
+let liveExchangeRatesUpdatedAt = 0;
+let exchangeRateRefreshPromise = null;
+let exchangeRateInterval = null;
+
+const isLiveRateFresh = () => (
+  liveExchangeRatesUpdatedAt > 0 && Date.now() - liveExchangeRatesUpdatedAt < RATE_CACHE_TTL_MS
+);
+
+export const refreshExchangeRates = async ({ force = false } = {}) => {
+  if (!force && isLiveRateFresh()) {
+    return liveExchangeRates;
+  }
+
+  if (exchangeRateRefreshPromise) {
+    return exchangeRateRefreshPromise;
+  }
+
+  exchangeRateRefreshPromise = (async () => {
+    const ids = Array.from(new Set(Object.values(COINGECKO_IDS_BY_COIN)));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RATE_FETCH_TIMEOUT_MS);
+
+    try {
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(','))}&vs_currencies=usd`;
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`CoinGecko rate request failed with ${response.status}`);
+      }
+
+      const data = await response.json();
+      const nextRates = {};
+
+      Object.entries(COINGECKO_IDS_BY_COIN).forEach(([coin, id]) => {
+        const rate = Number(data?.[id]?.usd);
+        if (Number.isFinite(rate) && rate > 0) {
+          nextRates[coin] = rate;
+        }
+      });
+
+      if (Object.keys(nextRates).length) {
+        liveExchangeRates = {
+          ...liveExchangeRates,
+          ...nextRates
+        };
+        liveExchangeRatesUpdatedAt = Date.now();
+      }
+
+      return liveExchangeRates;
+    } catch (error) {
+      console.warn(`Exchange-rate refresh failed: ${error.message}`);
+      return liveExchangeRates;
+    } finally {
+      clearTimeout(timeout);
+      exchangeRateRefreshPromise = null;
+    }
+  })();
+
+  return exchangeRateRefreshPromise;
+};
+
+export const startExchangeRateRefresh = () => {
+  if (exchangeRateInterval) {
+    return exchangeRateInterval;
+  }
+
+  refreshExchangeRates({ force: true });
+  exchangeRateInterval = setInterval(() => {
+    refreshExchangeRates({ force: true });
+  }, RATE_REFRESH_INTERVAL_MS);
+  exchangeRateInterval.unref?.();
+  return exchangeRateInterval;
 };
 
 export const getEthereumUsdRate = (networkMode = ETH_NETWORK_MODE) => {
   const resolvedMode = normalizeNetworkMode(networkMode, normalizeNetworkMode(ETH_NETWORK_MODE, 'testnet'));
-  return resolvedMode === 'testnet' ? ETH_TESTNET_USD_RATE : ETH_MAINNET_USD_RATE;
+  if (resolvedMode === 'testnet') {
+    return ETH_TESTNET_USD_RATE;
+  }
+  return liveExchangeRates.ethereum || ETH_MAINNET_USD_RATE;
 };
 
 export const getExchangeRateForCoin = (coin, options = {}) => {
@@ -185,7 +285,7 @@ export const getExchangeRateForCoin = (coin, options = {}) => {
     return getEthereumUsdRate(options.networkMode);
   }
 
-  const rate = EXCHANGE_RATES[normalizedCoin];
+  const rate = liveExchangeRates[normalizedCoin] || EXCHANGE_RATES[normalizedCoin];
   return Number.isFinite(rate) && rate > 0 ? rate : 1;
 };
 

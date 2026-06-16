@@ -330,7 +330,7 @@ const CreateTradeModal = ({ isOpen, onClose }) => {
           </div>
 
           <p className="text-xs text-n-4 text-center mt-4">
-            Automated payout is currently available only for Ethereum tickets.
+            Automated payout is available for ETH/ERC20/SOL/SPL tickets. BTC/LTC payouts are handled by staff review.
           </p>
         </div>
       </div>

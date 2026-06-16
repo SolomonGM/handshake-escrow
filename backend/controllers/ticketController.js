@@ -1,6 +1,7 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import { ethers } from 'ethers';
+import { PublicKey } from '@solana/web3.js';
 import {
   calculateTotalAmount,
   convertUsdToCryptoAmount,
@@ -10,7 +11,6 @@ import {
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
 import {
   getActiveNetworkModeForCoin,
-  getBotWalletForCoin,
   getRuntimeConfig,
   getTicketAvailabilityForCoin,
   getTicketAvailabilityMatrix,
@@ -18,6 +18,7 @@ import {
 } from '../services/runtimeConfigService.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 import { allocateDepositAddress } from '../services/hdWalletService.js';
+import { sendTicketPayout } from '../services/ticketPayoutService.js';
 
 const ACTIVE_TICKET_LIMIT = 12;
 const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
@@ -37,9 +38,10 @@ const buildUnavailableTicketResponse = (coin, runtimeConfig, message = null) => 
     autoCloseAt,
     ticketAvailability: getTicketAvailabilityMatrix(runtimeConfig),
     payoutSupport: {
-      ethereumOnly: true,
-      supportedCoins: ['ethereum'],
-      message: 'Automated payout is currently supported only for Ethereum tickets.'
+      ethereumOnly: false,
+      automaticCoins: ['ethereum', 'usdt-erc20', 'usdc-erc20', 'solana', 'usdt-spl', 'usdc-spl'],
+      manualCoins: ['bitcoin', 'litecoin'],
+      message: 'Automated payout is supported for ETH/ERC20/SOL/SPL tickets. BTC/LTC require staff processing until a secure UTXO signer is configured.'
     }
   };
 };
@@ -52,23 +54,16 @@ const getEthProvider = (networkMode = 'mainnet') => {
   return new ethers.JsonRpcProvider(config.rpcUrl);
 };
 
-const getEthWallet = (networkMode = 'mainnet') => {
-  const privateKey = process.env.BOT_ETH_PRIVATE_KEY || process.env.ETH_BOT_PRIVATE_KEY;
-  if (!privateKey) {
-    return null;
-  }
-  const provider = getEthProvider(networkMode);
-  if (!provider) {
-    return null;
-  }
-  return new ethers.Wallet(privateKey, provider);
-};
-
 const getAddressPrefixMatch = (rawValue, crypto) => {
   const patterns = {
     ethereum: /^(0x[a-fA-F0-9]{40})/,
+    'usdt-erc20': /^(0x[a-fA-F0-9]{40})/,
+    'usdc-erc20': /^(0x[a-fA-F0-9]{40})/,
     bitcoin: /^((?:bc1|tb1)[0-9a-z]{20,}|[13mn2][a-zA-Z0-9]{25,34})/,
-    litecoin: /^((?:ltc1|tltc1)[0-9a-z]{20,}|[LM3mn2Q][a-zA-Z0-9]{25,34})/
+    litecoin: /^((?:ltc1|tltc1)[0-9a-z]{20,}|[LM3mn2Q][a-zA-Z0-9]{25,34})/,
+    solana: /^([1-9A-HJ-NP-Za-km-z]{32,44})/,
+    'usdt-spl': /^([1-9A-HJ-NP-Za-km-z]{32,44})/,
+    'usdc-spl': /^([1-9A-HJ-NP-Za-km-z]{32,44})/
   };
   const pattern = patterns[crypto];
   if (!pattern) {
@@ -76,6 +71,38 @@ const getAddressPrefixMatch = (rawValue, crypto) => {
   }
   const match = rawValue.match(pattern);
   return match ? match[1] : null;
+};
+
+const getPayoutAddressFamily = (crypto) => {
+  const normalized = String(crypto || '').toLowerCase();
+  if (normalized === 'ethereum' || normalized.endsWith('-erc20')) {
+    return 'ethereum';
+  }
+  if (normalized === 'solana' || normalized.endsWith('-spl')) {
+    return 'solana';
+  }
+  return normalized;
+};
+
+const normalizePayoutAddress = (address, crypto) => {
+  const extractedAddress = getAddressPrefixMatch(String(address || '').trim(), crypto);
+  if (!extractedAddress) {
+    return null;
+  }
+
+  const family = getPayoutAddressFamily(crypto);
+  if (family === 'ethereum') {
+    return ethers.isAddress(extractedAddress) ? ethers.getAddress(extractedAddress) : null;
+  }
+  if (family === 'solana') {
+    try {
+      return new PublicKey(extractedAddress).toBase58();
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return extractedAddress;
 };
 
 const getTicketPartyIds = (ticket) => {
@@ -125,12 +152,36 @@ const addStaffActionMessage = (ticket, { title, description, color = 'blue' }) =
   });
 };
 
-const resolveTicketBotWallet = async (ticket, runtimeConfig = null) => {
-  const config = runtimeConfig || await getRuntimeConfig();
-  const { wallet, mode } = getBotWalletForCoin(ticket?.cryptocurrency, config);
+const resolveTicketDepositDestination = async (ticket, runtimeConfig = null) => {
+  const existingAddress = String(ticket?.depositAddress || ticket?.botWalletAddress || '').trim();
+  const mode = ticket?.transactionNetworkMode
+    || ticket?.depositNetworkMode
+    || getActiveNetworkModeForCoin(ticket?.cryptocurrency, runtimeConfig || await getRuntimeConfig());
+
+  if (existingAddress) {
+    if (!ticket.depositAddress) {
+      ticket.depositAddress = existingAddress;
+    }
+    ticket.botWalletAddress = existingAddress;
+    ticket.transactionNetworkMode = mode;
+    return {
+      wallet: existingAddress,
+      mode
+    };
+  }
+
+  const allocation = await allocateDepositAddress(ticket.cryptocurrency);
+  ticket.depositAddress = allocation.address;
+  ticket.depositChain = allocation.chain;
+  ticket.depositToken = allocation.token;
+  ticket.depositIndex = allocation.derivationIndex;
+  ticket.depositNetworkMode = allocation.networkMode;
+  ticket.botWalletAddress = allocation.address;
+  ticket.transactionNetworkMode = allocation.networkMode || mode;
+
   return {
-    wallet,
-    mode
+    wallet: allocation.address,
+    mode: ticket.transactionNetworkMode
   };
 };
 
@@ -304,51 +355,10 @@ const buildPayoutDetails = (ticket, networkMode = 'mainnet') => {
   if (!Number.isFinite(payoutUsd) || payoutUsd <= 0) {
     throw new Error('Invalid payout amount');
   }
-  const payoutEth = getTicketCryptoAmount(ticket, payoutUsd, networkMode).toFixed(8);
+  const payoutCrypto = getTicketCryptoAmount(ticket, payoutUsd, networkMode).toFixed(8);
 
   return {
-    payoutEth,
-    payoutUsd
-  };
-};
-
-const sendEthPayout = async (ticket, toAddress, networkMode = 'mainnet') => {
-  const wallet = getEthWallet(networkMode);
-  if (!wallet) {
-    throw new Error('Bot wallet private key not configured');
-  }
-  const provider = wallet.provider;
-  if (!provider) {
-    throw new Error('Ethereum provider not configured');
-  }
-
-  const { payoutEth, payoutUsd } = buildPayoutDetails(ticket, networkMode);
-  const value = ethers.parseEther(payoutEth);
-
-  const feeData = await provider.getFeeData();
-  const txRequest = {
-    to: toAddress,
-    value
-  };
-
-  if (feeData?.maxFeePerGas && feeData?.maxPriorityFeePerGas) {
-    txRequest.maxFeePerGas = feeData.maxFeePerGas;
-    txRequest.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
-  } else if (feeData?.gasPrice) {
-    txRequest.gasPrice = feeData.gasPrice;
-  }
-
-  try {
-    txRequest.gasLimit = await wallet.estimateGas(txRequest);
-  } catch (error) {
-    txRequest.gasLimit = 21000n;
-  }
-
-  const tx = await wallet.sendTransaction(txRequest);
-
-  return {
-    txHash: tx.hash,
-    payoutEth,
+    payoutCrypto,
     payoutUsd
   };
 };
@@ -420,6 +430,69 @@ const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networ
       await ticket.save();
     } catch (error) {
       console.error('❌ Payout confirmation watcher error:', error);
+    }
+  });
+};
+
+const startPayoutCompletionFinalizer = ({ ticketId, receiverName }) => {
+  setImmediate(async () => {
+    try {
+      const ticket = await TradeTicket.findOne({ ticketId });
+      if (!ticket) {
+        return;
+      }
+
+      ticket.messages = ticket.messages.filter(msg =>
+        msg.embedData?.actionType !== 'payout-confirming'
+      );
+
+      ticket.fundsReleased = true;
+      ticket.transactionCompletedAt = ticket.transactionCompletedAt || new Date();
+      ticket.status = 'awaiting-close';
+
+      const hasCompleteMessage = ticket.messages.some(
+        msg => msg.embedData?.title === 'Complete'
+      );
+
+      if (!hasCompleteMessage) {
+        ticket.messages.push({
+          isBot: true,
+          content: 'Complete',
+          type: 'embed',
+          embedData: {
+            title: 'Complete',
+            description: `@${receiverName || 'Receiver'} has received their funds.\n\nThank you for using Handshake!`,
+            color: 'blurple'
+          },
+          timestamp: new Date()
+        });
+      }
+
+      const hasPrivacyPrompt = ticket.messages.some(
+        msg => msg.embedData?.actionType === 'privacy-selection'
+      );
+
+      if (!hasPrivacyPrompt) {
+        ticket.messages.push({
+          isBot: true,
+          content: 'Broadcast Privacy',
+          type: 'embed',
+          embedData: {
+            title: 'Broadcast Privacy',
+            description: 'Before we broadcast this completed trade, choose how your name appears on the public feed. You can choose <strong>Anonymous</strong> or <strong>Global</strong>. If no selection is made within 10 minutes, the ticket auto-closes and any unchosen side defaults to <strong>Anonymous</strong>.',
+            color: 'blue',
+            requiresAction: true,
+            actionType: 'privacy-selection'
+          },
+          timestamp: new Date()
+        });
+        ticket.privacyPromptShown = true;
+        ticket.privacyPromptShownAt = new Date();
+      }
+
+      await ticket.save();
+    } catch (error) {
+      console.error('Payout completion finalizer error:', error);
     }
   });
 };
@@ -520,11 +593,12 @@ export const createTicket = async (req, res) => {
       depositChain: depositAllocation.chain,
       depositToken: depositAllocation.token,
       depositIndex: depositAllocation.derivationIndex,
+      depositNetworkMode: depositAllocation.networkMode,
       // Mirror the unique deposit address into the legacy field so the existing
       // address-scoped monitor scans per-ticket — fixing the multi-ticket
       // same-amount collision bug for free.
       botWalletAddress: depositAllocation.address,
-      transactionNetworkMode: depositAllocation.networkMode === 'devnet' ? 'testnet' : depositAllocation.networkMode
+      transactionNetworkMode: depositAllocation.networkMode
     });
 
     await ticket.populate('creator', 'username userId avatar');
@@ -551,13 +625,10 @@ export const getTicketAvailability = async (req, res) => {
     const availabilityReasons = {};
     const ticketAvailability = Object.fromEntries(
       Object.entries(configuredAvailability).map(([coin, enabled]) => {
-        const hasWallet = Boolean(getBotWalletForCoin(coin, runtimeConfig).wallet);
-        const isAvailable = Boolean(enabled && hasWallet);
+        const isAvailable = Boolean(enabled);
 
         if (!enabled) {
           availabilityReasons[coin] = 'disabled_by_admin';
-        } else if (!hasWallet) {
-          availabilityReasons[coin] = 'wallet_not_configured';
         }
 
         return [coin, isAvailable];
@@ -570,9 +641,10 @@ export const getTicketAvailability = async (req, res) => {
       configuredTicketAvailability: configuredAvailability,
       availabilityReasons,
       payoutSupport: {
-        ethereumOnly: true,
-        supportedCoins: ['ethereum'],
-        message: 'Automated payout is currently supported only for Ethereum tickets.'
+        ethereumOnly: false,
+        automaticCoins: ['ethereum', 'usdt-erc20', 'usdc-erc20', 'solana', 'usdt-spl', 'usdc-spl'],
+        manualCoins: ['bitcoin', 'litecoin'],
+        message: 'Automated payout is supported for ETH/ERC20/SOL/SPL tickets. BTC/LTC require staff processing until a secure UTXO signer is configured.'
       }
     });
   } catch (error) {
@@ -2583,7 +2655,7 @@ export const confirmPassUse = async (req, res) => {
         ticket.cryptocurrency,
         true // Pass was used
       );
-      const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
+      const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketDepositDestination(ticket);
       const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
       const cryptoAmount = getTicketCryptoAmount(ticket, totalAmount, transactionNetworkMode).toFixed(8);
 
@@ -2746,7 +2818,7 @@ export const confirmFees = async (req, res) => {
           ticket.cryptocurrency,
           false // Fees are being charged
         );
-        const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketBotWallet(ticket);
+        const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketDepositDestination(ticket);
         const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
         const cryptoAmount = getTicketCryptoAmount(ticket, totalAmount, transactionNetworkMode).toFixed(8);
 
@@ -2913,7 +2985,7 @@ export const copyTransactionDetails = async (req, res) => {
     }
 
     // Retrieves transaction details
-    const botWallet = String(ticket.botWalletAddress || '').trim() || (await resolveTicketBotWallet(ticket)).wallet;
+    const { wallet: botWallet } = await resolveTicketDepositDestination(ticket);
 
     if (!botWallet) {
       return res.status(500).json({
@@ -3035,7 +3107,14 @@ export const releaseFunds = async (req, res) => {
     const runtimeConfig = await getRuntimeConfig();
     const payoutNetworkMode = ticket.payoutNetworkMode
       || ticket.transactionNetworkMode
-      || getActiveNetworkModeForCoin('ethereum', runtimeConfig);
+      || getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
+    const payoutFamily = getPayoutAddressFamily(ticket.cryptocurrency);
+    const payoutLabel = ticket.cryptocurrency?.toUpperCase() || 'crypto';
+    const addressTip = payoutFamily === 'ethereum'
+      ? 'Use a standard 0x... Ethereum address.'
+      : payoutFamily === 'solana'
+        ? 'Use a standard Solana wallet address.'
+        : `Use a valid ${payoutLabel} wallet address.`;
 
     ticket.releaseInitiated = true;
     ticket.releaseInitiatedBy = userId;
@@ -3055,7 +3134,7 @@ export const releaseFunds = async (req, res) => {
       type: 'embed',
         embedData: {
           title: 'Release Initiated',
-          description: `@${senderUser?.username || 'Sender'} has confirmed to release the funds.\n\n@${receiverUser?.username || 'Receiver'}, please paste your Ethereum address in the chat below so we can send your payout.\n\n<strong>Tip:</strong> Use a standard <strong>0x...</strong> Ethereum address.`,
+          description: `@${senderUser?.username || 'Sender'} has confirmed to release the funds.\n\n@${receiverUser?.username || 'Receiver'}, please paste your ${payoutLabel} payout address in the chat below so we can send your payout.\n\n<strong>Tip:</strong> ${addressTip}`,
         color: 'blue',
         requiresAction: true,
         actionType: 'payout-address'
@@ -3118,20 +3197,17 @@ export const submitPayoutAddress = async (req, res) => {
       });
     }
 
-    const rawAddress = String(address || '').trim();
-    const extractedAddress = getAddressPrefixMatch(rawAddress, ticket.cryptocurrency);
-    const isValid = Boolean(extractedAddress) && (
-      ticket.cryptocurrency !== 'ethereum' || ethers.isAddress(extractedAddress)
-    );
+    const checksumAddress = normalizePayoutAddress(address, ticket.cryptocurrency);
 
-    if (!isValid) {
+    if (!checksumAddress) {
+      const payoutLabel = ticket.cryptocurrency?.toUpperCase() || 'crypto';
       ticket.messages.push({
         isBot: true,
         content: 'Invalid Address',
         type: 'embed',
         embedData: {
-          title: 'Invalid Ethereum Address',
-          description: `That does not look like a valid ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} address. Please paste a correct address and try again.`,
+          title: `Invalid ${payoutLabel} Address`,
+          description: `That does not look like a valid ${payoutLabel} address. Please paste a correct address and try again.`,
           color: 'red'
         },
         timestamp: new Date()
@@ -3140,14 +3216,11 @@ export const submitPayoutAddress = async (req, res) => {
       await ticket.save();
       return res.json({
         success: false,
-        message: 'Invalid Ethereum address',
+        message: `Invalid ${payoutLabel} address`,
         ticket
       });
     }
 
-    const checksumAddress = ticket.cryptocurrency === 'ethereum'
-      ? ethers.getAddress(extractedAddress)
-      : extractedAddress;
     ticket.pendingPayoutAddress = checksumAddress;
     ticket.awaitingPayoutAddress = false;
     ticket.awaitingPayoutConfirmation = true;
@@ -3247,7 +3320,7 @@ export const confirmPayoutAddress = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Address Rejected',
-          description: 'No problem. Please paste the correct Ethereum address below when you are ready.',
+          description: `No problem. Please paste the correct ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} payout address below when you are ready.`,
           color: 'orange',
           requiresAction: true,
           actionType: 'payout-address'
@@ -3263,20 +3336,20 @@ export const confirmPayoutAddress = async (req, res) => {
       });
     }
 
-    if (ticket.cryptocurrency !== 'ethereum') {
-      return res.status(400).json({
-        success: false,
-        message: 'Payouts are currently supported only for Ethereum tickets'
-      });
-    }
-
     try {
       const payoutAddress = ticket.pendingPayoutAddress;
       const runtimeConfig = await getRuntimeConfig();
       const payoutNetworkMode = ticket.payoutNetworkMode
         || ticket.transactionNetworkMode
-        || getActiveNetworkModeForCoin('ethereum', runtimeConfig);
-      const { txHash, payoutEth, payoutUsd } = await sendEthPayout(ticket, payoutAddress, payoutNetworkMode);
+        || getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
+      const { payoutCrypto, payoutUsd } = buildPayoutDetails(ticket, payoutNetworkMode);
+      const payoutResult = await sendTicketPayout({
+        ticket,
+        toAddress: payoutAddress,
+        amountCrypto: payoutCrypto,
+        networkMode: payoutNetworkMode
+      });
+      const { txHash, unit, confirmationNetwork } = payoutResult;
 
       ticket.payoutAddress = payoutAddress;
       ticket.payoutAddressConfirmed = true;
@@ -3295,7 +3368,7 @@ export const confirmPayoutAddress = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Payout Sent',
-          description: `Your payout is on the way!\\n\\n<strong>Amount:</strong> <strong>${payoutEth} ETH</strong> (~$${Number(payoutUsd).toFixed(2)} USD)\\n<strong>To:</strong> <strong>${payoutAddress}</strong>\\n\\n<strong>Transaction:</strong> <strong>${txHash.substring(0, 16)}...</strong>`,
+          description: `Your payout is on the way!\\n\\n<strong>Amount:</strong> <strong>${payoutCrypto} ${unit}</strong> (~$${Number(payoutUsd).toFixed(2)} USD)\\n<strong>To:</strong> <strong>${payoutAddress}</strong>\\n\\n<strong>Transaction:</strong> <strong>${txHash.substring(0, 16)}...</strong>`,
           color: 'blue',
           requiresAction: true,
           actionType: 'payout-confirming',
@@ -3314,12 +3387,16 @@ export const confirmPayoutAddress = async (req, res) => {
         ? ticket.creator?.username
         : receiverParticipant?.user?.username;
 
-      startPayoutConfirmationWatcher({
-        ticketId,
-        txHash,
-        receiverName,
-        networkMode: payoutNetworkMode
-      });
+      if (confirmationNetwork === 'ethereum') {
+        startPayoutConfirmationWatcher({
+          ticketId,
+          txHash,
+          receiverName,
+          networkMode: payoutNetworkMode
+        });
+      } else if (confirmationNetwork === 'solana') {
+        startPayoutCompletionFinalizer({ ticketId, receiverName });
+      }
 
       return res.json({
         success: true,
@@ -3342,7 +3419,9 @@ export const confirmPayoutAddress = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Payout Failed',
-          description: 'We could not send the payout. Please paste your address again or contact staff for help.',
+          description: error.code === 'AUTOMATIC_PAYOUT_UNSUPPORTED'
+            ? `${error.message} Staff must process this payout through the ticket admin refund/payout workflow.`
+            : 'We could not send the payout. Please paste your address again or contact staff for help.',
           color: 'red',
           requiresAction: true,
           actionType: 'payout-address'

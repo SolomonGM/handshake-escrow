@@ -31,6 +31,9 @@ import {
   getErc20MonitorStatus
 } from './erc20Monitor.js';
 import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
+import {
+  addTicketTransactionDetectedMessage
+} from './ticketDepositLifecycle.js';
 
 // BlockCypher API configuration
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
@@ -285,27 +288,6 @@ const handleTicketTimeout = async (ticket) => {
   // awaiting payment for weeks/months while warranty conditions are met.
   // Cancellation is initiated by the user or an admin, never by a timer.
   return false;
-};
-
-const addTicketTransactionDetectedMessage = (ticket, txHash, confirmations, requiredConfirmations) => {
-  ticket.messages.push({
-    isBot: true,
-    content: 'Transaction Detected',
-    type: 'embed',
-    embedData: {
-      title: 'Transaction Detected',
-      description: `We've detected your transaction!\n\nTransaction Hash: ${txHash.substring(0, 16)}...\n\nWaiting for confirmations...`,
-      color: 'blue',
-      requiresAction: true,
-      actionType: 'transaction-confirming',
-      metadata: {
-        txHash,
-        confirmations,
-        requiredConfirmations
-      }
-    },
-    timestamp: new Date()
-  });
 };
 
 const monitorUtxoTicketTransaction = async (ticket, crypto, runtimeConfig) => {

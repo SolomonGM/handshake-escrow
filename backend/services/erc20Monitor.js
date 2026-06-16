@@ -13,6 +13,7 @@ import PassOrder from '../models/PassOrder.js';
 import { completePassOrder } from '../controllers/passController.js';
 import { upsertPassTransactionHistory } from './passTransactionHistory.js';
 import { expirePassOrderIfTimedOut } from './passOrderLifecycle.js';
+import { updateTicketTransactionConfirmations } from './ticketDepositLifecycle.js';
 
 const ERC20_ABI = [
   'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -183,7 +184,9 @@ export const monitorErc20PassOrder = async (orderId, io) => {
 };
 
 export const monitorErc20Ticket = async (ticketId) => {
-  const ticket = await TradeTicket.findOne({ ticketId });
+  const ticket = await TradeTicket.findOne({ ticketId })
+    .populate('creator', 'username userId avatar')
+    .populate('participants.user', 'username userId avatar');
   if (!ticket) return;
   if (ticket.depositChain !== 'ethereum') return;
   const currency = String(ticket.cryptocurrency || '').toLowerCase();
@@ -199,13 +202,12 @@ export const monitorErc20Ticket = async (ticketId) => {
     });
     if (!hit || hit.skipped) return;
 
-    ticket.senderTransactionHash = hit.txHash;
-    ticket.confirmationCount = hit.confirmations;
-    ticket.transactionDetected = true;
-    if (hit.confirmations >= CONFIRMATIONS_REQUIRED) {
-      ticket.transactionConfirmed = true;
-    }
-    await ticket.save();
+    await updateTicketTransactionConfirmations(
+      ticket,
+      hit.txHash,
+      hit.confirmations,
+      CONFIRMATIONS_REQUIRED
+    );
   } catch (error) {
     console.error(`[erc20-monitor] ticket ${ticketId} (${currency}) error: ${error.message}`);
   }

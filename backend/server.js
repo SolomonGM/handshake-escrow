@@ -19,6 +19,7 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import setupChatSocket from './socket/chatSocket.js';
 import { startTransactionMonitoring } from './services/transactionMonitor.js';
+import { startExchangeRateRefresh } from './config/wallets.js';
 import { scheduleDiscordProfileRefresh, warmDiscordProfileCache } from './services/discordProfileService.js';
 import { ensureDiscordSyncCommandRegistered } from './services/discordCommandService.js';
 import { scheduleLeaderboardRefresh, warmLeaderboardCache } from './services/leaderboardService.js';
@@ -156,6 +157,7 @@ app.use('/api/transactions', transactionRoutes);
 
 // Setup Socket.io for chat
 setupChatSocket(io);
+startExchangeRateRefresh();
 
 // Export io for use in other modules (transaction monitoring, etc.)
 export { io };

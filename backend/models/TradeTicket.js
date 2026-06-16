@@ -175,9 +175,14 @@ const tradeTicketSchema = new mongoose.Schema({
     default: null,
     min: 0
   },
+  depositNetworkMode: {
+    type: String,
+    enum: ['mainnet', 'testnet', 'devnet', null],
+    default: null
+  },
   transactionNetworkMode: {
     type: String,
-    enum: ['mainnet', 'testnet', null],
+    enum: ['mainnet', 'testnet', 'devnet', null],
     default: null
   },
   expectedAmount: {
@@ -267,7 +272,7 @@ const tradeTicketSchema = new mongoose.Schema({
   },
   payoutNetworkMode: {
     type: String,
-    enum: ['mainnet', 'testnet', null],
+    enum: ['mainnet', 'testnet', 'devnet', null],
     default: null
   },
   privacySelections: {
