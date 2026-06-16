@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { cryptocoins, grid, handshakeSymbol } from '../assets';
+import { grid, handshakeSymbol } from '../assets';
 
 const sizeClasses = {
   page: 'min-h-[45vh] px-5 py-16',
@@ -32,7 +32,6 @@ const LoadingState = ({
           <div className="absolute inset-0 rounded-full border border-[#10B981]/25 bg-[#10B981]/5" />
           <div className="absolute inset-3 animate-spin rounded-full border border-transparent border-t-[#10B981] border-r-[#10B981]/40" />
           <div className="absolute inset-5 rounded-full border border-n-1/10 bg-n-8/90 shadow-[0_18px_60px_rgba(0,0,0,0.45)]" />
-          <img src={cryptocoins} alt="" className="absolute inset-0 m-auto h-[78%] w-[78%] object-contain opacity-30" />
           <img src={handshakeSymbol} alt="Handshake" className="relative h-14 w-14 sm:h-16 sm:w-16" />
         </div>
 
