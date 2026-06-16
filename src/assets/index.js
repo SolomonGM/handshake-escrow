@@ -1,8 +1,8 @@
 import handshake from "./svg/handshake.png";
 import check from "./svg/check.svg";
 import handshakeSymbol from "./svg/handshake-symbol.svg";
-import gradient from "./svg/gradient.png";
-import passes from "./svg/passes.png";
+import gradient from "./optimized/gradient.webp";
+import passes from "./optimized/passes.webp";
 import grid from "./svg/grid.png";
 import file02 from "./svg/file-02.svg";
 import homeSmile from "./svg/home-smile.svg";
@@ -30,7 +30,7 @@ import arbiscan from "./explorers/arbiscan.png";
 import bscscan from "./explorers/bnbscan.png";
 
 import lines from "./pricing/lines.svg";
-import cryptocoins from "./pricing/cryptocoins.png";
+import cryptocoins from "./optimized/cryptocoins.webp";
 
 import benefitCard1 from "./benefits/card-1.svg";
 import benefitCard2 from "./benefits/card-2.svg";
@@ -44,7 +44,7 @@ import benefitIconSeller from "./benefits/icon-seller.svg";
 import benefitIconFees from "./benefits/icon-fees.svg";
 import benefitIconCoins from "./benefits/icon-coins.svg";
 import benefitIconSupport from "./benefits/icon-support.svg";
-import benefitImage2 from "./benefits/image-2.jpg";
+import benefitImage2 from "./optimized/benefit-image-2.webp";
 
 import discordBlack from "./socials/discord.svg";
 import discordIcon from "./svg/discord.png";

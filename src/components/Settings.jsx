@@ -184,6 +184,7 @@ const Settings = () => {
     }
 
     loadDiscordStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {
@@ -223,6 +224,7 @@ const Settings = () => {
     nextParams.delete('discord_reason');
     const nextQuery = nextParams.toString();
     navigate(nextQuery ? `/settings?${nextQuery}` : '/settings', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, navigate, refreshCurrentUser]);
 
   useEffect(() => {
@@ -281,7 +283,7 @@ const Settings = () => {
       email: user.email || '',
       avatar: user.avatar || ''
     }));
-  }, [user?.username, user?.email, user?.avatar]);
+  }, [user]);
 
   useEffect(() => {
     if (twoFactorCooldown <= 0) return;

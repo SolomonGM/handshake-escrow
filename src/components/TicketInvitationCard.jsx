@@ -137,7 +137,7 @@ const TicketInvitationCard = ({ ticket, onRespond }) => {
             </div>
             <div className="flex-1">
               <p className="text-n-3 text-sm leading-relaxed">
-                You've been invited to participate in this {crypto.name} trade ticket. Accept to join the secure escrow deal or decline to reject the invitation.
+                You&apos;ve been invited to participate in this {crypto.name} trade ticket. Accept to join the secure escrow deal or decline to reject the invitation.
               </p>
             </div>
           </div>

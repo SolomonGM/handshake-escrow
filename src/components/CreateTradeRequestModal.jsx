@@ -22,15 +22,6 @@ const CreateTradeRequestModal = ({ isOpen, onClose, onSuccess }) => {
     expiryHours: 24
   });
 
-  const cryptoOptions = [
-    { value: 'bitcoin', label: 'Bitcoin (BTC)', color: '#F7931A' },
-    { value: 'ethereum', label: 'Ethereum (ETH)', color: '#627EEA' },
-    { value: 'litecoin', label: 'Litecoin (LTC)', color: '#345D9D' },
-    { value: 'solana', label: 'Solana (SOL)', color: '#14F195' },
-    { value: 'usdt-erc20', label: 'USDT (ERC-20)', color: '#26A17B' },
-    { value: 'usdc-erc20', label: 'USDC (ERC-20)', color: '#2775CA' },
-  ];
-
   const currencyOptions = [
     { value: 'USD', label: 'USD ($)' },
     { value: 'EUR', label: 'EUR (€)' },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminAPI } from '../services/api';
 import Button from './Button';
@@ -42,12 +42,12 @@ const ModeratorPanel = () => {
     return () => clearTimeout(timer);
   }, [ticketSearchTerm]);
 
-  const loadOverview = async () => {
+  const loadOverview = useCallback(async () => {
     const overviewData = await adminAPI.getOverview();
     setOverview(overviewData);
-  };
+  }, []);
 
-  const loadTickets = async ({ showLoading = true } = {}) => {
+  const loadTickets = useCallback(async ({ showLoading = true } = {}) => {
     try {
       if (showLoading) setLoading(true);
       const tradeTicketsData = await adminAPI.getTradeTickets({
@@ -71,9 +71,9 @@ const ModeratorPanel = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, [debouncedTicketSearch, ticketSortBy, ticketSortOrder, ticketStatusFilter, ticketsPage]);
 
-  const refreshAll = async ({ showLoading = true } = {}) => {
+  const refreshAll = useCallback(async ({ showLoading = true } = {}) => {
     try {
       if (showLoading) setLoading(true);
       await Promise.all([loadOverview(), loadTickets({ showLoading: false })]);
@@ -83,16 +83,17 @@ const ModeratorPanel = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, [loadOverview, loadTickets]);
 
   useEffect(() => {
     refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (loading) return;
     loadTickets({ showLoading: false });
-  }, [debouncedTicketSearch, ticketsPage, ticketStatusFilter, ticketSortBy, ticketSortOrder]);
+  }, [loadTickets, loading]);
 
   const getTicketStatusStyle = (status) => {
     const styles = {

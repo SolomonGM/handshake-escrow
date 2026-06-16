@@ -1,6 +1,6 @@
 import { sliders04 } from "../assets";
 
-const TradeHubFilters = ({ activeFilters, onFilterChange, onReset }) => {
+const TradeHubFilters = ({ activeFilters, onFilterChange }) => {
   const cryptoOptions = [
     { value: "all", label: "All Cryptocurrencies" },
     { value: "bitcoin", label: "Bitcoin (BTC)" },

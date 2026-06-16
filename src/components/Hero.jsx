@@ -9,12 +9,12 @@ import CurrencySelector from "./CurrencySelector";
 import TransactionLiveFeed from "./TransactionLiveFeed";
 import BitcoinConfetti from "./BitcoinConfetti";
 import { handshakeSymbol } from "../assets";
-import btcLogo from "../assets/svg/bitcoin-btc-logo.png";
-import ethLogo from "../assets/svg/ethereum-eth-logo.png";
-import ltcLogo from "../assets/svg/litecoin-ltc-logo.png";
-import solLogo from "../assets/svg/solana-sol-logo.png";
-import usdtLogo from "../assets/svg/tether-usdt-logo.png";
-import usdcLogo from "../assets/svg/usd-coin-usdc-logo.png";
+import btcLogo from "../assets/optimized/bitcoin-btc-logo.webp";
+import ethLogo from "../assets/optimized/ethereum-eth-logo.webp";
+import ltcLogo from "../assets/optimized/litecoin-ltc-logo.webp";
+import solLogo from "../assets/optimized/solana-sol-logo.webp";
+import usdtLogo from "../assets/optimized/tether-usdt-logo.webp";
+import usdcLogo from "../assets/optimized/usd-coin-usdc-logo.webp";
 
 const exchangeStats = [
   { value: "8+", label: "Networks" },

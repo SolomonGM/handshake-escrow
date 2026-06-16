@@ -69,7 +69,6 @@ const AdminPanel = () => {
   const [runtimeConfig, setRuntimeConfig] = useState(null);
   const [runtimeDraft, setRuntimeDraft] = useState(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
-  const [runtimeSaving, setRuntimeSaving] = useState(false);
   const [runtimeAvailabilitySaving, setRuntimeAvailabilitySaving] = useState(false);
   const [runtimeWorkflowBusy, setRuntimeWorkflowBusy] = useState(false);
   const [runtimePauseReason, setRuntimePauseReason] = useState('Runtime configuration update in progress');
@@ -90,47 +89,10 @@ const AdminPanel = () => {
     { key: 'usdc-spl', label: 'USDC', code: 'SOL', chain: 'solana' }
   ];
   const runtimeTicketCoins = runtimeWalletCoins;
-  const runtimeNetworkModes = [
-    {
-      key: 'bitcoin',
-      label: 'Bitcoin',
-      code: 'BTC',
-      options: [
-        { value: 'mainnet', label: 'Mainnet' },
-        { value: 'testnet', label: 'Testnet' }
-      ]
-    },
-    {
-      key: 'litecoin',
-      label: 'Litecoin',
-      code: 'LTC',
-      options: [
-        { value: 'mainnet', label: 'Mainnet' },
-        { value: 'testnet', label: 'Testnet (limited)' }
-      ]
-    },
-    {
-      key: 'ethereum',
-      label: 'Ethereum + ERC20',
-      code: 'ETH',
-      options: [
-        { value: 'mainnet', label: 'Mainnet' },
-        { value: 'testnet', label: 'Testnet' }
-      ]
-    },
-    {
-      key: 'solana',
-      label: 'Solana',
-      code: 'SOL',
-      options: [
-        { value: 'mainnet', label: 'Mainnet' },
-        { value: 'testnet', label: 'Testnet' }
-      ]
-    }
-  ];
 
   useEffect(() => {
     loadUsersAndStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -171,6 +133,7 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!hasInitialized) return;
     loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasInitialized,
     debouncedUserSearch,
@@ -184,6 +147,7 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!hasInitialized) return;
     loadTradeRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasInitialized,
     debouncedTradeSearch,
@@ -196,6 +160,7 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!hasInitialized) return;
     loadTradeTickets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasInitialized,
     debouncedTicketSearch,
@@ -208,6 +173,7 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!hasInitialized) return;
     loadModerationActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasInitialized,
     debouncedModerationSearch,
@@ -221,6 +187,7 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!hasInitialized) return;
     loadActiveBans();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasInitialized,
     debouncedBanSearch,
@@ -421,35 +388,6 @@ const AdminPanel = () => {
     }
   };
 
-  const updateRuntimeDraftMode = (modeKey, value) => {
-    setRuntimeDraft((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        networkModes: {
-          ...prev.networkModes,
-          [modeKey]: value
-        }
-      };
-    });
-  };
-
-  const updateRuntimeDraftWallet = (coin, mode, value) => {
-    setRuntimeDraft((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        wallets: {
-          ...prev.wallets,
-          [coin]: {
-            ...(prev.wallets?.[coin] || { mainnet: '', testnet: '' }),
-            [mode]: value
-          }
-        }
-      };
-    });
-  };
-
   const updateRuntimeDraftTicketAvailability = (coin, enabled) => {
     setRuntimeDraft((prev) => {
       if (!prev) return prev;
@@ -492,28 +430,6 @@ const AdminPanel = () => {
       setMessage('Error resuming ticket workflow: ' + (error.response?.data?.message || error.message));
     } finally {
       setRuntimeWorkflowBusy(false);
-    }
-  };
-
-  const handleSaveRuntimeConfig = async () => {
-    if (!runtimeDraft) return;
-
-    try {
-      setRuntimeSaving(true);
-      const response = await adminAPI.updateRuntimeConfig({
-        networkModes: runtimeDraft.networkModes,
-        wallets: runtimeDraft.wallets,
-        ticketAvailability: runtimeDraft.ticketAvailability
-      });
-      const nextRuntime = response.runtimeConfig || null;
-      setRuntimeConfig(nextRuntime);
-      setRuntimeDraft(cloneRuntimeConfigForDraft(nextRuntime));
-      setMessage(response.message || 'Runtime configuration updated successfully');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      setMessage('Error updating runtime config: ' + (error.response?.data?.message || error.message));
-    } finally {
-      setRuntimeSaving(false);
     }
   };
 

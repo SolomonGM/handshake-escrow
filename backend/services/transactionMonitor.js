@@ -277,8 +277,6 @@ const refreshUtxoConfirmations = async (order, io, crypto = 'litecoin', networkO
 };
 
 const handleTicketTimeout = async (ticket) => {
-  const now = new Date();
-
   if (ticket.transactionDetected || ticket.senderTransactionHash) {
     return false;
   }
@@ -791,7 +789,6 @@ const monitorUtxoPassOrder = async (orderId, io = null, crypto = 'litecoin') => 
       return;
     }
 
-    const now = new Date();
     const orderCreatedAt = order.createdAt ? new Date(order.createdAt) : null;
     const earliestAcceptable = orderCreatedAt
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
@@ -1126,7 +1123,7 @@ const convertUSDToETH = (usdAmount, exchangeRate = getExchangeRate('ethereum')) 
 };
 
 // This check determines whether Ethereum amount matches expected (with 2% tolerance)
-const isEthAmountMatch = (receivedWei, expectedETH, expectedUSD) => {
+const isEthAmountMatch = (receivedWei, expectedETH) => {
   const receivedETH = parseFloat(ethers.formatEther(receivedWei)); // Convert wei to ETH
   const expectedValue = parseFloat(expectedETH);
   
@@ -1233,7 +1230,6 @@ export const monitorEthPassOrder = async (orderId, io = null) => {
       return;
     }
 
-    const now = new Date();
     const orderCreatedAt = order.createdAt ? new Date(order.createdAt) : null;
     const earliestAcceptable = orderCreatedAt
       ? new Date(orderCreatedAt.getTime() - 2 * 60 * 1000)
@@ -1659,10 +1655,6 @@ export const startTransactionMonitoring = (io) => {
         cryptocurrency: { $in: ['usdt-erc20', 'usdc-erc20'] },
         status: { $in: ['pending', 'confirmed', 'awaiting-staff'] }
       }).select('orderId paymentAddress cryptocurrency cryptoAmount status');
-
-      const solanaAwaitingTickets = ticketsPaused ? [] : awaitingTickets.filter(
-        (ticket) => ticket.depositChain === 'solana'
-      );
 
       const totalMonitoring = awaitingTickets.length + pendingLTCOrders.length + pendingBTCOrders.length + pendingETHOrders.length + pendingSolanaOrders.length + pendingErc20Orders.length;
 

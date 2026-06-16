@@ -6,10 +6,12 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.connected = false;
+    this.owners = new Set();
   }
 
-  connect(token = null) {
+  connect(token = null, owner = null) {
     const nextToken = token || localStorage.getItem('token');
+    this.owners.add(owner || 'global');
 
     if (this.socket) {
       const currentToken = this.socket.auth?.token || null;
@@ -58,6 +60,19 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
       this.connected = false;
+      this.owners.clear();
+    }
+  }
+
+  release(owner) {
+    if (!owner) {
+      return;
+    }
+
+    this.owners.delete(owner);
+
+    if (this.owners.size === 0 && this.socket) {
+      this.disconnect();
     }
   }
 
@@ -184,6 +199,12 @@ class SocketService {
   on(event, callback) {
     if (this.socket) {
       this.socket.on(event, callback);
+    }
+  }
+
+  off(event, callback) {
+    if (this.socket) {
+      this.socket.off(event, callback);
     }
   }
 

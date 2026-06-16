@@ -19,7 +19,7 @@ const Support = () => {
             <div className="bg-n-7 border border-n-6 rounded-2xl p-8">
               <h2 className="h3 mb-4">Get in Touch</h2>
               <p className="body-2 text-n-4 mb-6">
-                We're currently setting up our support system. In the meantime, please check back soon for assistance options.
+                We&apos;re currently setting up our support system. In the meantime, please check back soon for assistance options.
               </p>
               
               <div className="space-y-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import axios from "axios";
@@ -29,11 +29,7 @@ const MyRequests = () => {
   const MAX_TICKETS = 50;
   const MAX_INVITATIONS = 10;
 
-  useEffect(() => {
-    fetchTickets();
-  }, [token]);
-
-  const fetchTickets = async () => {
+  const fetchTickets = useCallback(async () => {
     if (!token) {
       navigate('/');
       return;
@@ -80,7 +76,11 @@ const MyRequests = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [navigate, token]);
+
+  useEffect(() => {
+    fetchTickets();
+  }, [fetchTickets]);
 
   const handleRespondToInvitation = async (ticketId, action) => {
     try {
@@ -107,15 +107,6 @@ const MyRequests = () => {
       // Re-fetch to restore state if there was an error
       fetchTickets();
     }
-  };
-
-  const cryptoColors = {
-    'bitcoin': '#F7931A',
-    'ethereum': '#627EEA',
-    'litecoin': '#345D9D',
-    'solana': '#14F195',
-    'usdt-erc20': '#26A17B',
-    'usdc-erc20': '#2775CA',
   };
 
   const cryptoSymbols = {

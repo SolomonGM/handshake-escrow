@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import EmojiPicker from './EmojiPicker';
-import StickerPicker from './StickerPicker';
 import UserProfileModal from './UserProfileModal';
 import socketService from '../services/socket';
 import { chatAPI } from '../services/api';
 import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from '../utils/rankDisplay';
+
+const CHAT_SOCKET_OWNER = 'live-chat';
+const WORKFLOW_STATUS_POLL_MS = 60000;
+const StickerPicker = lazy(() => import('./StickerPicker'));
 
 const LiveChat = ({ isOpen, onClose }) => {
   const { user } = useAuth();
@@ -62,7 +65,7 @@ const LiveChat = ({ isOpen, onClose }) => {
     }
   ];
 
-  const toChatMessage = (msg = {}) => {
+  const toChatMessage = useCallback((msg = {}) => {
     const isBotMessage = Boolean(msg.isBot || msg.role === 'BOT' || msg.rank === 'bot');
 
     return {
@@ -81,26 +84,26 @@ const LiveChat = ({ isOpen, onClose }) => {
       replies: [],
       isBot: isBotMessage
     };
-  };
+  }, []);
 
-  // This connects to WebSocket and load message history.
+  // Connect only while chat is open so authenticated users do not carry chat work in the background.
   useEffect(() => {
-    // This disconnects previous connection if exists.
-    socketService.disconnect();
+    if (!user || !isOpen) {
+      setIsConnected(socketService.isConnected());
+      return undefined;
+    }
 
-    // This gets current token.
     const token = localStorage.getItem('token');
-    
-    // This connects to socket with token.
-    socketService.connect(token);
+    let isMounted = true;
+    const feedbackTimers = commandFeedbackTimersRef.current;
+
+    socketService.connect(token, CHAT_SOCKET_OWNER);
     setIsConnected(socketService.isConnected());
 
-    // This loads message history from API.
     const loadMessages = async () => {
       try {
         const response = await chatAPI.getMessages(50);
-        if (response.success && response.messages) {
-          console.log('Loaded messages:', response.messages); // Debug log
+        if (isMounted && response.success && response.messages) {
           const loadedMessages = response.messages.map((msg) => toChatMessage({
             id: msg._id,
             userId: msg.userId,
@@ -119,43 +122,35 @@ const LiveChat = ({ isOpen, onClose }) => {
           setMessages(loadedMessages);
         }
       } catch (error) {
-        console.error('Failed to load messages:', error);
-        setError('Failed to load chat history');
+        if (isMounted) {
+          console.error('Failed to load messages:', error);
+          setError('Failed to load chat history');
+        }
       }
     };
 
     loadMessages();
-
-    // This joins chat room.
     socketService.joinChat();
 
-    // This listens for unread count from server.
-    socketService.on('unread_count', ({ count }) => {
+    const handleUnreadCount = ({ count }) => {
       if (count > 0 && !isOpen) {
         setHasNewMessages(true);
       }
-    });
+    };
 
-    // This listens for new message notifications (when chat is closed).
-    socketService.on('new_message_notification', () => {
-      console.log('New message notification received');
+    const handleNewMessageNotification = () => {
       setHasNewMessages(true);
-    });
+    };
 
-    // This listens for new messages.
-    socketService.onNewMessage((newMsg) => {
-      console.log('Received new message:', newMsg); // Debug log
-      
+    const handleNewMessage = (newMsg) => {
       setMessages((prev) => [...prev, toChatMessage(newMsg)]);
-    });
+    };
 
-    // This listens for message deletions.
-    socketService.onMessageDeleted(({ messageId }) => {
+    const handleMessageDeleted = ({ messageId }) => {
       setMessages(prev => prev.filter(msg => msg.id !== messageId));
-    });
+    };
 
-    // This listens for errors.
-    socketService.onError((err) => {
+    const handleError = (err) => {
       const nextError = typeof err === 'string'
         ? { message: err, showToUser: false, cooldownSeconds: 0 }
         : {
@@ -168,63 +163,75 @@ const LiveChat = ({ isOpen, onClose }) => {
         setChatCooldownSeconds(nextError.cooldownSeconds);
       }
       setTimeout(() => setError(null), 5000);
-    });
+    };
 
-    // This listens for announcement list.
-    socketService.onAnnouncements((data) => {
+    const handleAnnouncements = (data) => {
       const nextAnnouncements = Array.isArray(data) ? data : [];
       setAnnouncements(nextAnnouncements);
-    });
+    };
 
-    // This listens for command feedback messages (private bot responses).
-    socketService.onCommandFeedback((botMessage) => {
+    const handleCommandFeedback = (botMessage) => {
       const commandMessage = toChatMessage(botMessage);
       const ttlMs = Number(botMessage?.ttlMs || 30000);
 
       setMessages((prev) => [...prev, commandMessage]);
 
-      const existingTimer = commandFeedbackTimersRef.current.get(commandMessage.id);
+      const existingTimer = feedbackTimers.get(commandMessage.id);
       if (existingTimer) {
         clearTimeout(existingTimer);
       }
 
       const timerId = setTimeout(() => {
         setMessages((prev) => prev.filter((entry) => entry.id !== commandMessage.id));
-        commandFeedbackTimersRef.current.delete(commandMessage.id);
+        feedbackTimers.delete(commandMessage.id);
       }, Math.max(0, ttlMs));
 
-      commandFeedbackTimersRef.current.set(commandMessage.id, timerId);
-    });
+      feedbackTimers.set(commandMessage.id, timerId);
+    };
 
-    // This listens for high-priority alerts.
-    socketService.onAlert((alertPayload) => {
+    const handleAlert = (alertPayload) => {
       if (alertPayload?.message) {
         setActiveAlert(alertPayload);
       }
-    });
+    };
 
-    socketService.on('ticket_workflow_state', (workflow) => {
+    const handleTicketWorkflowState = (workflow) => {
       setTicketWorkflowStatus({
         paused: Boolean(workflow?.paused),
         pauseReason: workflow?.pauseReason || null,
         pauseChangedAt: workflow?.pauseChangedAt || null
       });
-    });
+    };
 
-    // This listens for help command response.
-    socketService.on('chat_help', (data) => {
-      console.log('Received help data:', data);
+    const handleChatHelp = (data) => {
       setHelpData(data);
       setShowHelpModal(true);
-    });
-
-    // This cleans up on unmount or user change.
-    return () => {
-      commandFeedbackTimersRef.current.forEach((timerId) => clearTimeout(timerId));
-      commandFeedbackTimersRef.current.clear();
-      socketService.removeAllListeners();
     };
-  }, [user]); // Re-run when user changes
+
+    const handlers = [
+      ['unread_count', handleUnreadCount],
+      ['new_message_notification', handleNewMessageNotification],
+      ['new_message', handleNewMessage],
+      ['message_deleted', handleMessageDeleted],
+      ['error', handleError],
+      ['chat_announcements', handleAnnouncements],
+      ['command_feedback', handleCommandFeedback],
+      ['chat_alert', handleAlert],
+      ['ticket_workflow_state', handleTicketWorkflowState],
+      ['chat_help', handleChatHelp]
+    ];
+
+    handlers.forEach(([eventName, handler]) => socketService.on(eventName, handler));
+
+    return () => {
+      isMounted = false;
+      handlers.forEach(([eventName, handler]) => socketService.off(eventName, handler));
+      feedbackTimers.forEach((timerId) => clearTimeout(timerId));
+      feedbackTimers.clear();
+      socketService.emit('chat_closed');
+      socketService.release(CHAT_SOCKET_OWNER);
+    };
+  }, [isOpen, toChatMessage, user]);
 
   // This handles chat open/close.
   useEffect(() => {
@@ -280,6 +287,10 @@ const LiveChat = ({ isOpen, onClose }) => {
   }, [announcements]);
 
   useEffect(() => {
+    if (!user || !isOpen) {
+      return undefined;
+    }
+
     let isMounted = true;
 
     const syncWorkflowStatus = async () => {
@@ -302,20 +313,20 @@ const LiveChat = ({ isOpen, onClose }) => {
     };
 
     syncWorkflowStatus();
-    const statusInterval = setInterval(syncWorkflowStatus, 15000);
+    const statusInterval = setInterval(syncWorkflowStatus, WORKFLOW_STATUS_POLL_MS);
 
     return () => {
       isMounted = false;
       clearInterval(statusInterval);
     };
-  }, []);
+  }, [isOpen, user]);
 
   // Auto scroll to bottom (only if user is not scrolling)
-  const scrollToBottom = (smooth = true, force = false) => {
+  const scrollToBottom = useCallback((smooth = true, force = false) => {
     if (messagesEndRef.current && (force || !isUserScrolling)) {
       messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     }
-  };
+  }, [isUserScrolling]);
 
   // This scrolls to specific message.
   const scrollToMessage = (messageId) => {
@@ -387,7 +398,7 @@ const LiveChat = ({ isOpen, onClose }) => {
   // Auto scroll when new messages arrive (only if not manually scrolling)
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
 
   // This parses message for mentions.
@@ -979,19 +990,27 @@ const LiveChat = ({ isOpen, onClose }) => {
 
           {/* Sticker Picker */}
           {showStickerPicker && (
-            <StickerPicker
-              onSelect={(stickerUrl) => {
-                // This sends sticker as a separate message or append to text.
-                if (stickerUrl.startsWith('data:') || stickerUrl.startsWith('/') || stickerUrl.startsWith('http')) {
-                  // It's an image sticker, send it directly
-                  handleSendMessage(null, stickerUrl);
-                } else {
-                  // It's text/emoji, add to message
-                  setMessage(message + stickerUrl);
-                }
-              }}
-              onClose={() => setShowStickerPicker(false)}
-            />
+            <Suspense
+              fallback={
+                <div className="absolute bottom-full left-0 mb-2 w-72 rounded-lg border border-n-6 bg-n-7 px-4 py-3 text-sm text-n-3 shadow-xl">
+                  Loading stickers...
+                </div>
+              }
+            >
+              <StickerPicker
+                onSelect={(stickerUrl) => {
+                  // This sends sticker as a separate message or append to text.
+                  if (stickerUrl.startsWith('data:') || stickerUrl.startsWith('/') || stickerUrl.startsWith('http')) {
+                    // It's an image sticker, send it directly
+                    handleSendMessage(null, stickerUrl);
+                  } else {
+                    // It's text/emoji, add to message
+                    setMessage(message + stickerUrl);
+                  }
+                }}
+                onClose={() => setShowStickerPicker(false)}
+              />
+            </Suspense>
           )}
 
           {/* Reply Preview */}

@@ -1,5 +1,4 @@
 import TradeRequest from '../models/TradeRequest.js';
-import User from '../models/User.js';
 
 // This creates a new trade request.
 export const createTradeRequest = async (req, res) => {

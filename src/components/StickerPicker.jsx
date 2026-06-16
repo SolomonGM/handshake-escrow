@@ -2,12 +2,20 @@ import { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { toast } from '../utils/toast';
 
-const defaultStickerImports = import.meta.glob(
-  '../assets/stickers/*.{png,gif,jpg,jpeg,webp}',
+const defaultStaticStickerImports = import.meta.glob(
+  '../assets/stickers-optimized/*.webp',
   { eager: true, import: 'default' }
 );
 
-const defaultStickerUrls = Object.entries(defaultStickerImports)
+const defaultAnimatedStickerImports = import.meta.glob(
+  '../assets/stickers/*.gif',
+  { eager: true, import: 'default' }
+);
+
+const defaultStickerUrls = Object.entries({
+  ...defaultStaticStickerImports,
+  ...defaultAnimatedStickerImports
+})
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([, url]) => url);
 

@@ -9,6 +9,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from "../utils/rankDisplay";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const LIVE_SYNC_VISIBLE_INTERVAL_MS = 5000;
+const LIVE_SYNC_HIDDEN_INTERVAL_MS = 30000;
 
 const TradeTicket = () => {
   const [searchParams] = useSearchParams();
@@ -23,7 +25,6 @@ const TradeTicket = () => {
   const [messageInput, setMessageInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [hasShownPrompt, setHasShownPrompt] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
@@ -42,7 +43,6 @@ const TradeTicket = () => {
   const lastUpdatedAtRef = useRef(null);
   const syncInFlightRef = useRef(false);
   const closeRedirectTimeoutRef = useRef(null);
-  const LIVE_SYNC_INTERVAL_MS = 2000;
   const MAX_IMAGE_ATTACHMENTS = 4;
   const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
   const MAX_IMAGE_DIMENSION = 1024;
@@ -441,8 +441,24 @@ const TradeTicket = () => {
 
     let isMounted = true;
 
+    let refreshTimeout = null;
+
+    const getRefreshDelay = () => (
+      document.visibilityState === 'hidden'
+        ? LIVE_SYNC_HIDDEN_INTERVAL_MS
+        : LIVE_SYNC_VISIBLE_INTERVAL_MS
+    );
+
+    const scheduleNextSync = () => {
+      if (!isMounted) {
+        return;
+      }
+      refreshTimeout = setTimeout(syncTicket, getRefreshDelay());
+    };
+
     const syncTicket = async () => {
       if (syncInFlightRef.current) {
+        scheduleNextSync();
         return;
       }
 
@@ -470,7 +486,6 @@ const TradeTicket = () => {
             setTicket(nextTicket);
             setMessages(nextTicket.messages || []);
             lastUpdatedAtRef.current = nextUpdatedAt;
-            console.log('[sync] Live-synced ticket state');
           }
         }
       } catch (err) {
@@ -479,14 +494,24 @@ const TradeTicket = () => {
         }
       } finally {
         syncInFlightRef.current = false;
+        scheduleNextSync();
       }
     };
 
-    const refreshInterval = setInterval(syncTicket, LIVE_SYNC_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') {
+        clearTimeout(refreshTimeout);
+        syncTicket();
+      }
+    };
+
+    scheduleNextSync();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       isMounted = false;
-      clearInterval(refreshInterval);
+      clearTimeout(refreshTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [ticketIdParam, ticket?.status, token]);
 
@@ -519,12 +544,15 @@ const TradeTicket = () => {
   }, [ticket?.closeScheduledAt]);
 
   // This triggers bot prompt after 5 seconds (persistent, stored in database).
+  const promptTicketId = ticket?.ticketId;
+  const shouldTriggerPrompt = Boolean(ticket && !ticket.hasShownPrompt && ticket.status === 'open' && !isStaffViewer);
+
   useEffect(() => {
-    if (ticket && !ticket.hasShownPrompt && ticket.status === 'open' && !isStaffViewer) {
+    if (shouldTriggerPrompt && promptTicketId) {
       const timer = setTimeout(async () => {
         try {
           const response = await axios.post(
-            `${API_URL}/tickets/${encodeURIComponent(ticket.ticketId)}/trigger-prompt`,
+            `${API_URL}/tickets/${encodeURIComponent(promptTicketId)}/trigger-prompt`,
             {},
             { headers: { Authorization: `Bearer ${token}` } }
           );
@@ -541,7 +569,7 @@ const TradeTicket = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [ticket?.hasShownPrompt, token]);
+  }, [promptTicketId, shouldTriggerPrompt, token]);
 
   // Role selection is now handled immediately on backend when user accepts invitation
 

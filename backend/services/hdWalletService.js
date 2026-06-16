@@ -9,7 +9,7 @@ import { BIP32Factory } from 'bip32';
 import * as ecc from 'tiny-secp256k1';
 import bs58check from 'bs58check';
 import { ethers } from 'ethers';
-import { Keypair, PublicKey } from '@solana/web3.js';
+import { Keypair } from '@solana/web3.js';
 import { mnemonicToSeedSync } from 'bip39';
 import { derivePath } from 'ed25519-hd-key';
 import HdAddressCounter from '../models/HdAddressCounter.js';

@@ -21,6 +21,9 @@ const normalizeNetworkMode = (value, fallback) => {
 const BTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_BTC_NETWORK_MODE, 'testnet');
 const LTC_NETWORK_MODE = normalizeNetworkMode(import.meta.env.VITE_LTC_NETWORK_MODE, 'mainnet');
 const PASS_PAYMENT_METHODS = ['bitcoin', 'litecoin', 'ethereum', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
+const PASS_SOCKET_OWNER = 'pass-purchase';
+const PASS_ORDER_POLL_VISIBLE_MS = 15000;
+const PASS_ORDER_POLL_HIDDEN_MS = 60000;
 const DEFAULT_PASS_PAYMENT_AVAILABILITY = {
   bitcoin: true,
   litecoin: true,
@@ -75,8 +78,9 @@ const PassesPurchase = () => {
   ];
 
   useEffect(() => {
+    const activeCopyTimers = copyTimers.current;
     return () => {
-      Object.values(copyTimers.current).forEach((timer) => {
+      Object.values(activeCopyTimers).forEach((timer) => {
         clearTimeout(timer);
       });
     };
@@ -285,6 +289,7 @@ const PassesPurchase = () => {
     };
 
     checkActiveOrder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, token, navigate]);
 
   // Socket.IO listener for real-time payment updates
@@ -292,15 +297,11 @@ const PassesPurchase = () => {
     if (!purchaseData || !purchaseData.orderId) return;
 
     // This connects socket if not connected.
-    if (!socketService.isConnected()) {
-      socketService.connect(token);
-    }
+    socketService.connect(token, PASS_SOCKET_OWNER);
 
     const eventName = `pass_order_update:${purchaseData.orderId}`;
     
     const handleOrderUpdate = (data) => {
-      console.log('[socket] Pass order update received:', data);
-      
       switch(data.status) {
         case 'detected': {
           // Transaction detected
@@ -326,7 +327,6 @@ const PassesPurchase = () => {
             confirmations: data.confirmations,
             required: data.required ?? prev.required ?? getConfirmationsRequired(purchaseData?.cryptocurrency || selectedCrypto)
           }));
-          console.log(`??? Confirmations: ${data.confirmations}/${data.required}`);
           break;
           
         case 'completed': {
@@ -407,16 +407,17 @@ const PassesPurchase = () => {
 
     // This cleans up.
     return () => {
-      if (socketService.socket) {
-        socketService.socket.off(eventName, handleOrderUpdate);
-      }
+      socketService.off(eventName, handleOrderUpdate);
+      socketService.release(PASS_SOCKET_OWNER);
     };
-  }, [purchaseData, token, selectedPass, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseData, selectedCrypto, token, selectedPass, user]);
 
   useEffect(() => {
     if (step !== 'payment' || !purchaseData?.orderId || !token) return;
 
     let isActive = true;
+    let pollTimeout = null;
 
     const pollOrderStatus = async () => {
       try {
@@ -479,15 +480,34 @@ const PassesPurchase = () => {
         }
       } catch (err) {
         console.error('Error polling pass order status:', err);
+      } finally {
+        if (isActive) {
+          pollTimeout = setTimeout(
+            pollOrderStatus,
+            document.visibilityState === 'hidden'
+              ? PASS_ORDER_POLL_HIDDEN_MS
+              : PASS_ORDER_POLL_VISIBLE_MS
+          );
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') {
+        clearTimeout(pollTimeout);
+        pollOrderStatus();
       }
     };
 
     pollOrderStatus();
-    const interval = setInterval(pollOrderStatus, 5000);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isActive = false;
-      clearInterval(interval);
+      clearTimeout(pollTimeout);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, purchaseData, token, user]);
 
   const handleSelectPass = (pass) => {

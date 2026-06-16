@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 const VirtualizedMessageList = ({ 

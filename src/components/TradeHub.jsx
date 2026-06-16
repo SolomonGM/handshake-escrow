@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Section from "./Section";
 import Heading from "./Heading";
 import TradeHubFilters from "./TradeHubFilters";
 import TradeRequestCard from "./TradeRequestCard";
 import { GradientLight } from "./design/TradeHub";
-import { searchMd, plusSquare } from "../assets";
+import { searchMd } from "../assets";
 import Button from "./Button";
 import LoadingState from "./LoadingState";
 import CreateTradeModal from "./CreateTradeModal";
@@ -15,6 +15,8 @@ import axios from "axios";
 import { toast } from "../utils/toast";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const INVITATION_REFRESH_VISIBLE_MS = 30000;
+const INVITATION_REFRESH_HIDDEN_MS = 120000;
 
 const TradeHub = () => {
   const { user, token, isAuthenticated } = useAuth();
@@ -51,166 +53,7 @@ const TradeHub = () => {
     return false;
   };
 
-  // Mock data - will be replaced with API calls
-  const mockTradeRequests = [
-    {
-      id: "TR-001",
-      type: "sell", // User wants to sell crypto for fiat
-      creator: {
-        username: "CryptoWhale87",
-        reputation: 98,
-        totalTrades: 247,
-        verified: true,
-        memberSince: "2022-01",
-        responseTime: "< 5 min"
-      },
-      cryptoType: "BTC",
-      cryptoAmount: 0.5,
-      fiatCurrency: "GBP",
-      fiatAmount: 17710.25,
-      rate: 35420.50,
-      paymentMethods: ["Bank Transfer", "PayPal"],
-      preferredPayment: "Bank Transfer",
-      minTrade: 100,
-      maxTrade: 5000,
-      terms: "Quick release after payment confirmation. Bank transfers only from UK banks.",
-      status: "open",
-      expiresAt: "2025-10-23T10:30:00Z",
-      createdAt: "2025-10-21T10:30:00Z"
-    },
-    {
-      id: "TR-002",
-      type: "buy", // User wants to buy crypto with fiat
-      creator: {
-        username: "EthTrader_Pro",
-        reputation: 95,
-        totalTrades: 183,
-        verified: true,
-        memberSince: "2022-06",
-        responseTime: "< 10 min"
-      },
-      cryptoType: "ETH",
-      cryptoAmount: 5.2,
-      fiatCurrency: "USD",
-      fiatAmount: 14797.90,
-      rate: 2845.75,
-      paymentMethods: ["Zelle", "Bank Transfer", "Wise"],
-      preferredPayment: "Zelle",
-      minTrade: 500,
-      maxTrade: 10000,
-      terms: "Looking to buy ETH. Have USD ready. Prefer Zelle for instant settlement.",
-      status: "open",
-      expiresAt: "2025-10-22T09:15:00Z",
-      createdAt: "2025-10-21T09:15:00Z"
-    },
-    {
-      id: "TR-003",
-      type: "sell",
-      creator: {
-        username: "Anonymous",
-        reputation: 92,
-        totalTrades: 156,
-        verified: false,
-        memberSince: "2023-03",
-        responseTime: "< 30 min"
-      },
-      cryptoType: "SOL",
-      cryptoAmount: 120,
-      fiatCurrency: "EUR",
-      fiatAmount: 18276.00,
-      rate: 152.30,
-      paymentMethods: ["SEPA Transfer"],
-      preferredPayment: "SEPA Transfer",
-      minTrade: 200,
-      maxTrade: 5000,
-      terms: "SEPA transfers accepted. Will release within 1 hour of confirmed payment.",
-      status: "open",
-      expiresAt: "2025-10-24T08:45:00Z",
-      createdAt: "2025-10-21T08:45:00Z"
-    },
-    {
-      id: "TR-004",
-      type: "sell",
-      creator: {
-        username: "LTCMaster",
-        reputation: 89,
-        totalTrades: 98,
-        verified: true,
-        memberSince: "2023-08",
-        responseTime: "< 15 min"
-      },
-      cryptoType: "LTC",
-      cryptoAmount: 45.8,
-      fiatCurrency: "GBP",
-      fiatAmount: 4511.30,
-      rate: 98.50,
-      paymentMethods: ["Bank Transfer", "Revolut"],
-      preferredPayment: "Revolut",
-      minTrade: 50,
-      maxTrade: 2000,
-      terms: "Fast trader. Revolut instant release. Bank transfer within 30 minutes.",
-      status: "open",
-      expiresAt: "2025-10-22T07:20:00Z",
-      createdAt: "2025-10-21T07:20:00Z"
-    },
-    {
-      id: "TR-005",
-      type: "buy",
-      creator: {
-        username: "XRP_Trader_UK",
-        reputation: 96,
-        totalTrades: 312,
-        verified: true,
-        memberSince: "2021-11",
-        responseTime: "< 5 min"
-      },
-      cryptoType: "XRP",
-      cryptoAmount: 5000,
-      fiatCurrency: "GBP",
-      fiatAmount: 2600.00,
-      rate: 0.52,
-      paymentMethods: ["Bank Transfer", "PayPal", "Cash App"],
-      preferredPayment: "Bank Transfer",
-      minTrade: 100,
-      maxTrade: 2000,
-      terms: "Buying XRP in bulk. Multiple transactions available. Instant payment guarantee.",
-      status: "open",
-      expiresAt: "2025-10-23T06:10:00Z",
-      createdAt: "2025-10-21T06:10:00Z"
-    },
-    {
-      id: "TR-006",
-      type: "sell",
-      creator: {
-        username: "PolygonPro",
-        reputation: 94,
-        totalTrades: 221,
-        verified: true,
-        memberSince: "2022-09",
-        responseTime: "< 10 min"
-      },
-      cryptoType: "MATIC",
-      cryptoAmount: 8500,
-      fiatCurrency: "USD",
-      fiatAmount: 5780.00,
-      rate: 0.68,
-      paymentMethods: ["Venmo", "Zelle", "Bank Transfer"],
-      preferredPayment: "Zelle",
-      minTrade: 250,
-      maxTrade: 3000,
-      terms: "Selling MATIC at market rate. Quick escrow release. US traders preferred.",
-      status: "open",
-      expiresAt: "2025-10-25T22:30:00Z",
-      createdAt: "2025-10-20T22:30:00Z"
-    }
-  ];
-
-  // This loads trade requests on component mount.
-  useEffect(() => {
-    fetchTradeRequests();
-  }, [token]);
-
-  const fetchTradeRequests = async () => {
+  const fetchTradeRequests = useCallback(async () => {
     try {
       setIsLoading(true);
       const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
@@ -234,7 +77,12 @@ const TradeHub = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [token]);
+
+  // This loads trade requests on component mount.
+  useEffect(() => {
+    fetchTradeRequests();
+  }, [fetchTradeRequests]);
 
   // This fetches pending invitations count.
   useEffect(() => {
@@ -262,12 +110,39 @@ const TradeHub = () => {
       }
     };
 
-    fetchPendingInvitations();
+    let timeoutId = null;
+    let isMounted = true;
 
-    // This refreshes every 10 seconds to check for new invitations.
-    const interval = setInterval(fetchPendingInvitations, 10000);
+    const scheduleNextFetch = () => {
+      if (!isMounted) return;
+      timeoutId = setTimeout(
+        fetchAndSchedule,
+        document.visibilityState === 'hidden'
+          ? INVITATION_REFRESH_HIDDEN_MS
+          : INVITATION_REFRESH_VISIBLE_MS
+      );
+    };
 
-    return () => clearInterval(interval);
+    const fetchAndSchedule = async () => {
+      await fetchPendingInvitations();
+      scheduleNextFetch();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') {
+        clearTimeout(timeoutId);
+        fetchAndSchedule();
+      }
+    };
+
+    fetchAndSchedule();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [token, user]);
 
   // Apply filters and search
@@ -354,7 +229,7 @@ const TradeHub = () => {
     }
 
     setFilteredRequests(result);
-  }, [searchQuery, activeFilters, tradeRequests]);
+  }, [searchQuery, activeFilters, tradeRequests, user]);
 
   const handleFilterChange = (filterName, value) => {
     setActiveFilters(prev => ({

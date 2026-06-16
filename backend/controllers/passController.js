@@ -1,7 +1,6 @@
 import PassOrder from '../models/PassOrder.js';
 import PassTransaction from '../models/PassTransaction.js';
 import User from '../models/User.js';
-import axios from 'axios';
 import { upsertPassTransactionHistory } from '../services/passTransactionHistory.js';
 import {
   getBotWalletForCoin,
@@ -115,7 +114,7 @@ const generateOrderId = () => {
 // Creates pass purchase order
 export const createPassOrder = async (req, res) => {
   try {
-    const { passId, cryptocurrency, passCount } = req.body;
+    const { passId, cryptocurrency } = req.body;
     const userId = req.user._id;
     const runtimeConfig = await getRuntimeConfig();
 
