@@ -168,22 +168,6 @@ const ticketManagementCommands = [
 
 const PASS_MONITORED_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired'];
 const PASS_RESOLVABLE_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired', 'returned'];
-const PASS_REFUNDABLE_STATUSES = ['pending', 'confirmed', 'awaiting-staff', 'failed', 'timedout', 'expired', 'completed', 'returned'];
-
-const REFUND_COIN_ALIASES = {
-  btc: 'bitcoin',
-  bitcoin: 'bitcoin',
-  ltc: 'litecoin',
-  litecoin: 'litecoin',
-  eth: 'ethereum',
-  ethereum: 'ethereum',
-  sol: 'solana',
-  solana: 'solana',
-  usdt: 'usdt-erc20',
-  'usdt-erc20': 'usdt-erc20',
-  usdc: 'usdc-erc20',
-  'usdc-erc20': 'usdc-erc20'
-};
 
 const muteBroadcastTemplates = [
   'Take a breather {user} (Muted).',
@@ -362,34 +346,6 @@ const findUserByIdentifier = async (identifier) => {
   return User.findOne({ username: new RegExp(`^${raw}$`, 'i') });
 };
 
-const normalizeRefundCoin = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  return REFUND_COIN_ALIASES[normalized] || null;
-};
-
-const isValidRefundAddress = (address, coin) => {
-  const trimmed = String(address || '').trim();
-  if (!trimmed || !coin) return false;
-
-  if (coin === 'bitcoin') {
-    return /^(bc1|tb1|[13mn2])[a-zA-Z0-9]{20,}$/i.test(trimmed);
-  }
-
-  if (coin === 'litecoin') {
-    return /^(ltc1|tltc1|[LM3mn2Q])[a-zA-Z0-9]{20,}$/i.test(trimmed);
-  }
-
-  if (coin === 'ethereum' || coin === 'usdt-erc20' || coin === 'usdc-erc20') {
-    return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
-  }
-
-  if (coin === 'solana') {
-    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
-  }
-
-  return trimmed.length >= 20;
-};
-
 const emitPrivateBotMessageToUser = (io, userId, message, meta = {}) => {
   const active = activeUsers.get(String(userId || ''));
   if (!active?.socketId) {
@@ -453,22 +409,7 @@ const normalizeTicketId = (value) => {
   return raw;
 };
 
-const resolveTicketRoleUser = (ticket, role) => {
-  if (!ticket || !role) {
-    return null;
-  }
-
-  if (ticket.creatorRole === role && ticket.creator) {
-    return ticket.creator;
-  }
-
-  const participant = (ticket.participants || []).find(
-    (entry) => entry?.status === 'accepted' && entry?.role === role && entry?.user
-  );
-  return participant?.user || null;
-};
-
-const handleTicketStaffCommand = async ({ io, socket, command, args }) => {
+const handleTicketStaffCommand = async ({ socket, command, args }) => {
   if (command === '/join-ticket') {
     const ticketIdArg = normalizeTicketId(args[0]);
     if (!ticketIdArg) {
@@ -527,108 +468,6 @@ const handleTicketStaffCommand = async ({ io, socket, command, args }) => {
     });
 
     emitPrivateBotMessage(socket, `Ticket ${ticket.ticketId} set to cancelled.`);
-    return true;
-  }
-
-  if (command === '/release') {
-    const ticketIdArg = normalizeTicketId(args[0]);
-    const refundTargetRole = String(args[1] || '').trim().toLowerCase();
-    const reason = args.slice(2).join(' ').trim() || 'Manual refund issued by staff.';
-
-    if (!ticketIdArg || !refundTargetRole) {
-      emitPrivateBotMessage(socket, 'Usage: /release <ticketId> <sender|receiver> [reason]');
-      return true;
-    }
-
-    if (refundTargetRole !== 'sender' && refundTargetRole !== 'receiver') {
-      emitPrivateBotMessage(socket, 'Refund target must be either sender or receiver.');
-      return true;
-    }
-
-    const ticket = await TradeTicket.findOne({ ticketId: ticketIdArg })
-      .populate('creator', 'username userId avatar')
-      .populate('participants.user', 'username userId avatar');
-
-    if (!ticket) {
-      emitPrivateBotMessage(socket, `Ticket ${ticketIdArg} was not found.`);
-      return true;
-    }
-
-    if (ticket.status === 'refunded') {
-      emitPrivateBotMessage(socket, `Ticket ${ticket.ticketId} is already refunded.`);
-      return true;
-    }
-
-    const refundTargetUser = resolveTicketRoleUser(ticket, refundTargetRole);
-    if (!refundTargetUser?._id) {
-      emitPrivateBotMessage(
-        socket,
-        `Unable to resolve ${refundTargetRole} on ticket ${ticket.ticketId}. Confirm both ticket roles are set.`
-      );
-      return true;
-    }
-
-    ticket.status = 'refunded';
-    ticket.refundedAt = new Date();
-    ticket.refundedBy = socket.user._id;
-    ticket.refundTargetRole = refundTargetRole;
-    ticket.refundReason = reason;
-    ticket.closeScheduledAt = null;
-    ticket.releaseInitiated = false;
-    ticket.releaseInitiatedBy = null;
-    ticket.awaitingPayoutAddress = false;
-    ticket.awaitingPayoutConfirmation = false;
-    ticket.pendingPayoutAddress = null;
-    ticket.fundsReleased = false;
-    ticket.closedAt = new Date();
-    ticket.closedBy = socket.user._id;
-
-    ticket.messages = (ticket.messages || []).filter((msg) => (
-      msg.embedData?.actionType !== 'release-funds' &&
-      msg.embedData?.actionType !== 'payout-address' &&
-      msg.embedData?.actionType !== 'payout-address-confirmation' &&
-      msg.embedData?.actionType !== 'payout-confirming'
-    ));
-
-    ticket.messages.push({
-      isBot: true,
-      content: 'Ticket Refunded by Staff',
-      type: 'embed',
-      embedData: {
-        title: 'Ticket Refunded by Staff',
-        description: `This ticket was marked as refunded by @${socket.user.username}. Refund target: @${refundTargetUser.username} (${refundTargetRole}).\n\nReason: ${reason}`,
-        color: 'orange',
-        requiresAction: false
-      },
-      timestamp: new Date()
-    });
-
-    await ticket.save();
-
-    await logModerationAction({
-      actionType: 'ticket_refund',
-      scope: 'ticket',
-      targetUser: refundTargetUser._id,
-      moderatorUser: socket.user._id,
-      reason,
-      ticketId: ticket.ticketId,
-      metadata: {
-        refundTargetRole,
-        ticketStatus: ticket.status
-      }
-    });
-
-    const targetNotified = emitPrivateBotMessageToUser(
-      io,
-      refundTargetUser._id,
-      `Ticket ${ticket.ticketId} was marked refunded by staff. Reason: ${reason}`
-    );
-
-    const spectatorUrl = `/trade-ticket?ticketId=${encodeURIComponent(ticket.ticketId)}&readonly=true`;
-    emitPrivateBotMessage(
-      socket,
-      `Ticket ${ticket.ticketId} marked refunded for @${refundTargetUser.username} (${refundTargetRole}). Link: ${spectatorUrl}.${targetNotified ? '' : ' User is offline.'}`
-    );
     return true;
   }
 
@@ -1191,160 +1030,6 @@ const handlePassAdminCommand = async ({ io, socket, command, args }) => {
     emitPrivateBotMessage(
       socket,
       `Order ${refreshedOrder.orderId} force-completed for @${targetUser.username}. Balance: ${newBalance ?? 'N/A'}.${targetNotified ? '' : ' User is offline.'}`
-    );
-    return true;
-  }
-
-  if (command === '/refund') {
-    const addressOrPrompt = String(args[1] || '').trim();
-    const coinArg = String(args[2] || '').trim();
-    const refundMessage = args.slice(3).join(' ').trim() || 'Manual refund issued by admin.';
-
-    if (!addressOrPrompt || !coinArg) {
-      emitPrivateBotMessage(socket, 'Usage: /refund <user> <address|prompt> <coin> <message>');
-      return true;
-    }
-
-    const normalizedCoin = normalizeRefundCoin(coinArg);
-    if (!normalizedCoin) {
-      emitPrivateBotMessage(socket, 'Unsupported coin. Use one of: btc, ltc, eth, sol, usdt, usdc.');
-      return true;
-    }
-
-    const order = await resolvePassOrderForUser({
-      targetUser,
-      statuses: PASS_REFUNDABLE_STATUSES
-    });
-
-    if (!order) {
-      emitPrivateBotMessage(socket, `No refundable pass order found for @${targetUser.username}.`);
-      return true;
-    }
-
-    if (order.status === 'refunded') {
-      emitPrivateBotMessage(socket, `Order ${order.orderId} is already refunded.`);
-      return true;
-    }
-
-    if (addressOrPrompt.toLowerCase() === 'prompt') {
-      order.status = 'awaiting-staff';
-      order.timeoutDetails = {
-        ...(order.timeoutDetails || {}),
-        manualVerification: true,
-        staffContactRequested: true,
-        staffNotes: `Refund prompt issued by @${socket.user.username}: ${refundMessage}`
-      };
-      appendOrderAdminAction(order, 'refund', socket.user._id, 'Prompted user for refund address', {
-        orderId: order.orderId,
-        coin: normalizedCoin,
-        message: refundMessage
-      });
-      await order.save();
-
-      await logModerationAction({
-        actionType: 'pass_refund_prompt',
-        scope: 'pass',
-        targetUser: targetUser._id,
-        moderatorUser: socket.user._id,
-        reason: refundMessage,
-        metadata: {
-          orderId: order.orderId,
-          coin: normalizedCoin
-        }
-      });
-
-      const promptText = `Staff is reviewing a ${normalizedCoin.toUpperCase()} refund for order ${order.orderId}. Please send your ${normalizedCoin.toUpperCase()} refund address in live chat.`;
-      const targetNotified = emitPrivateBotMessageToUser(io, targetUser._id, promptText);
-      io.emit(`pass_order_update:${order.orderId}`, {
-        orderId: order.orderId,
-        status: 'awaiting-staff',
-        message: 'Staff requested a refund address in live chat.'
-      });
-      emitPrivateBotMessage(
-        socket,
-        `Refund prompt sent for order ${order.orderId}.${targetNotified ? '' : ' User is offline.'}`
-      );
-      return true;
-    }
-
-    if (!isValidRefundAddress(addressOrPrompt, normalizedCoin)) {
-      emitPrivateBotMessage(socket, `Invalid ${normalizedCoin.toUpperCase()} refund address format.`);
-      return true;
-    }
-
-    const refundAddress = addressOrPrompt;
-    const targetUserRecord = await User.findById(targetUser._id).select('passes username');
-    const balanceBefore = Number(targetUserRecord?.passes || 0);
-    let balanceAfter = balanceBefore;
-
-    if (order.status === 'completed' && targetUserRecord) {
-      const passDebit = Math.min(order.passCount || 0, balanceBefore);
-      if (passDebit > 0) {
-        targetUserRecord.passes = balanceBefore - passDebit;
-        balanceAfter = targetUserRecord.passes;
-        await targetUserRecord.save();
-      }
-    }
-
-    order.status = 'refunded';
-    order.refundedAt = new Date();
-    order.refundedBy = socket.user._id;
-    order.refundAddress = refundAddress;
-    order.refundCoin = normalizedCoin;
-    order.refundMessage = refundMessage;
-    order.refundTransactionHash = order.refundTransactionHash || `manual-refund-${Date.now()}-${String(order._id).slice(-6)}`;
-    order.timeoutDetails = {
-      ...(order.timeoutDetails || {}),
-      manualVerification: true,
-      staffContactRequested: true,
-      staffNotes: `Refund by @${socket.user.username}: ${refundMessage}`
-    };
-    order.transactionDetails = {
-      ...(order.transactionDetails || {}),
-      balanceBefore,
-      balanceAfter,
-      paymentNotes: `${order.transactionDetails?.paymentNotes || ''}\n[REFUND ${new Date().toISOString()}] ${normalizedCoin.toUpperCase()} -> ${refundAddress}. ${refundMessage}`.trim()
-    };
-    appendOrderAdminAction(order, 'refund', socket.user._id, refundMessage, {
-      orderId: order.orderId,
-      coin: normalizedCoin,
-      address: refundAddress,
-      balanceBefore,
-      balanceAfter
-    });
-    await order.save();
-    await upsertPassTransactionHistory(order, 'refunded');
-
-    await logModerationAction({
-      actionType: 'pass_refund',
-      scope: 'pass',
-      targetUser: targetUser._id,
-      moderatorUser: socket.user._id,
-      reason: refundMessage,
-      metadata: {
-        orderId: order.orderId,
-        coin: normalizedCoin,
-        address: refundAddress,
-        balanceBefore,
-        balanceAfter
-      }
-    });
-
-    io.emit(`pass_order_update:${order.orderId}`, {
-      orderId: order.orderId,
-      status: 'refunded',
-      message: `Refund marked by staff. ${normalizedCoin.toUpperCase()} destination: ${refundAddress}`
-    });
-
-    const targetNotified = emitPrivateBotMessageToUser(
-      io,
-      targetUser._id,
-      `Your pass order ${order.orderId} was marked refunded by staff. Refund address: ${refundAddress}.`
-    );
-
-    emitPrivateBotMessage(
-      socket,
-      `Order ${order.orderId} marked refunded for @${targetUser.username}. Pass balance: ${balanceBefore} -> ${balanceAfter}.${targetNotified ? '' : ' User is offline.'}`
     );
     return true;
   }

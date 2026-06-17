@@ -9,6 +9,8 @@ import {
   getUtxoRuntimeNetwork
 } from '../services/runtimeConfigService.js';
 import { allocateDepositAddress } from '../services/hdWalletService.js';
+import { sendTicketPayout } from '../services/ticketPayoutService.js';
+import { convertUsdToCryptoAmount, getExchangeRateForCoin } from '../config/wallets.js';
 
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
@@ -17,19 +19,6 @@ const PASS_CONFIG = {
   '0': { type: 'Single', count: 1, price: 1 },
   '1': { type: 'Premium', count: 3, price: 5 },
   '2': { type: 'Rhino', count: 8, price: 12 }
-};
-
-// Crypto pricing (approximate - in production, use live API)
-// TESTING: Set ETH = $240 so Rhino Pass ($12) costs exactly 0.05 ETH
-const CRYPTO_PRICES = {
-  'bitcoin': 45000,
-  'ethereum': 240, // TESTING: allows 0.05 ETH for all passes
-  'litecoin': 75,
-  'solana': 100,
-  'usdt-erc20': 1,
-  'usdc-erc20': 1,
-  'usdt-spl': 1,
-  'usdc-spl': 1
 };
 
 const UTXO_CRYPTOS = new Set(['litecoin', 'bitcoin']);
@@ -190,19 +179,15 @@ export const createPassOrder = async (req, res) => {
       });
     }
     const runtimeWalletConfig = getBotWalletForCoin(cryptocurrency, runtimeConfig);
-    const runtimeWallet = runtimeWalletConfig.wallet;
     const coinNetworkMode = runtimeWalletConfig.mode;
-    if (!UTXO_CRYPTOS.has(cryptocurrency) && !runtimeWallet) {
-      return res.status(400).json({ success: false, message: 'Wallet not configured for selected cryptocurrency' });
-    }
     if (UTXO_CRYPTOS.has(cryptocurrency) && !getUtxoRuntimeNetwork(cryptocurrency, runtimeConfig)?.config) {
       return res.status(400).json({ success: false, message: 'UTXO network not configured for selected cryptocurrency' });
     }
 
     // Calculates crypto amount
     const priceUSD = passConfig.price;
-    const cryptoPrice = CRYPTO_PRICES[cryptocurrency];
-    const cryptoAmount = (priceUSD / cryptoPrice).toFixed(8);
+    const cryptoPrice = getExchangeRateForCoin(cryptocurrency, { networkMode: coinNetworkMode });
+    const cryptoAmount = convertUsdToCryptoAmount(priceUSD, cryptocurrency, { networkMode: coinNetworkMode }).toFixed(8);
 
     // Generates unique payment address for this order
     const orderId = generateOrderId();
@@ -242,7 +227,7 @@ export const createPassOrder = async (req, res) => {
       passCount: passConfig.count,
       priceUSD,
       cryptocurrency,
-      networkMode: paymentAddressData.networkMode === 'devnet' ? 'testnet' : (paymentAddressData.networkMode || coinNetworkMode),
+      networkMode: paymentAddressData.networkMode || coinNetworkMode,
       cryptoAmount: parseFloat(cryptoAmount),
       paymentAddress: paymentAddressData.address,
       depositChain: paymentAddressData.chain,
@@ -255,7 +240,9 @@ export const createPassOrder = async (req, res) => {
         staffContactRequested: false
       },
       transactionDetails: {
-        expectedAmount: parseFloat(cryptoAmount)
+        expectedAmount: parseFloat(cryptoAmount),
+        exchangeRateUsed: cryptoPrice,
+        quoteCreatedAt: new Date()
       }
     });
 
@@ -275,6 +262,7 @@ export const createPassOrder = async (req, res) => {
         priceUSD: order.priceUSD,
         cryptocurrency: order.cryptocurrency,
         cryptoAmount: order.cryptoAmount,
+        exchangeRateUsed: cryptoPrice,
         paymentAddress: order.paymentAddress,
         expiresAt: order.expiresAt,
         createdAt: order.createdAt
@@ -534,6 +522,56 @@ export const adminRefundPassOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Order has already been refunded.' });
     }
 
+    const refundCurrency = String(order.cryptocurrency || '').toLowerCase();
+    if (refundCoin && String(refundCoin).toLowerCase() !== refundCurrency) {
+      return res.status(400).json({
+        success: false,
+        message: `Pass refunds must be returned in the original payment currency (${refundCurrency.toUpperCase()}).`
+      });
+    }
+
+    const refundAmountCrypto = Number(order.transactionDetails?.actualAmountReceivedCrypto || order.cryptoAmount || 0).toFixed(8);
+    const refundAmountUsd = Number(order.priceUSD || 0);
+    let transferResult = null;
+
+    if (!refundTransactionHash) {
+      try {
+        transferResult = await sendTicketPayout({
+          ticket: {
+            _id: order._id,
+            orderId: order.orderId,
+            cryptocurrency: refundCurrency,
+            depositChain: order.depositChain,
+            depositToken: order.depositToken,
+            depositIndex: order.depositIndex,
+            paymentAddress: order.paymentAddress
+          },
+          toAddress: refundAddress,
+          amountCrypto: refundAmountCrypto,
+          amountUsd: refundAmountUsd,
+          networkMode: order.networkMode,
+          purpose: 'pass_refund',
+          sourceType: 'pass-order',
+          sourceId: order.orderId,
+          actor: req.user._id,
+          idempotencyKey: `pass-refund:${order.orderId}:${refundAddress}:${refundAmountCrypto}`
+        });
+      } catch (error) {
+        if (!error.transfer || !['manual_required', 'queued', 'pending'].includes(error.transfer.status)) {
+          throw error;
+        }
+        transferResult = {
+          txHash: error.transfer.txHash || null,
+          transfer: error.transfer,
+          signerStatus: error.transfer.status,
+          errorCode: error.code,
+          errorMessage: error.message
+        };
+      }
+    }
+
+    const resolvedRefundHash = refundTransactionHash || transferResult?.txHash || null;
+
     // If the order was completed and the admin wants to claw back the passes
     // they granted (e.g. payment was a chargeback or otherwise disputed),
     // decrement the user's pass balance.
@@ -547,16 +585,14 @@ export const adminRefundPassOrder = async (req, res) => {
       }
     }
 
-    order.status = 'refunded';
-    order.refundedAt = new Date();
+    order.status = resolvedRefundHash ? 'refunded' : 'awaiting-staff';
+    order.refundedAt = resolvedRefundHash ? new Date() : null;
     order.refundedBy = req.user._id;
     order.refundAddress = refundAddress;
-    if (refundTransactionHash) {
-      order.refundTransactionHash = refundTransactionHash;
+    if (resolvedRefundHash) {
+      order.refundTransactionHash = resolvedRefundHash;
     }
-    if (refundCoin) {
-      order.refundCoin = refundCoin;
-    }
+    order.refundCoin = refundCurrency;
     if (refundReason) {
       order.refundMessage = refundReason;
     }
@@ -568,29 +604,40 @@ export const adminRefundPassOrder = async (req, res) => {
       details: refundReason || 'Manual refund issued by staff',
       metadata: {
         refundAddress,
-        refundTransactionHash: refundTransactionHash || null,
-        refundCoin: refundCoin || null,
+        refundTransactionHash: resolvedRefundHash,
+        refundCoin: refundCurrency,
+        refundAmountCrypto,
+        transferId: transferResult?.transfer?.transferId || null,
         revokePasses
       }
     });
 
     await order.save();
+    if (resolvedRefundHash) {
+      await upsertPassTransactionHistory(order, 'refunded');
+    }
 
     return res.json({
       success: true,
-      message: 'Refund recorded.',
+      message: resolvedRefundHash ? 'Refund sent.' : 'Refund queued.',
       order: {
         orderId: order.orderId,
         status: order.status,
         refundedAt: order.refundedAt,
         refundAddress,
-        refundTransactionHash: refundTransactionHash || null,
-        refundCoin: refundCoin || null
-      }
+        refundTransactionHash: resolvedRefundHash,
+        refundCoin: refundCurrency,
+        transferId: transferResult?.transfer?.transferId || null
+      },
+      transfer: transferResult?.transfer || null
     });
   } catch (error) {
     console.error('Admin refund pass order error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to record refund.' });
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to process refund.',
+      transfer: error.transfer || null
+    });
   }
 };
 

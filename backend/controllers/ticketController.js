@@ -1,12 +1,14 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
+import axios from 'axios';
 import { ethers } from 'ethers';
 import { PublicKey } from '@solana/web3.js';
 import {
   calculateTotalAmount,
   convertUsdToCryptoAmount,
   getExchangeRateForCoin,
-  ETH_RPC_CONFIG
+  ETH_RPC_CONFIG,
+  UTXO_NETWORKS
 } from '../config/wallets.js';
 import { scheduleTicketClosure } from '../services/ticketClosureService.js';
 import {
@@ -363,6 +365,113 @@ const buildPayoutDetails = (ticket, networkMode = 'mainnet') => {
   };
 };
 
+const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
+const withBlockCypherToken = (url) => (
+  BLOCKCYPHER_TOKEN
+    ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(BLOCKCYPHER_TOKEN)}`
+    : url
+);
+
+const getUtxoPayoutNetwork = (coin, mode) => {
+  const normalized = String(coin || '').toLowerCase();
+  const networks = UTXO_NETWORKS[normalized] || {};
+  return networks[mode] || networks.mainnet || networks.testnet || null;
+};
+
+const getPayoutRequiredConfirmations = (confirmationNetwork, networkMode) => {
+  const normalized = String(confirmationNetwork || '').toLowerCase();
+  if (normalized === 'bitcoin' || normalized === 'litecoin') {
+    return getUtxoPayoutNetwork(normalized, networkMode)?.confirmationsRequired || 2;
+  }
+  if (normalized === 'ethereum') {
+    const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG.mainnet;
+    return config?.confirmationsRequired || 2;
+  }
+  if (normalized === 'solana') {
+    return 1;
+  }
+  return 0;
+};
+
+const markPayoutComplete = async ({ ticketId, receiverName }) => {
+  const ticket = await TradeTicket.findOne({ ticketId });
+  if (!ticket) {
+    return null;
+  }
+
+  ticket.messages = ticket.messages.filter(msg =>
+    msg.embedData?.actionType !== 'payout-confirming'
+  );
+
+  ticket.fundsReleased = true;
+  ticket.transactionCompletedAt = ticket.transactionCompletedAt || new Date();
+  ticket.status = 'awaiting-close';
+
+  const hasCompleteMessage = ticket.messages.some(
+    msg => msg.embedData?.title === 'Complete'
+  );
+
+  if (!hasCompleteMessage) {
+    ticket.messages.push({
+      isBot: true,
+      content: 'Complete',
+      type: 'embed',
+      embedData: {
+        title: 'Complete',
+        description: `@${receiverName || 'Receiver'} has received their funds.\n\nThank you for using Handshake!`,
+        color: 'blurple'
+      },
+      timestamp: new Date()
+    });
+  }
+
+  const hasPrivacyPrompt = ticket.messages.some(
+    msg => msg.embedData?.actionType === 'privacy-selection'
+  );
+
+  if (!hasPrivacyPrompt) {
+    ticket.messages.push({
+      isBot: true,
+      content: 'Broadcast Privacy',
+      type: 'embed',
+      embedData: {
+        title: 'Broadcast Privacy',
+        description: 'Before we broadcast this completed trade, choose how your name appears on the public feed. You can choose <strong>Anonymous</strong> or <strong>Global</strong>. If no selection is made within 10 minutes, the ticket auto-closes and any unchosen side defaults to <strong>Anonymous</strong>.',
+        color: 'blue',
+        requiresAction: true,
+        actionType: 'privacy-selection'
+      },
+      timestamp: new Date()
+    });
+    ticket.privacyPromptShown = true;
+    ticket.privacyPromptShownAt = new Date();
+  }
+
+  await ticket.save();
+  return ticket;
+};
+
+const updatePayoutConfirmingMessage = async ({ ticketId, txHash, confirmations, requiredConfirmations }) => {
+  const ticket = await TradeTicket.findOne({ ticketId });
+  if (!ticket) {
+    return;
+  }
+
+  const confirmingMsg = ticket.messages.find(msg =>
+    msg.embedData?.actionType === 'payout-confirming'
+  );
+
+  if (confirmingMsg) {
+    confirmingMsg.embedData.metadata = confirmingMsg.embedData.metadata || {};
+    confirmingMsg.embedData.metadata.txHash = txHash;
+    confirmingMsg.embedData.metadata.confirmations = confirmations;
+    confirmingMsg.embedData.metadata.requiredConfirmations = requiredConfirmations;
+    confirmingMsg.embedData.description = `Your payout has been broadcast.\n\nTransaction: ${String(txHash).slice(0, 16)}...\n\nConfirmations: ${Math.min(confirmations, requiredConfirmations)}/${requiredConfirmations}`;
+    ticket.markModified('messages');
+    await ticket.save();
+  }
+};
+
 const startPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, networkMode = 'mainnet' }) => {
   const provider = getEthProvider(networkMode);
   const config = ETH_RPC_CONFIG[networkMode] || ETH_RPC_CONFIG.mainnet;
@@ -495,6 +604,49 @@ const startPayoutCompletionFinalizer = ({ ticketId, receiverName }) => {
       console.error('Payout completion finalizer error:', error);
     }
   });
+};
+
+const startUtxoPayoutConfirmationWatcher = ({ ticketId, txHash, receiverName, coin, networkMode = 'mainnet' }) => {
+  const network = getUtxoPayoutNetwork(coin, networkMode);
+  if (!network?.apiBase) {
+    console.error(`UTXO payout confirmation watcher unavailable for ${coin}:${networkMode}`);
+    return;
+  }
+
+  const requiredConfirmations = network.confirmationsRequired || 2;
+  const intervalMs = 30_000;
+  const maxAttempts = 240;
+  let attempts = 0;
+
+  const poll = async () => {
+    attempts += 1;
+    try {
+      const url = withBlockCypherToken(`${network.apiBase}/txs/${encodeURIComponent(txHash)}`);
+      const { data } = await axios.get(url, { timeout: 10_000 });
+      const confirmations = Math.max(0, Number(data?.confirmations || 0));
+
+      await updatePayoutConfirmingMessage({
+        ticketId,
+        txHash,
+        confirmations,
+        requiredConfirmations
+      });
+
+      if (confirmations >= requiredConfirmations) {
+        await markPayoutComplete({ ticketId, receiverName });
+        return;
+      }
+    } catch (error) {
+      console.error(`UTXO payout confirmation watcher error for ${ticketId}:`, error.message);
+    }
+
+    if (attempts < maxAttempts) {
+      const timer = setTimeout(poll, intervalMs);
+      timer.unref?.();
+    }
+  };
+
+  setImmediate(poll);
 };
 
 // Creates a new trade ticket
@@ -903,7 +1055,7 @@ export const sendMessage = async (req, res) => {
           '<strong>/staff close</strong> - Close this ticket (60s countdown)',
           '<strong>/staff cancel</strong> - Cancel this ticket immediately',
           '<strong>/staff dispute</strong> - Mark ticket as disputed',
-          '<strong>/staff refund</strong> - Mark ticket as refunded'
+          '<strong>/staff refund &lt;address&gt; [reason]</strong> - Admin only: refund escrow to an address'
         ].join('<br/>');
         addStaffActionMessage(ticket, {
           title: 'Staff Commands',
@@ -999,17 +1151,82 @@ export const sendMessage = async (req, res) => {
       }
 
       if (staffCommand === 'refund') {
-        ticket.status = 'refunded';
-        ticket.closedAt = new Date();
-        ticket.closedBy = userId;
-        addStaffActionMessage(ticket, {
-          title: 'Ticket Refunded',
-          description: 'This ticket has been marked as refunded by staff.',
-          color: 'red'
-        });
+        const isAdminStaff = req.user?.rank === 'developer' || req.user?.role === 'admin';
+        if (!isAdminStaff) {
+          return res.status(403).json({
+            success: false,
+            message: 'Only admins can issue ticket refunds.'
+          });
+        }
+
+        const refundAddress = normalizePayoutAddress(parts[2], ticket.cryptocurrency);
+        const refundReason = parts.slice(3).join(' ').trim();
+        if (!refundAddress) {
+          addStaffActionMessage(ticket, {
+            title: 'Refund Address Required',
+            description: `Use <strong>/staff refund &lt;${ticket.cryptocurrency?.toUpperCase() || 'crypto'} address&gt; [reason]</strong>.`,
+            color: 'red'
+          });
+          await ticket.save();
+          await ticket.populate('messages.sender', 'username userId avatar rank');
+          return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+        }
+
+        const runtimeConfig = await getRuntimeConfig();
+        const refundNetworkMode = ticket.payoutNetworkMode
+          || ticket.transactionNetworkMode
+          || getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
+        const refundUsd = Number(ticket.expectedAmount || ticket.dealAmount || 0);
+        const storedRefundCrypto = Number(ticket.expectedCryptoAmount);
+        const refundCrypto = Number.isFinite(storedRefundCrypto) && storedRefundCrypto > 0
+          ? storedRefundCrypto.toFixed(8)
+          : getTicketCryptoAmount(ticket, refundUsd, refundNetworkMode).toFixed(8);
+
+        try {
+          const transferResult = await sendTicketPayout({
+            ticket,
+            toAddress: refundAddress,
+            amountCrypto: refundCrypto,
+            amountUsd: refundUsd,
+            networkMode: refundNetworkMode,
+            purpose: 'ticket_refund',
+            sourceType: 'ticket',
+            sourceId: ticket.ticketId,
+            actor: userId,
+            idempotencyKey: `ticket-refund:${ticket.ticketId}:${refundAddress}:${refundCrypto}`
+          });
+
+          ticket.status = transferResult.txHash ? 'refunded' : 'disputed';
+          ticket.closedAt = transferResult.txHash ? new Date() : null;
+          ticket.closedBy = userId;
+          ticket.refundedAt = transferResult.txHash ? new Date() : null;
+          ticket.refundedBy = userId;
+          ticket.refundReason = refundReason || ticket.refundReason || null;
+          ticket.payoutAddress = refundAddress;
+          ticket.payoutNetworkMode = refundNetworkMode;
+          ticket.payoutTransactionHash = transferResult.txHash || null;
+
+          addStaffActionMessage(ticket, {
+            title: transferResult.txHash ? 'Ticket Refunded' : 'Refund Queued',
+            description: transferResult.txHash
+              ? `Refund sent to ${refundAddress}.\n\nAmount: ${refundCrypto} ${ticket.cryptocurrency.toUpperCase()}\nTx: ${transferResult.txHash}${refundReason ? `\n\nReason: ${refundReason}` : ''}`
+              : `Refund queued for signer approval.\n\nAmount: ${refundCrypto} ${ticket.cryptocurrency.toUpperCase()}\nTo: ${refundAddress}\nTransfer ID: ${transferResult.transfer?.transferId || 'pending'}${refundReason ? `\n\nReason: ${refundReason}` : ''}`,
+            color: transferResult.txHash ? 'purple' : 'orange'
+          });
+        } catch (error) {
+          addStaffActionMessage(ticket, {
+            title: 'Refund Not Sent',
+            description: `${error.message}${error.transfer?.transferId ? `\n\nTransfer ID: ${error.transfer.transferId}` : ''}`,
+            color: 'red'
+          });
+        }
+
         await ticket.save();
         await ticket.populate('messages.sender', 'username userId avatar rank');
-        return res.json({ success: true, message: ticket.messages[ticket.messages.length - 1] });
+        return res.json({
+          success: true,
+          message: ticket.messages[ticket.messages.length - 1]
+        });
       }
 
       return res.status(400).json({
@@ -3347,20 +3564,27 @@ export const confirmPayoutAddress = async (req, res) => {
         ticket,
         toAddress: payoutAddress,
         amountCrypto: payoutCrypto,
-        networkMode: payoutNetworkMode
+        amountUsd: payoutUsd,
+        networkMode: payoutNetworkMode,
+        purpose: 'ticket_payout',
+        sourceType: 'ticket',
+        sourceId: ticket.ticketId,
+        actor: userId,
+        idempotencyKey: `ticket-payout:${ticket.ticketId}:${payoutAddress}:${payoutCrypto}`
       });
       const { txHash, unit, confirmationNetwork } = payoutResult;
+      const transferId = payoutResult.transfer?.transferId || null;
+      const isQueued = !txHash;
 
       ticket.payoutAddress = payoutAddress;
       ticket.payoutAddressConfirmed = true;
-      ticket.payoutTransactionHash = txHash;
+      ticket.payoutTransactionHash = txHash || null;
       ticket.payoutNetworkMode = payoutNetworkMode;
       ticket.pendingPayoutAddress = null;
       ticket.awaitingPayoutConfirmation = false;
       ticket.awaitingPayoutAddress = false;
 
-      const payoutConfig = ETH_RPC_CONFIG[payoutNetworkMode] || ETH_RPC_CONFIG.mainnet;
-      const requiredConfirmations = payoutConfig?.confirmationsRequired || 2;
+      const requiredConfirmations = getPayoutRequiredConfirmations(confirmationNetwork, payoutNetworkMode);
 
       ticket.messages.push({
         isBot: true,
@@ -3368,12 +3592,15 @@ export const confirmPayoutAddress = async (req, res) => {
         type: 'embed',
         embedData: {
           title: 'Payout Sent',
-          description: `Your payout is on the way!\\n\\n<strong>Amount:</strong> <strong>${payoutCrypto} ${unit}</strong> (~$${Number(payoutUsd).toFixed(2)} USD)\\n<strong>To:</strong> <strong>${payoutAddress}</strong>\\n\\n<strong>Transaction:</strong> <strong>${txHash.substring(0, 16)}...</strong>`,
+          description: isQueued
+            ? `Your payout has been queued for the signing service.\\n\\n<strong>Amount:</strong> <strong>${payoutCrypto} ${unit}</strong> (~$${Number(payoutUsd).toFixed(2)} USD)\\n<strong>To:</strong> <strong>${payoutAddress}</strong>\\n\\n<strong>Transfer ID:</strong> <strong>${transferId || 'pending'}</strong>`
+            : `Your payout is on the way!\\n\\n<strong>Amount:</strong> <strong>${payoutCrypto} ${unit}</strong> (~$${Number(payoutUsd).toFixed(2)} USD)\\n<strong>To:</strong> <strong>${payoutAddress}</strong>\\n\\n<strong>Transaction:</strong> <strong>${txHash.substring(0, 16)}...</strong>`,
           color: 'blue',
           requiresAction: true,
           actionType: 'payout-confirming',
           metadata: {
             txHash,
+            transferId,
             confirmations: 0,
             requiredConfirmations
           }
@@ -3387,15 +3614,23 @@ export const confirmPayoutAddress = async (req, res) => {
         ? ticket.creator?.username
         : receiverParticipant?.user?.username;
 
-      if (confirmationNetwork === 'ethereum') {
+      if (txHash && confirmationNetwork === 'ethereum') {
         startPayoutConfirmationWatcher({
           ticketId,
           txHash,
           receiverName,
           networkMode: payoutNetworkMode
         });
-      } else if (confirmationNetwork === 'solana') {
+      } else if (txHash && confirmationNetwork === 'solana') {
         startPayoutCompletionFinalizer({ ticketId, receiverName });
+      } else if (txHash && (confirmationNetwork === 'bitcoin' || confirmationNetwork === 'litecoin')) {
+        startUtxoPayoutConfirmationWatcher({
+          ticketId,
+          txHash,
+          receiverName,
+          coin: confirmationNetwork,
+          networkMode: payoutNetworkMode
+        });
       }
 
       return res.json({
@@ -3625,21 +3860,21 @@ export const adminRefundTicket = async (req, res) => {
     }
 
     const { ticketId } = req.params;
-    const refundAddress = String(req.body?.refundAddress || '').trim();
     const refundTransactionHash = String(req.body?.refundTransactionHash || '').trim();
     const refundReason = String(req.body?.refundReason || '').trim();
     const refundTargetRole = String(req.body?.refundTargetRole || '').trim();
 
-    if (!refundAddress) {
-      return res.status(400).json({
-        success: false,
-        message: 'refundAddress is required.'
-      });
-    }
-
     const ticket = await TradeTicket.findOne({ ticketId });
     if (!ticket) {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    const normalizedRefundAddress = normalizePayoutAddress(req.body?.refundAddress, ticket.cryptocurrency);
+    if (!normalizedRefundAddress) {
+      return res.status(400).json({
+        success: false,
+        message: `A valid ${ticket.cryptocurrency?.toUpperCase() || 'crypto'} refundAddress is required.`
+      });
     }
 
     if (ticket.status === 'refunded') {
@@ -3649,17 +3884,60 @@ export const adminRefundTicket = async (req, res) => {
       });
     }
 
-    ticket.status = 'refunded';
+    const runtimeConfig = await getRuntimeConfig();
+    const refundNetworkMode = ticket.payoutNetworkMode
+      || ticket.transactionNetworkMode
+      || getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
+    const refundUsd = Number(ticket.expectedAmount || ticket.dealAmount || 0);
+    const storedRefundCrypto = Number(ticket.expectedCryptoAmount);
+    const refundCrypto = Number.isFinite(storedRefundCrypto) && storedRefundCrypto > 0
+      ? storedRefundCrypto.toFixed(8)
+      : getTicketCryptoAmount(ticket, refundUsd, refundNetworkMode).toFixed(8);
+
+    let transferResult = null;
+    if (!refundTransactionHash) {
+      try {
+        transferResult = await sendTicketPayout({
+          ticket,
+          toAddress: normalizedRefundAddress,
+          amountCrypto: refundCrypto,
+          amountUsd: refundUsd,
+          networkMode: refundNetworkMode,
+          purpose: 'ticket_refund',
+          sourceType: 'ticket',
+          sourceId: ticket.ticketId,
+          actor: req.user._id,
+          idempotencyKey: `ticket-refund:${ticket.ticketId}:${normalizedRefundAddress}:${refundCrypto}`
+        });
+      } catch (error) {
+        if (!error.transfer || !['manual_required', 'queued', 'pending'].includes(error.transfer.status)) {
+          throw error;
+        }
+        transferResult = {
+          txHash: error.transfer.txHash || null,
+          transfer: error.transfer,
+          signerStatus: error.transfer.status,
+          errorCode: error.code,
+          errorMessage: error.message
+        };
+      }
+    }
+
+    const resolvedRefundHash = refundTransactionHash || transferResult?.txHash || null;
+    const transferId = transferResult?.transfer?.transferId || null;
+
+    ticket.status = resolvedRefundHash ? 'refunded' : 'disputed';
     ticket.awaitingTransaction = false;
-    ticket.refundedAt = new Date();
+    ticket.refundedAt = resolvedRefundHash ? new Date() : null;
     ticket.refundedBy = req.user._id;
     ticket.refundReason = refundReason || ticket.refundReason || null;
     if (refundTargetRole === 'sender' || refundTargetRole === 'receiver') {
       ticket.refundTargetRole = refundTargetRole;
     }
-    ticket.payoutAddress = refundAddress;
-    if (refundTransactionHash) {
-      ticket.payoutTransactionHash = refundTransactionHash;
+    ticket.payoutAddress = normalizedRefundAddress;
+    ticket.payoutNetworkMode = refundNetworkMode;
+    if (resolvedRefundHash) {
+      ticket.payoutTransactionHash = resolvedRefundHash;
     }
 
     ticket.messages.push({
@@ -3668,9 +3946,9 @@ export const adminRefundTicket = async (req, res) => {
       type: 'embed',
       embedData: {
         title: 'Refund Issued',
-        description: refundTransactionHash
-          ? `Refund sent to ${refundAddress}.\n\nTx: ${refundTransactionHash}${refundReason ? `\n\nReason: ${refundReason}` : ''}`
-          : `Refund queued to ${refundAddress}.${refundReason ? `\n\nReason: ${refundReason}` : ''}`,
+        description: resolvedRefundHash
+          ? `Refund sent to ${normalizedRefundAddress}.\n\nAmount: ${refundCrypto} ${ticket.cryptocurrency.toUpperCase()}\nTx: ${resolvedRefundHash}${refundReason ? `\n\nReason: ${refundReason}` : ''}`
+          : `Refund queued to ${normalizedRefundAddress}.\n\nAmount: ${refundCrypto} ${ticket.cryptocurrency.toUpperCase()}\nTransfer ID: ${transferId || 'pending'}${refundReason ? `\n\nReason: ${refundReason}` : ''}`,
         color: 'purple'
       },
       timestamp: new Date()
@@ -3680,18 +3958,26 @@ export const adminRefundTicket = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Refund recorded.',
+      message: resolvedRefundHash ? 'Refund sent.' : 'Refund queued.',
       ticket: {
         ticketId: ticket.ticketId,
         status: ticket.status,
         refundedAt: ticket.refundedAt,
-        refundAddress,
-        refundTransactionHash: refundTransactionHash || null
-      }
+        refundAddress: normalizedRefundAddress,
+        refundTransactionHash: resolvedRefundHash,
+        transferId
+      },
+      transfer: transferResult?.transfer || null
     });
   } catch (error) {
     console.error('Admin refund ticket error:', error);
-    res.status(500).json({ success: false, message: 'Failed to record refund' });
+    res.status(500).json({
+      success: false,
+      message: error.code === 'TRANSFER_REQUIRES_APPROVAL' || error.code === 'TRANSFER_MANUAL_REQUIRED'
+        ? error.message
+        : 'Failed to process refund',
+      transfer: error.transfer || null
+    });
   }
 };
 

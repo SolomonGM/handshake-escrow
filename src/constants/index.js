@@ -70,18 +70,6 @@ export const navigation = [
     title: "Docs",
     url: "/docs",
   },
-  {
-    id: "5",
-    title: "New account",
-    url: "#signup",
-    onlyMobile: true,
-  },
-  {
-    id: "6",
-    title: "Sign in",
-    url: "#login",
-    onlyMobile: true,
-  },
 ];
 
 export const heroIcons = [buyIcon, walletIcon, sellIcon, homeSmile];

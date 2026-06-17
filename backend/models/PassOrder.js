@@ -49,7 +49,7 @@ const passOrderSchema = new mongoose.Schema({
   },
   networkMode: {
     type: String,
-    enum: ['mainnet', 'testnet'],
+    enum: ['mainnet', 'testnet', 'devnet'],
     default: 'mainnet'
   },
   cryptoAmount: {

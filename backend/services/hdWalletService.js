@@ -187,6 +187,39 @@ export const deriveEthereumWallet = (index, provider = null) => {
   return provider ? wallet.connect(provider) : wallet;
 };
 
+export const deriveUtxoSigner = (chain, index) => {
+  const networkMode = getUtxoNetworkMode(chain);
+  const network = chain === 'bitcoin'
+    ? BITCOIN_NETWORKS[networkMode]
+    : LITECOIN_NETWORKS[networkMode];
+  const mnemonic = chain === 'bitcoin'
+    ? requireEnv('HD_BTC_MNEMONIC')
+    : requireEnv('HD_LTC_MNEMONIC');
+  const seed = mnemonicToSeedSync(mnemonic, '');
+  const root = bip32.fromSeed(seed, network);
+  const coinType = chain === 'bitcoin'
+    ? (networkMode === 'mainnet' ? 0 : 1)
+    : (networkMode === 'mainnet' ? 2 : 1);
+  const child = root.derivePath(`m/84'/${coinType}'/0'/0/${index}`);
+  const { address, output } = bitcoin.payments.p2wpkh({
+    pubkey: Buffer.from(child.publicKey),
+    network
+  });
+
+  if (!address || !output) {
+    throw new Error(`Failed to derive ${chain} signer at index ${index}`);
+  }
+
+  return {
+    chain,
+    network,
+    networkMode,
+    keyPair: child,
+    address,
+    output
+  };
+};
+
 const deriveSolanaAddress = (index) => {
   // Solana uses ed25519, not secp256k1, so we use Solana's standard
   // SLIP-0010 derivation. Mnemonic is required (no xpub equivalent for ed25519).

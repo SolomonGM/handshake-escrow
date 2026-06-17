@@ -19,12 +19,14 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import setupChatSocket from './socket/chatSocket.js';
 import { startTransactionMonitoring } from './services/transactionMonitor.js';
+import { startWalletTransferMonitor } from './services/walletTransferMonitor.js';
 import { startExchangeRateRefresh } from './config/wallets.js';
 import { scheduleDiscordProfileRefresh, warmDiscordProfileCache } from './services/discordProfileService.js';
 import { ensureDiscordSyncCommandRegistered } from './services/discordCommandService.js';
 import { scheduleLeaderboardRefresh, warmLeaderboardCache } from './services/leaderboardService.js';
 import { setIo } from './utils/socketRegistry.js';
 import { backfillCompletedTickets, startTicketClosureMonitor } from './services/ticketClosureService.js';
+import { validateProductionWalletConfig } from './services/runtimeConfigService.js';
 
 // This loads environment variables.
 dotenv.config();
@@ -179,24 +181,17 @@ app.use((req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
-// This starts server.
-const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('WebSocket server ready');
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  const discordPublicKeyConfigured = Boolean(String(process.env.DISCORD_APPLICATION_PUBLIC_KEY || '').trim());
-  const discordAppId = String(process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID || '').trim();
-  console.log('[discord] Interactions endpoint: /api/discord/interactions');
-  console.log(`[discord] Application ID configured: ${discordAppId ? 'yes' : 'no'}`);
-  console.log(`[discord] Public key configured: ${discordPublicKeyConfigured ? 'yes' : 'no'}`);
-  if (!discordPublicKeyConfigured) {
-    console.warn('[discord] DISCORD_APPLICATION_PUBLIC_KEY is missing; slash command verification will fail.');
+const startBackgroundServices = async () => {
+  try {
+    await validateProductionWalletConfig();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
   }
 
   // This starts background services.
   startTransactionMonitoring(io);
+  startWalletTransferMonitor();
   scheduleDiscordProfileRefresh();
   warmDiscordProfileCache();
   ensureDiscordSyncCommandRegistered()
@@ -218,4 +213,23 @@ httpServer.listen(PORT, () => {
   backfillCompletedTickets().catch((error) => {
     console.error('Error backfilling completed tickets:', error);
   });
+};
+
+// This starts server.
+const PORT = process.env.PORT || 5000;
+httpServer.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log('WebSocket server ready');
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  const discordPublicKeyConfigured = Boolean(String(process.env.DISCORD_APPLICATION_PUBLIC_KEY || '').trim());
+  const discordAppId = String(process.env.DISCORD_APPLICATION_ID || process.env.DISCORD_CLIENT_ID || '').trim();
+  console.log('[discord] Interactions endpoint: /api/discord/interactions');
+  console.log(`[discord] Application ID configured: ${discordAppId ? 'yes' : 'no'}`);
+  console.log(`[discord] Public key configured: ${discordPublicKeyConfigured ? 'yes' : 'no'}`);
+  if (!discordPublicKeyConfigured) {
+    console.warn('[discord] DISCORD_APPLICATION_PUBLIC_KEY is missing; slash command verification will fail.');
+  }
+
+  startBackgroundServices();
 });

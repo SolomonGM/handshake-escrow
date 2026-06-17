@@ -100,6 +100,27 @@ const DEFAULT_TICKET_AVAILABILITY = {
   'usdc-spl': true
 };
 
+const PRODUCTION_REQUIRED_ENV_BY_CHAIN = {
+  bitcoin: ['HD_BTC_XPUB', 'HD_BTC_MNEMONIC', 'BLOCKCYPHER_TOKEN'],
+  litecoin: ['HD_LTC_XPUB', 'HD_LTC_MNEMONIC', 'BLOCKCYPHER_TOKEN'],
+  ethereum: ['HD_ETH_MNEMONIC', 'ETH_MAINNET_RPC_URL', 'TREASURY_ETH_PRIVATE_KEY'],
+  solana: ['HD_SOL_MNEMONIC', 'TREASURY_SOL_PRIVATE_KEY']
+};
+
+const CHAIN_NETWORK_ENV_KEYS = {
+  bitcoin: ['BTC_NETWORK_MODE', 'HD_BTC_NETWORK'],
+  litecoin: ['LTC_NETWORK_MODE', 'HD_LTC_NETWORK'],
+  ethereum: ['ETH_NETWORK_MODE', 'HD_ETH_NETWORK'],
+  solana: ['HD_SOL_NETWORK']
+};
+
+const CHAIN_RUNTIME_MODE_KEYS = {
+  bitcoin: 'bitcoin',
+  litecoin: 'litecoin',
+  ethereum: 'ethereum',
+  solana: 'solana'
+};
+
 let cachedRuntimeConfig = null;
 let cachedAt = 0;
 
@@ -500,6 +521,92 @@ export const updateRuntimeConfig = async ({ networkModes, wallets, ticketAvailab
   await configDoc.save();
   clearCache();
   return getPublicRuntimeConfig();
+};
+
+const getEnabledChains = (runtimeConfig) => {
+  const availability = getTicketAvailabilityMatrix(runtimeConfig);
+  return Array.from(new Set(
+    Object.entries(availability)
+      .filter(([, enabled]) => enabled)
+      .map(([coin]) => COIN_TO_CHAIN[coin])
+      .filter(Boolean)
+  ));
+};
+
+const requireMainnetEnv = (envName, errors) => {
+  const value = String(process.env[envName] || '').trim().toLowerCase();
+  if (value !== 'mainnet') {
+    errors.push(`${envName} must be set to mainnet in production.`);
+  }
+};
+
+const requireEnvValue = (envName, errors) => {
+  if (!String(process.env[envName] || '').trim()) {
+    errors.push(`${envName} is required in production.`);
+  }
+};
+
+export const validateProductionWalletConfig = async () => {
+  if (process.env.NODE_ENV !== 'production') {
+    return { ok: true, skipped: true, reason: 'NODE_ENV is not production' };
+  }
+
+  const runtimeConfig = await getRuntimeConfig({ force: true });
+  const enabledChains = getEnabledChains(runtimeConfig);
+  const errors = [];
+
+  if (!enabledChains.length) {
+    errors.push('At least one ticket currency must be enabled in production.');
+  }
+
+  enabledChains.forEach((chain) => {
+    const runtimeModeKey = CHAIN_RUNTIME_MODE_KEYS[chain];
+    const runtimeMode = String(runtimeConfig.networkModes?.[runtimeModeKey] || '').trim().toLowerCase();
+    if (runtimeMode !== 'mainnet') {
+      errors.push(`Runtime networkModes.${runtimeModeKey} must be mainnet in production for enabled ${chain} currencies.`);
+    }
+
+    (CHAIN_NETWORK_ENV_KEYS[chain] || []).forEach((envName) => requireMainnetEnv(envName, errors));
+    (PRODUCTION_REQUIRED_ENV_BY_CHAIN[chain] || []).forEach((envName) => requireEnvValue(envName, errors));
+  });
+
+  const signerMode = String(process.env.WALLET_SIGNER_MODE || '').trim().toLowerCase();
+  if (signerMode !== 'external') {
+    errors.push('WALLET_SIGNER_MODE must be external in production.');
+  }
+  if (String(process.env.ALLOW_APP_PROCESS_SIGNING || '').trim().toLowerCase() === 'true') {
+    errors.push('ALLOW_APP_PROCESS_SIGNING must not be true in production.');
+  }
+  requireEnvValue('SIGNER_SERVICE_URL', errors);
+  requireEnvValue('SIGNER_SERVICE_TOKEN', errors);
+
+  const usesAccountChain = enabledChains.some((chain) => chain === 'ethereum' || chain === 'solana');
+  if (usesAccountChain) {
+    if (String(process.env.AUTO_FUND_DEPOSIT_GAS || '').trim().toLowerCase() !== 'true') {
+      errors.push('AUTO_FUND_DEPOSIT_GAS must be true in production when Ethereum or Solana-family currencies are enabled.');
+    }
+  }
+
+  const tokenAvailability = getTicketAvailabilityMatrix(runtimeConfig);
+  const tokenCurrenciesEnabled = ['usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'].some(
+    (coin) => tokenAvailability[coin]
+  );
+  if (tokenCurrenciesEnabled && String(process.env.ALLOW_TOKEN_DEPOSIT_ADDRESS_PAYOUTS || '').trim().toLowerCase() !== 'true') {
+    errors.push('ALLOW_TOKEN_DEPOSIT_ADDRESS_PAYOUTS must be true in production when token currencies are enabled.');
+  }
+
+  if (errors.length) {
+    const error = new Error(`Production wallet configuration is unsafe:\n- ${errors.join('\n- ')}`);
+    error.code = 'PRODUCTION_WALLET_CONFIG_INVALID';
+    error.details = errors;
+    throw error;
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    enabledChains
+  };
 };
 
 export const getTicketPauseMetadata = async () => {

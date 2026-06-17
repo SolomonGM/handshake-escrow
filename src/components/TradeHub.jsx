@@ -310,9 +310,9 @@ const TradeHub = () => {
 
         {/* User's own active-request counter — visible only to the signed-in user */}
         {user && (
-          <div className="max-w-3xl mx-auto -mt-6 mb-12 flex items-center justify-center">
+          <div className="mx-auto -mt-6 mb-12 flex w-full max-w-3xl items-center justify-center px-4 text-center">
             <div
-              className={`inline-flex items-center gap-3 rounded-full border px-4 py-1.5 text-xs font-semibold ${
+              className={`inline-flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-full border px-4 py-2 text-xs font-semibold ${
                 atRequestCap
                   ? 'border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444]'
                   : 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]'
