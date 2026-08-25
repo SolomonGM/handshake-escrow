@@ -21,7 +21,13 @@ const passOrderSchema = new mongoose.Schema({
   },
   passCount: {
     type: Number,
-    required: true
+    default: 0,
+    min: 0
+  },
+  creditAmount: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   priceUSD: {
     type: Number,
@@ -77,8 +83,8 @@ const passOrderSchema = new mongoose.Schema({
     confirmationTime: Number, // Time taken to get required confirmations (in minutes)
     blockHeight: Number, // Block number where transaction was included
     fromAddress: String, // Sender's address
-    balanceBefore: Number, // User pass balance before credit
-    balanceAfter: Number, // User pass balance after credit
+    balanceBefore: Number, // User fee-credit balance before purchase
+    balanceAfter: Number, // User fee-credit balance after purchase
     isOverpayment: { type: Boolean, default: false },
     isUnderpayment: { type: Boolean, default: false },
     paymentNotes: String // Any special notes about the payment (includes Etherscan/BlockCypher links)

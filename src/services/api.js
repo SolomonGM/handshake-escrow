@@ -251,8 +251,8 @@ export const adminAPI = {
     return response.data;
   },
 
-  updateUserPasses: async (userId, passes) => {
-    const response = await api.put('/admin/users/passes', { userId, passes });
+  updateUserPasses: async (userId, feeCredits) => {
+    const response = await api.put('/admin/users/passes', { userId, feeCredits });
     return response.data;
   },
 

@@ -25,6 +25,7 @@ import {
   deriveUtxoSigner
 } from './hdWalletService.js';
 import WalletTransfer from '../models/WalletTransfer.js';
+import { buildSignerAuthHeaders } from '../utils/signerAuth.js';
 
 const ERC20_ABI = [
   'function decimals() view returns (uint8)',
@@ -591,29 +592,38 @@ const callExternalSigner = async ({ transfer, ticket }) => {
     throw normalizeTransferError('SIGNER_SERVICE_TOKEN is required when WALLET_SIGNER_MODE=external.', 'SIGNER_UNCONFIGURED');
   }
 
-  const response = await fetch(`${signerUrl}/transfers`, {
+  const path = '/transfers';
+  const requestBody = JSON.stringify({
+    transferId: transfer.transferId,
+    purpose: transfer.purpose,
+    currency: transfer.currency,
+    chain: transfer.chain,
+    token: transfer.token,
+    networkMode: transfer.networkMode,
+    fromAddress: transfer.fromAddress,
+    derivationIndex: transfer.derivationIndex,
+    toAddress: transfer.toAddress,
+    amountCrypto: transfer.amountCrypto,
+    amountUsd: transfer.amountUsd,
+    sourceType: transfer.sourceType,
+    sourceId: transfer.sourceId,
+    depositAddress: ticket?.depositAddress || ticket?.paymentAddress || null
+  });
+  const signerAuthHeaders = buildSignerAuthHeaders({
+    secret: token,
+    method: 'POST',
+    path,
+    body: requestBody
+  });
+
+  const response = await fetch(`${signerUrl}${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
-      'idempotency-key': transfer.idempotencyKey
+      'idempotency-key': transfer.idempotencyKey,
+      ...signerAuthHeaders
     },
-    body: JSON.stringify({
-      transferId: transfer.transferId,
-      purpose: transfer.purpose,
-      currency: transfer.currency,
-      chain: transfer.chain,
-      token: transfer.token,
-      networkMode: transfer.networkMode,
-      fromAddress: transfer.fromAddress,
-      derivationIndex: transfer.derivationIndex,
-      toAddress: transfer.toAddress,
-      amountCrypto: transfer.amountCrypto,
-      amountUsd: transfer.amountUsd,
-      sourceType: transfer.sourceType,
-      sourceId: transfer.sourceId,
-      depositAddress: ticket?.depositAddress || ticket?.paymentAddress || null
-    })
+    body: requestBody
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -677,7 +687,7 @@ export const sendTicketPayout = async ({
       signerStatus: existingTransfer.status
     };
   }
-  if (existingTransfer && ['queued', 'manual_required', 'pending'].includes(existingTransfer.status)) {
+  if (existingTransfer && ['queued', 'manual_required'].includes(existingTransfer.status)) {
     const error = normalizeTransferError(`Transfer ${existingTransfer.transferId} is already ${existingTransfer.status}.`, 'TRANSFER_ALREADY_PENDING');
     error.transfer = existingTransfer;
     throw error;

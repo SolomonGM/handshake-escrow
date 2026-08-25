@@ -13,6 +13,7 @@ import { Keypair } from '@solana/web3.js';
 import { mnemonicToSeedSync } from 'bip39';
 import { derivePath } from 'ed25519-hd-key';
 import HdAddressCounter from '../models/HdAddressCounter.js';
+import { buildSignerAuthHeaders } from '../utils/signerAuth.js';
 
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
@@ -141,8 +142,14 @@ const deriveUtxoAddress = (chain, index) => {
     : LITECOIN_NETWORKS[networkMode];
 
   const rawXpub = chain === 'bitcoin'
-    ? requireEnv('HD_BTC_XPUB')
-    : requireEnv('HD_LTC_XPUB');
+    ? optionalEnv('HD_BTC_XPUB')
+    : optionalEnv('HD_LTC_XPUB');
+
+  // The isolated signer may intentionally hold only the mnemonic. Public API
+  // deployments should use external derivation and never reach this branch.
+  if (!rawXpub) {
+    return deriveUtxoSigner(chain, index).address;
+  }
 
   // Normalize to classic prefix for the active network so bip32 can parse it.
   const targetClassic = networkMode === 'mainnet' ? 'xpub' : 'tpub';
@@ -280,12 +287,55 @@ export const deriveAddressForChain = (chain, index) => {
   }
 };
 
+export const usesExternalAddressDerivation = () => (
+  String(process.env.WALLET_SIGNER_MODE || '').trim().toLowerCase() === 'external'
+);
+
+const deriveAddressThroughSigner = async (chain, index) => {
+  const signerUrl = String(process.env.SIGNER_SERVICE_URL || '').trim().replace(/\/$/, '');
+  const signerSecret = String(process.env.SIGNER_SERVICE_TOKEN || '').trim();
+  if (!signerUrl || !signerSecret) {
+    const error = new Error('External signer address derivation is not configured.');
+    error.code = 'SIGNER_UNCONFIGURED';
+    throw error;
+  }
+
+  const path = '/deposit-addresses/derive';
+  const requestBody = JSON.stringify({ chain, index });
+  const response = await fetch(`${signerUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...buildSignerAuthHeaders({
+        secret: signerSecret,
+        method: 'POST',
+        path,
+        body: requestBody
+      })
+    },
+    body: requestBody
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.address) {
+    const error = new Error(payload.message || 'Signer failed to derive a deposit address.');
+    error.code = payload.code || 'SIGNER_DERIVATION_FAILED';
+    throw error;
+  }
+  return payload.address;
+};
+
+export const testExternalAddressDerivation = async (chain) => (
+  deriveAddressThroughSigner(chain, 0)
+);
+
 // Allocate the next unique address for a deposit. Atomic against concurrent
 // ticket creation thanks to the $inc-backed counter.
 export const allocateDepositAddress = async (currency) => {
   const { chain, token } = resolveDepositChain(currency);
   const index = await HdAddressCounter.consumeNextIndex(chain);
-  const address = deriveAddressForChain(chain, index);
+  const address = usesExternalAddressDerivation()
+    ? await deriveAddressThroughSigner(chain, index)
+    : deriveAddressForChain(chain, index);
   return {
     address,
     chain,

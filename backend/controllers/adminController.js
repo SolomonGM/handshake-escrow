@@ -15,7 +15,12 @@ import {
 import { getRankForTotalUSD, getXpForTotalUSD, isStaffRank } from '../utils/rankUtils.js';
 import { isStaffUser } from '../utils/staffUtils.js';
 import { getIo } from '../utils/socketRegistry.js';
-import { selfTest as hdSelfTest, SUPPORTED_DEPOSIT_TOKENS } from '../services/hdWalletService.js';
+import {
+  selfTest as hdSelfTest,
+  SUPPORTED_DEPOSIT_TOKENS,
+  testExternalAddressDerivation,
+  usesExternalAddressDerivation
+} from '../services/hdWalletService.js';
 import { getSolanaMonitorStatus } from '../services/solanaMonitor.js';
 import { getErc20MonitorStatus } from '../services/erc20Monitor.js';
 import HdAddressCounter from '../models/HdAddressCounter.js';
@@ -94,7 +99,7 @@ export const getAllUsers = async (req, res) => {
       role: 'role',
       rank: 'rank',
       xp: 'xp',
-      passes: 'passes',
+      passes: 'feeCredits',
       totalUSDValue: 'totalUSDValue',
       totalDeals: 'totalDeals',
       lastLogin: 'lastLogin',
@@ -286,7 +291,7 @@ export const updateUserXP = async (req, res) => {
   }
 };
 
-// Updated user passes (Admin only)
+// Updates a user's fee-credit balance (route name retained for compatibility).
 export const updateUserPasses = async (req, res) => {
   try {
     // This check ensures user is admin with developer rank
@@ -294,15 +299,15 @@ export const updateUserPasses = async (req, res) => {
       return res.status(403).json({ message: 'Access denied. Developer rank required.' });
     }
 
-    const { userId, passes } = req.body;
+    const { userId, feeCredits } = req.body;
 
-    if (passes < 0) {
-      return res.status(400).json({ message: 'Passes cannot be negative' });
+    if (!Number.isFinite(Number(feeCredits)) || Number(feeCredits) < 0) {
+      return res.status(400).json({ message: 'Fee credits must be a non-negative number' });
     }
 
     const user = await User.findByIdAndUpdate(
       userId,
-      { passes },
+      { feeCredits: Number(Number(feeCredits).toFixed(2)) },
       { new: true, runValidators: true }
     ).select('-password');
 
@@ -310,7 +315,7 @@ export const updateUserPasses = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json({ message: 'User passes updated successfully', user });
+    res.json({ message: 'User fee credits updated successfully', user });
   } catch (error) {
     console.error('Update user passes error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -1316,7 +1321,18 @@ export const getWalletInfrastructure = async (req, res) => {
 
     // Admin "Reload" button is the canonical way to re-check env, so always
     // bypass the cache when this endpoint is called.
-    const hdResults = hdSelfTest({ force: true });
+    const hdResults = usesExternalAddressDerivation()
+      ? Object.fromEntries(await Promise.all(
+          ['bitcoin', 'litecoin', 'ethereum', 'solana'].map(async (chain) => {
+            try {
+              const addressAtIndex0 = await testExternalAddressDerivation(chain);
+              return [chain, { ok: true, addressAtIndex0 }];
+            } catch (error) {
+              return [chain, { ok: false, error: error.message, code: error.code || null }];
+            }
+          })
+        ))
+      : hdSelfTest({ force: true });
     const counters = await HdAddressCounter.find({}).select('chain nextIndex updatedAt').lean();
     const counterByChain = counters.reduce((acc, c) => {
       acc[c.chain] = { nextIndex: c.nextIndex, updatedAt: c.updatedAt };

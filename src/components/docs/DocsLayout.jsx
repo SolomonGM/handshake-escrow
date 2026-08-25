@@ -17,8 +17,8 @@ const docsNav = [
   },
   {
     id: "fees",
-    title: "Fees and Passes",
-    description: "Platform fees, passes, and when they apply.",
+    title: "Fees and Credits",
+    description: "Platform fees, prepaid credits, and when they apply.",
     href: "/docs/fees",
   },
   {

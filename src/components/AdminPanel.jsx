@@ -489,15 +489,15 @@ const AdminPanel = () => {
     }
   };
 
-  const handleUpdatePasses = async (userId, passes) => {
+  const handleUpdatePasses = async (userId, feeCredits) => {
     try {
-      await adminAPI.updateUserPasses(userId, parseInt(passes));
-      setMessage('User passes updated successfully');
+      await adminAPI.updateUserPasses(userId, parseFloat(feeCredits));
+      setMessage('User fee credits updated successfully');
       loadUsersAndStats();
       setEditingUser(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
-      setMessage('Error updating passes: ' + (error.response?.data?.message || error.message));
+      setMessage('Error updating fee credits: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -1337,7 +1337,7 @@ const AdminPanel = () => {
             <option value="rank">Sort: Rank</option>
             <option value="totalUSDValue">Sort: Total USD</option>
             <option value="totalDeals">Sort: Deals</option>
-            <option value="passes">Sort: Passes</option>
+            <option value="passes">Sort: Fee Credits</option>
             <option value="xp">Sort: XP</option>
             <option value="twoFactor">Sort: 2FA</option>
           </select>
@@ -1370,7 +1370,7 @@ const AdminPanel = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">2FA</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">XP</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Passes</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Fee Credits</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Total USD</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Deals</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-n-3 uppercase tracking-wider">Joined</th>
@@ -1472,12 +1472,12 @@ const AdminPanel = () => {
                     {editingUser === user._id ? (
                       <input
                         type="number"
-                        defaultValue={user.passes || 0}
+                        defaultValue={user.feeCredits || 0}
                         onBlur={(e) => handleUpdatePasses(user._id, e.target.value)}
                         className="w-16 bg-n-7 border border-n-5 rounded px-2 py-1 text-n-1 text-sm"
                       />
                     ) : (
-                      <span className="text-color-4 font-semibold">{user.passes || 0}</span>
+                      <span className="text-color-4 font-semibold">${Number(user.feeCredits || 0).toFixed(2)}</span>
                     )}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">

@@ -25,7 +25,12 @@ import {
   cancelTransaction,
   cancelTicket,
   adminRefundTicket,
-  selectPrivacy
+  selectPrivacy,
+  updateDealAgreement,
+  confirmDealAgreement,
+  analyzeTicketSafetyReview,
+  acknowledgeTicketSafety,
+  generateTicketEvidenceBrief
 } from '../controllers/ticketController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { requireTicketWorkflowActive } from '../middleware/ticketWorkflowMiddleware.js';
@@ -43,6 +48,14 @@ router.get('/availability', getTicketAvailability);
 
 // Retrieves user's tickets (created, invitations, active)
 router.get('/my-tickets', getUserTickets);
+
+// Agreement-bound AI safety workflow. AI can advise and organize evidence,
+// but these endpoints never sign or move funds.
+router.put('/:ticketId/agreement', requireTicketWorkflowActive, updateDealAgreement);
+router.post('/:ticketId/agreement/confirm', requireTicketWorkflowActive, confirmDealAgreement);
+router.post('/:ticketId/safety/analyze', requireTicketWorkflowActive, analyzeTicketSafetyReview);
+router.post('/:ticketId/safety/acknowledge', requireTicketWorkflowActive, acknowledgeTicketSafety);
+router.post('/:ticketId/safety/evidence-brief', generateTicketEvidenceBrief);
 
 // Retrieves specific ticket
 router.get('/:ticketId', getTicket);

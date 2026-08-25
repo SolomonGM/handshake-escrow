@@ -7,6 +7,7 @@ import LoadingState from "./LoadingState";
 import { toast } from "../utils/toast";
 import { QRCodeSVG } from 'qrcode.react';
 import { getRankBadge, getRankColor, getRankGradientClass, getRankLabel } from "../utils/rankDisplay";
+import TradeSafetyCopilot from "./TradeSafetyCopilot";
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const LIVE_SYNC_VISIBLE_INTERVAL_MS = 5000;
@@ -29,6 +30,7 @@ const TradeTicket = () => {
   const [showPassModal, setShowPassModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [availablePasses, setAvailablePasses] = useState(0);
+  const [feeCreditPreview, setFeeCreditPreview] = useState(null);
   const [ticketWorkflowStatus, setTicketWorkflowStatus] = useState({
     paused: false,
     pauseReason: null,
@@ -43,8 +45,8 @@ const TradeTicket = () => {
   const lastUpdatedAtRef = useRef(null);
   const syncInFlightRef = useRef(false);
   const closeRedirectTimeoutRef = useRef(null);
-  const MAX_IMAGE_ATTACHMENTS = 4;
-  const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+  const MAX_IMAGE_ATTACHMENTS = 2;
+  const MAX_IMAGE_BYTES = 1024 * 1024;
   const MAX_IMAGE_DIMENSION = 1024;
 
   const formatCryptoAmount = (value) => {
@@ -111,7 +113,7 @@ const TradeTicket = () => {
     }
 
     if (file.size > MAX_IMAGE_BYTES) {
-      toast.warning(`${file.name} is too large (max 3MB)`);
+      toast.warning(`${file.name} is too large (max 1MB)`);
       return null;
     }
 
@@ -573,6 +575,18 @@ const TradeTicket = () => {
 
   // Role selection is now handled immediately on backend when user accepts invitation
 
+  const applySentMessageResponse = (response) => {
+    setMessages((previous) => [...previous, response.data.message]);
+    const safetyAlerts = response.data.safetyAlerts || [];
+    if (safetyAlerts.length) {
+      setTicket((previous) => previous ? ({
+        ...previous,
+        liveSafetySignals: [...(previous.liveSafetySignals || []), ...safetyAlerts].slice(-50)
+      }) : previous);
+      toast.warning(safetyAlerts[0].recommendation || 'Safety Copilot detected a transaction risk signal.');
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!ticket) return;
@@ -602,7 +616,7 @@ const TradeTicket = () => {
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        setMessages((prev) => [...prev, response.data.message]);
+        applySentMessageResponse(response);
         setPendingImages([]);
       } catch (err) {
         console.error('Error sending message with images:', err);
@@ -695,7 +709,7 @@ const TradeTicket = () => {
           { headers: { Authorization: `Bearer ${token}` } }
         );
         
-        setMessages(prev => [...prev, response.data.message]);
+        applySentMessageResponse(response);
       } catch (err) {
         console.error('Error sending message:', err);
         toast.error('Failed to send message');
@@ -784,8 +798,13 @@ const TradeTicket = () => {
       
       if (response.data.success) {
         if (response.data.showPassPrompt) {
-          // Show pass modal
-          setAvailablePasses(response.data.availablePasses);
+          setAvailablePasses(response.data.availableCredits ?? 0);
+          setFeeCreditPreview({
+            platformFee: response.data.platformFee,
+            creditToApply: response.data.creditToApply,
+            feeAfterCredit: response.data.feeAfterCredit,
+            legacyPasses: response.data.availableLegacyPasses ?? 0
+          });
           setShowPassModal(true);
         } else {
           // Updated with fee confirmation
@@ -811,11 +830,11 @@ const TradeTicket = () => {
         setShowPassModal(false);
         setTicket(response.data.ticket);
         setMessages(response.data.ticket.messages);
-        toast.success(`Pass used! Remaining: ${response.data.remainingPasses}`);
+        toast.success(`Credits applied. Remaining balance: $${Number(response.data.remainingCredits || 0).toFixed(2)}`);
       }
     } catch (err) {
-      console.error('Error using pass:', err);
-      toast.error(err.response?.data?.message || 'Failed to use pass');
+      console.error('Error applying credits:', err);
+      toast.error(err.response?.data?.message || 'Failed to apply credits');
       setShowPassModal(false);
     }
   };
@@ -1136,6 +1155,19 @@ const TradeTicket = () => {
           </div>
         )}
 
+        <TradeSafetyCopilot
+          ticket={ticket}
+          user={user}
+          token={token}
+          apiUrl={API_URL}
+          isReadOnly={isReadOnly}
+          onTicketChange={(nextTicket) => {
+            setTicket(nextTicket);
+            setMessages(nextTicket.messages || []);
+            lastUpdatedAtRef.current = nextTicket.updatedAt || null;
+          }}
+        />
+
         {/* Chat Interface */}
         <div className="max-w-5xl mx-auto">
           <div className="bg-n-8 border border-n-6 rounded-b-2xl overflow-hidden shadow-xl">
@@ -1383,13 +1415,13 @@ const TradeTicket = () => {
                           return (
                             <div className="flex flex-col gap-3 mt-4">
                               <button
-                                onClick={() => handleFeeOption('use-pass')}
+                                onClick={() => handleFeeOption('use-credit')}
                                 className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-purple-600/20"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                                 </svg>
-                                <span>Use Pass</span>
+                                <span>Apply Fee Credits</span>
                               </button>
                               <button
                                 onClick={() => handleFeeOption('with-fees')}
@@ -2003,22 +2035,27 @@ const TradeTicket = () => {
         </div>
       )}
 
-      {/* Pass Confirmation Modal */}
+      {/* Fee credit confirmation modal */}
       {showPassModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-n-8/80 backdrop-blur-sm">
           <div className="bg-n-7 rounded-xl p-6 max-w-md w-full border border-n-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-n-1 mb-4">Use a Pass?</h3>
+            <h3 className="text-xl font-bold text-n-1 mb-4">Apply Handshake Credits?</h3>
             <p className="text-n-3 mb-6">
-              You have <strong className="text-purple-400">{availablePasses} pass{availablePasses !== 1 ? 'es' : ''}</strong> available.
+              You have <strong className="text-purple-400">${Number(availablePasses).toFixed(2)}</strong> in fee credits.
               <br /><br />
-              Using a pass will allow you to skip all transaction fees for this deal.
+              Platform fee: <strong>${Number(feeCreditPreview?.platformFee || 0).toFixed(2)}</strong><br />
+              Credit applied: <strong className="text-[#10B981]">-${Number(feeCreditPreview?.creditToApply || 0).toFixed(2)}</strong><br />
+              Fee remaining: <strong>${Number(feeCreditPreview?.feeAfterCredit || 0).toFixed(2)}</strong>
+              {feeCreditPreview?.legacyPasses > 0 && availablePasses <= 0 && (
+                <><br /><br />One legacy pass is available and will cover this fee in full.</>
+              )}
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleConfirmPassUse}
                 className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg font-semibold transition-all duration-300"
               >
-                Use Pass
+                Apply Credits
               </button>
               <button
                 onClick={() => setShowPassModal(false)}

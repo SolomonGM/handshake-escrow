@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import connectDB from './config/database.js';
 import authRoutes from './routes/authRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
@@ -27,6 +28,7 @@ import { scheduleLeaderboardRefresh, warmLeaderboardCache } from './services/lea
 import { setIo } from './utils/socketRegistry.js';
 import { backfillCompletedTickets, startTicketClosureMonitor } from './services/ticketClosureService.js';
 import { validateProductionWalletConfig } from './services/runtimeConfigService.js';
+import { isAiSafetyEnabled } from './services/aiSafetyService.js';
 
 // This loads environment variables.
 dotenv.config();
@@ -125,9 +127,6 @@ const io = new Server(httpServer, {
 });
 setIo(io);
 
-// This connects to MongoDB.
-connectDB();
-
 // Middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -164,11 +163,21 @@ startExchangeRateRefresh();
 // Export io for use in other modules (transaction monitoring, etc.)
 export { io };
 
-// Health check endpoint
+let serviceReady = false;
+
+// Liveness/readiness endpoint. Load balancers should only route customer
+// traffic when `ready` is true.
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Server is running',
+  const databaseReady = mongoose.connection.readyState === 1;
+  const ready = serviceReady && databaseReady;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'OK' : 'STARTING',
+    ready,
+    checks: {
+      database: databaseReady ? 'ready' : 'unavailable',
+      walletPolicy: serviceReady ? 'ready' : 'pending',
+      safetyIntelligence: isAiSafetyEnabled() ? 'ai-and-rules' : 'rules-only'
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -182,13 +191,6 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 const startBackgroundServices = async () => {
-  try {
-    await validateProductionWalletConfig();
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-
   // This starts background services.
   startTransactionMonitoring(io);
   startWalletTransferMonitor();
@@ -215,9 +217,9 @@ const startBackgroundServices = async () => {
   });
 };
 
-// This starts server.
 const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
+
+const logStartupState = () => {
   console.log(`Server running on port ${PORT}`);
   console.log('WebSocket server ready');
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -230,6 +232,40 @@ httpServer.listen(PORT, () => {
   if (!discordPublicKeyConfigured) {
     console.warn('[discord] DISCORD_APPLICATION_PUBLIC_KEY is missing; slash command verification will fail.');
   }
+};
 
-  startBackgroundServices();
+const startServer = async () => {
+  await connectDB();
+  await validateProductionWalletConfig();
+  await new Promise((resolve, reject) => {
+    httpServer.once('error', reject);
+    httpServer.listen(PORT, () => {
+      httpServer.off('error', reject);
+      resolve();
+    });
+  });
+  await startBackgroundServices();
+  serviceReady = true;
+  logStartupState();
+};
+
+let shuttingDown = false;
+const shutdown = (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  serviceReady = false;
+  console.log(`${signal} received; stopping new connections.`);
+  httpServer.close(async () => {
+    await mongoose.disconnect().catch((error) => console.error('MongoDB shutdown error:', error));
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 15_000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+startServer().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
 });

@@ -1,3 +1,5 @@
+import { calculateFeeBreakdown } from './pricing.js';
+
 const normalizeNetworkMode = (value, fallback = 'mainnet') => {
   const mode = String(value || '').trim().toLowerCase();
   if (mode === 'mainnet' || mode === 'testnet') {
@@ -131,31 +133,12 @@ const ETH_TESTNET_USD_RATE = parsePositiveNumber(
   DEFAULT_TESTNET_ETH_USD_RATE
 );
 
-// This calculates total amount to send (deal amount + fees).
-export const calculateTotalAmount = (dealAmount, cryptocurrency, usedPass) => {
-  if (usedPass) {
-    return dealAmount; // No fees with pass
-  }
-
-  let fee = 0;
-  
-  // Base fee structure
-  if (dealAmount >= 250) {
-    fee = dealAmount * 0.01; // 1%
-  } else if (dealAmount >= 50) {
-    fee = 2; // $2 flat fee
-  } else if (dealAmount >= 10) {
-    fee = 0.50; // $0.50 flat fee
-  } else {
-    fee = 0; // FREE for under $10
-  }
-
-  // USDT/USDC surcharge
-  if (cryptocurrency === 'usdt-erc20' || cryptocurrency === 'usdc-erc20') {
-    fee += 1; // $1 surcharge
-  }
-
-  return dealAmount + fee;
+// Calculates the exact escrow deposit: principal plus the platform fee that
+// remains after applying any dollar-denominated Handshake Credits.
+// `cryptocurrency` remains in the signature for backwards compatibility.
+export const calculateTotalAmount = (dealAmount, cryptocurrency, feeCredit = 0) => {
+  void cryptocurrency;
+  return calculateFeeBreakdown(dealAmount, feeCredit).totalDue;
 };
 
 // This gets exchange rate placeholder (this will be replaced with real API later).

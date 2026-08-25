@@ -15,10 +15,13 @@ dist-ssr
 # Environment files
 .env
 .env.*
+!/.env.example
+!/backend/.env.example
 
 # Markdown docs (except main README)
 *.md
 !/README.md
+!/PRODUCTION_READINESS.md
 
 # Editor directories and files
 .vscode/*

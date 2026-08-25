@@ -6,7 +6,12 @@ import {
   LTC_NETWORK_MODE,
   UTXO_NETWORKS
 } from '../config/wallets.js';
-import { selfTest as hdSelfTest } from './hdWalletService.js';
+import {
+  selfTest as hdSelfTest,
+  testExternalAddressDerivation,
+  usesExternalAddressDerivation
+} from './hdWalletService.js';
+import { MIN_SIGNER_SECRET_LENGTH } from '../utils/signerAuth.js';
 
 const CONFIG_KEY = 'runtime';
 const CACHE_TTL_MS = 5000;
@@ -30,6 +35,13 @@ const COIN_TO_CHAIN = {
 // HD configuration is read live from the underlying service so admin changes
 // to env take effect immediately. Cached briefly inside hdWalletService.
 const isChainHdConfigured = (chain) => {
+  if (
+    usesExternalAddressDerivation() &&
+    String(process.env.SIGNER_SERVICE_URL || '').trim() &&
+    String(process.env.SIGNER_SERVICE_TOKEN || '').trim().length >= MIN_SIGNER_SECRET_LENGTH
+  ) {
+    return true;
+  }
   try {
     const results = hdSelfTest();
     return Boolean(results?.[chain]?.ok);
@@ -86,25 +98,32 @@ const DEFAULT_WALLETS = {
   }
 };
 
-// All currencies default to enabled in production. Admins can toggle individual
-// coins off in the panel; the HD self-test will auto-lock any currency whose
-// underlying chain hasn't been configured.
+// Development enables all currencies for convenience. A fresh production
+// deployment is fail-closed and only enables currencies explicitly listed in
+// ENABLED_TICKET_CURRENCIES.
+const productionEnabledCurrencies = new Set(
+  String(process.env.ENABLED_TICKET_CURRENCIES || '')
+    .split(',')
+    .map((coin) => coin.trim().toLowerCase())
+    .filter(Boolean)
+);
+const enabledByDefault = (coin) => process.env.NODE_ENV !== 'production' || productionEnabledCurrencies.has(coin);
 const DEFAULT_TICKET_AVAILABILITY = {
-  bitcoin: true,
-  litecoin: true,
-  ethereum: true,
-  solana: true,
-  'usdt-erc20': true,
-  'usdc-erc20': true,
-  'usdt-spl': true,
-  'usdc-spl': true
+  bitcoin: enabledByDefault('bitcoin'),
+  litecoin: enabledByDefault('litecoin'),
+  ethereum: enabledByDefault('ethereum'),
+  solana: enabledByDefault('solana'),
+  'usdt-erc20': enabledByDefault('usdt-erc20'),
+  'usdc-erc20': enabledByDefault('usdc-erc20'),
+  'usdt-spl': enabledByDefault('usdt-spl'),
+  'usdc-spl': enabledByDefault('usdc-spl')
 };
 
 const PRODUCTION_REQUIRED_ENV_BY_CHAIN = {
-  bitcoin: ['HD_BTC_XPUB', 'HD_BTC_MNEMONIC', 'BLOCKCYPHER_TOKEN'],
-  litecoin: ['HD_LTC_XPUB', 'HD_LTC_MNEMONIC', 'BLOCKCYPHER_TOKEN'],
-  ethereum: ['HD_ETH_MNEMONIC', 'ETH_MAINNET_RPC_URL', 'TREASURY_ETH_PRIVATE_KEY'],
-  solana: ['HD_SOL_MNEMONIC', 'TREASURY_SOL_PRIVATE_KEY']
+  bitcoin: ['BLOCKCYPHER_TOKEN'],
+  litecoin: ['BLOCKCYPHER_TOKEN'],
+  ethereum: ['ETH_MAINNET_RPC_URL'],
+  solana: ['SOL_RPC_URL']
 };
 
 const CHAIN_NETWORK_ENV_KEYS = {
@@ -184,8 +203,8 @@ const normalizeTicketAvailability = (rawAvailability = {}) => {
 
 const buildDefaultDocumentShape = () => ({
   key: CONFIG_KEY,
-  ticketWorkflowPaused: false,
-  pauseReason: null,
+  ticketWorkflowPaused: process.env.NODE_ENV === 'production',
+  pauseReason: process.env.NODE_ENV === 'production' ? 'Production launch requires an explicit readiness review.' : null,
   pauseChangedAt: null,
   pauseChangedBy: null,
   networkModes: clone(DEFAULT_NETWORK_MODES),
@@ -514,6 +533,25 @@ export const updateRuntimeConfig = async ({ networkModes, wallets, ticketAvailab
     throw error;
   }
 
+  if (usesExternalAddressDerivation()) {
+    const nextEnabledChains = Array.from(new Set(
+      Object.entries(nextTicketAvailability)
+        .filter(([, enabled]) => enabled)
+        .map(([coin]) => COIN_TO_CHAIN[coin])
+        .filter(Boolean)
+    ));
+    for (const chain of nextEnabledChains) {
+      try {
+        await testExternalAddressDerivation(chain);
+      } catch (derivationError) {
+        const error = new Error(`Cannot enable ${chain}: private signer readiness failed.`);
+        error.statusCode = 503;
+        error.code = 'SIGNER_CHAIN_UNAVAILABLE';
+        throw error;
+      }
+    }
+  }
+
   configDoc.networkModes = nextModes;
   configDoc.wallets = nextWallets;
   configDoc.ticketAvailability = nextTicketAvailability;
@@ -555,8 +593,8 @@ export const validateProductionWalletConfig = async () => {
   const enabledChains = getEnabledChains(runtimeConfig);
   const errors = [];
 
-  if (!enabledChains.length) {
-    errors.push('At least one ticket currency must be enabled in production.');
+  if (!enabledChains.length && !runtimeConfig.ticketWorkflowPaused) {
+    errors.push('At least one ticket currency must be enabled when the production workflow is not paused.');
   }
 
   enabledChains.forEach((chain) => {
@@ -579,6 +617,14 @@ export const validateProductionWalletConfig = async () => {
   }
   requireEnvValue('SIGNER_SERVICE_URL', errors);
   requireEnvValue('SIGNER_SERVICE_TOKEN', errors);
+  const signerSecret = String(process.env.SIGNER_SERVICE_TOKEN || '').trim();
+  if (signerSecret && signerSecret.length < MIN_SIGNER_SECRET_LENGTH) {
+    errors.push(`SIGNER_SERVICE_TOKEN must be at least ${MIN_SIGNER_SECRET_LENGTH} characters.`);
+  }
+  const signerUrl = String(process.env.SIGNER_SERVICE_URL || '').trim();
+  if (signerUrl && !/^https:\/\//i.test(signerUrl) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(signerUrl)) {
+    errors.push('SIGNER_SERVICE_URL must use HTTPS unless the signer is on loopback.');
+  }
 
   const usesAccountChain = enabledChains.some((chain) => chain === 'ethereum' || chain === 'solana');
   if (usesAccountChain) {
@@ -593,6 +639,21 @@ export const validateProductionWalletConfig = async () => {
   );
   if (tokenCurrenciesEnabled && String(process.env.ALLOW_TOKEN_DEPOSIT_ADDRESS_PAYOUTS || '').trim().toLowerCase() !== 'true') {
     errors.push('ALLOW_TOKEN_DEPOSIT_ADDRESS_PAYOUTS must be true in production when token currencies are enabled.');
+  }
+
+  if (errors.length) {
+    const error = new Error(`Production wallet configuration is unsafe:\n- ${errors.join('\n- ')}`);
+    error.code = 'PRODUCTION_WALLET_CONFIG_INVALID';
+    error.details = errors;
+    throw error;
+  }
+
+  for (const chain of enabledChains) {
+    try {
+      await testExternalAddressDerivation(chain);
+    } catch (derivationError) {
+      errors.push(`Private signer readiness failed for ${chain}: ${derivationError.message}`);
+    }
   }
 
   if (errors.length) {

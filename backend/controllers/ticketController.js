@@ -1,6 +1,7 @@
 import TradeTicket from '../models/TradeTicket.js';
 import User from '../models/User.js';
 import axios from 'axios';
+import crypto from 'crypto';
 import { ethers } from 'ethers';
 import { PublicKey } from '@solana/web3.js';
 import {
@@ -21,11 +22,139 @@ import {
 import { isStaffUser } from '../utils/staffUtils.js';
 import { allocateDepositAddress } from '../services/hdWalletService.js';
 import { sendTicketPayout } from '../services/ticketPayoutService.js';
+import { assessTradeAmount } from '../services/tradeRiskService.js';
+import {
+  analyzeTicketSafety,
+  buildDealAgreementDigest,
+  buildTicketEvidenceBrief,
+  detectLiveSafetySignals,
+  hasCompletedSafetyReview,
+  isSafetyReviewRequired,
+  normalizeDealAgreement,
+  validateDealAgreement
+} from '../services/aiSafetyService.js';
+import {
+  MIN_TRADE_USD,
+  calculateFeeBreakdown,
+  calculatePlatformFee,
+  getFeeScheduleText
+} from '../config/pricing.js';
 
 const ACTIVE_TICKET_LIMIT = 12;
 const ACTIVE_TICKET_STATUSES = ['open', 'in-progress'];
 const UNAVAILABLE_TICKET_CLOSE_SECONDS = 120;
 const SUPPORTED_TICKET_COINS = ['bitcoin', 'ethereum', 'litecoin', 'solana', 'usdt-erc20', 'usdc-erc20', 'usdt-spl', 'usdc-spl'];
+
+const formatUsd = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+const buildAuthorizationDigest = (payload) => crypto
+  .createHash('sha256')
+  .update(JSON.stringify(payload))
+  .digest('hex');
+
+const getStoredCreditApplied = (ticket) => {
+  if (ticket?.legacyPassUsed || ticket?.feeDecision === 'with-pass') {
+    return calculatePlatformFee(ticket.dealAmount);
+  }
+  return Math.max(0, Number(ticket?.feeCreditAppliedUsd || 0));
+};
+
+const getTicketFeeBreakdown = (ticket) => (
+  calculateFeeBreakdown(ticket.dealAmount, getStoredCreditApplied(ticket))
+);
+
+const buildFeePromptDescription = (dealAmount) => {
+  const quote = calculateFeeBreakdown(dealAmount);
+  return [
+    `<strong>Quoted platform fee:</strong> ${formatUsd(quote.platformFee)}`,
+    `<strong>Total escrow deposit:</strong> ${formatUsd(quote.totalDue)}`,
+    '',
+    '<strong>Fee schedule:</strong>',
+    ...getFeeScheduleText().split('\n').map((line) => `• ${line}`),
+    '',
+    'Either participant can apply Handshake Credits. Credits reduce this fee dollar-for-dollar; any remainder is included in the escrow deposit.'
+  ].join('\n');
+};
+
+const addFeeSelectionPrompt = (ticket) => {
+  const hasFeePrompt = ticket.messages.some((msg) => msg.embedData?.actionType === 'fee-selection');
+  if (hasFeePrompt || ticket.feesConfirmed) return false;
+  ticket.messages.push({
+    isBot: true,
+    content: 'Fee Options',
+    type: 'embed',
+    embedData: {
+      title: 'Apply Handshake Credits?',
+      description: buildFeePromptDescription(ticket.dealAmount),
+      color: 'blue',
+      requiresAction: true,
+      actionType: 'fee-selection'
+    },
+    timestamp: new Date()
+  });
+  return true;
+};
+
+const buildSafetyIdentifier = (userId) => crypto
+  .createHash('sha256')
+  .update(`handshake-safety:${String(userId)}`)
+  .digest('hex');
+
+const getBooleanMapValue = (mapLike, key) => {
+  if (!mapLike || !key) return false;
+  if (mapLike instanceof Map) return mapLike.get(String(key)) === true;
+  return mapLike[String(key)] === true;
+};
+
+const userCanAccessTicket = (ticket, userId, user = null) => {
+  const normalizedId = String(userId);
+  const creatorId = String(ticket.creator?._id || ticket.creator || '');
+  const isParticipant = (ticket.participants || []).some((participant) => (
+    participant.status === 'accepted' &&
+    String(participant.user?._id || participant.user || '') === normalizedId
+  ));
+  return creatorId === normalizedId || isParticipant || isStaffUser(user);
+};
+
+const buildSafetyGateResponse = (ticket) => ({
+  success: false,
+  code: 'SAFETY_REVIEW_REQUIRED',
+  message: !ticket.dealAgreement?.confirmedAt
+    ? 'Both parties must confirm the written deal terms before choosing payment options.'
+    : 'Both parties must review and acknowledge the latest Safety Copilot report before choosing payment options.',
+  safety: {
+    agreementConfirmed: Boolean(ticket.dealAgreement?.confirmedAt),
+    assessmentComplete: Boolean(ticket.safetyAssessment?.analysisId),
+    dealDigestMatches: Boolean(
+      ticket.safetyAssessment?.dealDigest &&
+      ticket.safetyAssessment.dealDigest === ticket.dealAgreement?.digest
+    )
+  }
+});
+
+const restoreUnusedFeeBenefit = async (ticket) => {
+  if (
+    ticket.feeBenefitRestoredAt ||
+    ticket.transactionDetected ||
+    ticket.transactionConfirmed ||
+    ticket.fundsReleased
+  ) {
+    return;
+  }
+
+  const creditUserId = ticket.feeCreditUsedBy || ticket.passUsedBy;
+  const creditAmount = Number(ticket.feeCreditAppliedUsd || 0);
+
+  if (ticket.legacyPassUsed && ticket.passUsedBy) {
+    await User.findByIdAndUpdate(ticket.passUsedBy, { $inc: { passes: 1 } });
+  } else if (creditUserId && creditAmount > 0) {
+    await User.findByIdAndUpdate(creditUserId, { $inc: { feeCredits: creditAmount } });
+  } else {
+    return;
+  }
+
+  ticket.feeBenefitRestoredAt = new Date();
+};
 
 const buildUnavailableTicketResponse = (coin, runtimeConfig, message = null) => {
   const now = Date.now();
@@ -110,11 +239,11 @@ const normalizePayoutAddress = (address, crypto) => {
 const getTicketPartyIds = (ticket) => {
   const ids = new Set();
   if (ticket?.creator) {
-    ids.add(ticket.creator.toString());
+    ids.add(String(ticket.creator?._id || ticket.creator));
   }
   (ticket?.participants || []).forEach((participant) => {
     if (participant?.status === 'accepted' && participant?.user) {
-      ids.add(participant.user.toString());
+      ids.add(String(participant.user?._id || participant.user));
     }
   });
   return Array.from(ids);
@@ -351,9 +480,7 @@ const buildPayoutDetails = (ticket, networkMode = 'mainnet') => {
   if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
     throw new Error('Invalid exchange rate for payout');
   }
-  const usedPass = ticket.feeDecision === 'with-pass' || Boolean(ticket.passUsedBy);
-  const totalAmount = calculateTotalAmount(dealAmount, ticket.cryptocurrency, usedPass);
-  const payoutUsd = usedPass ? totalAmount : dealAmount;
+  const payoutUsd = dealAmount;
   if (!Number.isFinite(payoutUsd) || payoutUsd <= 0) {
     throw new Error('Invalid payout amount');
   }
@@ -707,7 +834,7 @@ export const createTicket = async (req, res) => {
       });
     }
 
-    const ticketId = `#${Math.floor(Math.random() * 9000000) + 1000000}`;
+    const ticketId = `#${crypto.randomInt(100000000000, 1000000000000)}`;
     const cryptoUpper = cryptocurrency.toUpperCase();
     const cryptoCapitalized = cryptocurrency.charAt(0).toUpperCase() + cryptocurrency.slice(1);
 
@@ -739,6 +866,7 @@ export const createTicket = async (req, res) => {
       ticketId,
       creator: userId,
       cryptocurrency,
+      safetyReviewRequired: isSafetyReviewRequired(),
       messages: initialMessages,
       status: 'open',
       depositAddress: depositAllocation.address,
@@ -794,9 +922,9 @@ export const getTicketAvailability = async (req, res) => {
       availabilityReasons,
       payoutSupport: {
         ethereumOnly: false,
-        automaticCoins: ['ethereum', 'usdt-erc20', 'usdc-erc20', 'solana', 'usdt-spl', 'usdc-spl'],
-        manualCoins: ['bitcoin', 'litecoin'],
-        message: 'Automated payout is supported for ETH/ERC20/SOL/SPL tickets. BTC/LTC require staff processing until a secure UTXO signer is configured.'
+        automaticCoins: SUPPORTED_TICKET_COINS,
+        manualCoins: [],
+        message: 'Automatic payout is available only for enabled assets whose private signer, gas, and chain monitoring checks pass.'
       }
     });
   } catch (error) {
@@ -861,6 +989,290 @@ export const getTicket = async (req, res) => {
       message: 'Failed to fetch ticket',
       error: error.message
     });
+  }
+};
+
+// Creates or revises the transaction-specific agreement that the safety
+// review and any later human dispute review are anchored to.
+export const updateDealAgreement = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (!userCanAccessTicket(ticket, userId, req.user) || isStaffUser(req.user)) {
+      return res.status(403).json({ success: false, message: 'Only the two trading parties can propose deal terms.' });
+    }
+    if (!ticket.dealAmountConfirmed || !ticket.rolesConfirmed) {
+      return res.status(409).json({ success: false, message: 'Confirm roles and the deal amount before writing the agreement.' });
+    }
+    if (ticket.feesConfirmed || ticket.transactionDetected || ticket.fundsReleased) {
+      return res.status(409).json({
+        success: false,
+        code: 'AGREEMENT_LOCKED',
+        message: 'The agreement cannot be changed after payment instructions have been accepted.'
+      });
+    }
+
+    const normalized = normalizeDealAgreement(req.body || {});
+    const validationErrors = validateDealAgreement(normalized);
+    if (validationErrors.length) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_DEAL_AGREEMENT',
+        message: validationErrors[0],
+        errors: validationErrors
+      });
+    }
+
+    const nextVersion = Number(ticket.dealAgreement?.version || 0) + 1;
+    const digest = buildDealAgreementDigest(normalized);
+    ticket.dealAgreement = {
+      ...normalized,
+      version: nextVersion,
+      proposedBy: userId,
+      proposedAt: new Date(),
+      digest,
+      confirmations: new Map([[String(userId), true]]),
+      confirmedAt: null
+    };
+    ticket.safetyAssessment = null;
+    ticket.aiEvidenceBrief = null;
+
+    ticket.messages = ticket.messages.filter((message) => ![
+      'deal-agreement-setup',
+      'deal-agreement-confirmation',
+      'safety-review-acknowledgement'
+    ].includes(message.embedData?.actionType));
+    ticket.messages.push({
+      isBot: true,
+      content: 'Deal Terms Proposed',
+      type: 'embed',
+      embedData: {
+        title: `Deal Agreement v${nextVersion}`,
+        description: `One party proposed written delivery and acceptance terms. The other party must review and confirm the exact agreement digest <strong>${digest.slice(0, 12)}</strong> before the Safety Copilot runs.`,
+        color: 'blue',
+        requiresAction: true,
+        actionType: 'deal-agreement-confirmation'
+      },
+      timestamp: new Date()
+    });
+
+    await ticket.save();
+    res.json({ success: true, message: 'Deal terms saved and locked for confirmation.', ticket });
+  } catch (error) {
+    console.error('Update deal agreement error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save deal terms' });
+  }
+};
+
+export const confirmDealAgreement = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { confirmed, digest } = req.body || {};
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (!userCanAccessTicket(ticket, userId, req.user) || isStaffUser(req.user)) {
+      return res.status(403).json({ success: false, message: 'Only the two trading parties can confirm deal terms.' });
+    }
+    if (!ticket.dealAgreement?.digest) {
+      return res.status(409).json({ success: false, message: 'No deal agreement has been proposed.' });
+    }
+    if (digest !== ticket.dealAgreement.digest) {
+      return res.status(409).json({
+        success: false,
+        code: 'AGREEMENT_VERSION_CHANGED',
+        message: 'The deal terms changed. Review the newest version before confirming.'
+      });
+    }
+
+    if (!confirmed) {
+      ticket.dealAgreement.confirmations = new Map();
+      ticket.dealAgreement.confirmedAt = null;
+      ticket.safetyAssessment = null;
+      ticket.messages.push({
+        isBot: true,
+        content: 'Deal Terms Rejected',
+        type: 'embed',
+        embedData: {
+          title: 'Agreement Needs Revision',
+          description: 'A party rejected the current terms. No payment instructions will be shown until a revised agreement is confirmed and reviewed.',
+          color: 'red'
+        },
+        timestamp: new Date()
+      });
+      await ticket.save();
+      return res.json({ success: true, message: 'Agreement rejected.', ticket });
+    }
+
+    ticket.dealAgreement.confirmations.set(String(userId), true);
+    ticket.markModified('dealAgreement.confirmations');
+    const partyIds = getTicketPartyIds(ticket);
+    const allConfirmed = partyIds.length >= 2 && partyIds.every((id) => (
+      getBooleanMapValue(ticket.dealAgreement.confirmations, id)
+    ));
+
+    if (allConfirmed) {
+      ticket.dealAgreement.confirmedAt = new Date();
+      ticket.messages = ticket.messages.filter(
+        (message) => message.embedData?.actionType !== 'deal-agreement-confirmation'
+      );
+      await ticket.save();
+
+      const assessment = await analyzeTicketSafety({
+        ticket,
+        safetyIdentifier: buildSafetyIdentifier(userId)
+      });
+      ticket.safetyAssessment = assessment;
+      ticket.messages.push({
+        isBot: true,
+        content: 'Safety Review Ready',
+        type: 'embed',
+        embedData: {
+          title: `Safety Copilot: ${String(assessment.riskLevel).toUpperCase()} review`,
+          description: `${assessment.summary}\n\nThis report is advisory and cannot release, refund, or move funds. Both parties must review it before payment options unlock.`,
+          color: assessment.riskLevel === 'high' ? 'red' : assessment.riskLevel === 'medium' ? 'orange' : 'green',
+          requiresAction: true,
+          actionType: 'safety-review-acknowledgement'
+        },
+        timestamp: new Date()
+      });
+    }
+
+    await ticket.save();
+    res.json({
+      success: true,
+      message: allConfirmed ? 'Agreement confirmed and safety review completed.' : 'Waiting for the other party to confirm.',
+      ticket
+    });
+  } catch (error) {
+    console.error('Confirm deal agreement error:', error);
+    res.status(500).json({ success: false, message: 'Failed to confirm deal terms' });
+  }
+};
+
+export const analyzeTicketSafetyReview = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (!userCanAccessTicket(ticket, userId, req.user)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (!ticket.dealAgreement?.confirmedAt) {
+      return res.status(409).json({ success: false, message: 'Both parties must confirm the deal agreement first.' });
+    }
+    if (ticket.fundsReleased) {
+      return res.status(409).json({ success: false, message: 'The transaction has already been released.' });
+    }
+
+    ticket.safetyAssessment = await analyzeTicketSafety({
+      ticket,
+      safetyIdentifier: buildSafetyIdentifier(userId)
+    });
+    await ticket.save();
+    res.json({ success: true, message: 'Safety review refreshed.', ticket });
+  } catch (error) {
+    console.error('Analyze ticket safety error:', error);
+    res.status(500).json({ success: false, message: 'Safety review could not be completed' });
+  }
+};
+
+export const acknowledgeTicketSafety = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { analysisId } = req.body || {};
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (!userCanAccessTicket(ticket, userId, req.user) || isStaffUser(req.user)) {
+      return res.status(403).json({ success: false, message: 'Only the two trading parties can acknowledge this review.' });
+    }
+    if (!ticket.safetyAssessment?.analysisId || ticket.safetyAssessment.analysisId !== analysisId) {
+      return res.status(409).json({
+        success: false,
+        code: 'SAFETY_REVIEW_CHANGED',
+        message: 'The safety report changed. Review the newest report before acknowledging it.'
+      });
+    }
+    if (ticket.safetyAssessment.dealDigest !== ticket.dealAgreement?.digest) {
+      return res.status(409).json({ success: false, message: 'The report does not match the current agreement.' });
+    }
+
+    ticket.safetyAssessment.acknowledgements.set(String(userId), true);
+    ticket.markModified('safetyAssessment.acknowledgements');
+    const allAcknowledged = getTicketPartyIds(ticket).every((id) => (
+      getBooleanMapValue(ticket.safetyAssessment.acknowledgements, id)
+    ));
+
+    if (allAcknowledged) {
+      ticket.messages = ticket.messages.filter(
+        (message) => message.embedData?.actionType !== 'safety-review-acknowledgement'
+      );
+      ticket.messages.push({
+        isBot: true,
+        content: 'Safety Review Acknowledged',
+        type: 'embed',
+        embedData: {
+          title: 'Pre-payment Safety Review Complete',
+          description: 'Both parties reviewed the same agreement and safety report. This does not guarantee the counterparty or the underlying goods; continue to preserve delivery evidence.',
+          color: 'green'
+        },
+        timestamp: new Date()
+      });
+      addFeeSelectionPrompt(ticket);
+    }
+
+    await ticket.save();
+    res.json({
+      success: true,
+      message: allAcknowledged ? 'Safety review complete. Payment options are unlocked.' : 'Waiting for the other party to review.',
+      ticket
+    });
+  } catch (error) {
+    console.error('Acknowledge safety review error:', error);
+    res.status(500).json({ success: false, message: 'Failed to acknowledge safety review' });
+  }
+};
+
+export const generateTicketEvidenceBrief = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const userId = req.user._id;
+    const ticket = await TradeTicket.findOne({ ticketId })
+      .populate('creator', 'username userId avatar')
+      .populate('participants.user', 'username userId avatar');
+    if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found' });
+    if (!userCanAccessTicket(ticket, userId, req.user)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (!ticket.transactionConfirmed && ticket.status !== 'disputed') {
+      return res.status(409).json({
+        success: false,
+        message: 'Evidence briefs become available after escrow funding or when a ticket is disputed.'
+      });
+    }
+    ticket.aiEvidenceBrief = await buildTicketEvidenceBrief({
+      ticket,
+      safetyIdentifier: buildSafetyIdentifier(userId)
+    });
+    await ticket.save();
+    res.json({ success: true, message: 'Neutral evidence brief generated.', ticket });
+  } catch (error) {
+    console.error('Generate evidence brief error:', error);
+    res.status(500).json({ success: false, message: 'Evidence brief could not be generated' });
   }
 };
 
@@ -998,8 +1410,9 @@ export const sendMessage = async (req, res) => {
     const { content = '', attachments = [] } = req.body;
     const userId = req.user._id;
     const trimmedContent = typeof content === 'string' ? content.trim() : '';
-    const MAX_ATTACHMENTS = 4;
-    const MAX_DATA_URL_LENGTH = 6000000; // ~4.5MB base64 payload
+    const MAX_ATTACHMENTS = 2;
+    const MAX_DATA_URL_LENGTH = 1500000; // ~1.1MB binary after base64 encoding
+    const MAX_TICKET_EMBEDDED_ATTACHMENT_CHARS = 8000000;
 
     const ticket = await TradeTicket.findOne({ ticketId });
 
@@ -1125,6 +1538,7 @@ export const sendMessage = async (req, res) => {
       }
 
       if (staffCommand === 'cancel') {
+        await restoreUnusedFeeBenefit(ticket);
         ticket.status = 'cancelled';
         ticket.closedAt = new Date();
         ticket.closedBy = userId;
@@ -1251,6 +1665,23 @@ export const sendMessage = async (req, res) => {
       });
     }
 
+    const existingAttachmentChars = (ticket.messages || []).reduce((total, message) => (
+      total + (message.attachments || []).reduce((attachmentTotal, attachment) => (
+        attachmentTotal + String(typeof attachment === 'string' ? attachment : attachment?.url || '').length
+      ), 0)
+    ), 0);
+    const incomingAttachmentChars = normalizedIncoming.reduce(
+      (total, attachment) => total + String(attachment.url || '').length,
+      0
+    );
+    if (existingAttachmentChars + incomingAttachmentChars > MAX_TICKET_EMBEDDED_ATTACHMENT_CHARS) {
+      return res.status(413).json({
+        success: false,
+        code: 'TICKET_EVIDENCE_STORAGE_LIMIT',
+        message: 'This ticket has reached its temporary evidence-storage limit. Contact staff before adding more images.'
+      });
+    }
+
     const sanitizedAttachments = normalizedIncoming;
 
     if (!trimmedContent && sanitizedAttachments.length === 0) {
@@ -1278,6 +1709,18 @@ export const sendMessage = async (req, res) => {
       type: 'text',
       attachments: sanitizedAttachments
     });
+    const sentMessage = ticket.messages[ticket.messages.length - 1];
+    const safetyAlerts = detectLiveSafetySignals(trimmedContent).map((signal) => ({
+      ...signal,
+      detectedAt: new Date(),
+      messageId: sentMessage._id
+    }));
+    if (safetyAlerts.length) {
+      ticket.liveSafetySignals = [
+        ...(ticket.liveSafetySignals || []),
+        ...safetyAlerts
+      ].slice(-50);
+    }
 
     if (didNormalizeExisting) {
       ticket.markModified('messages');
@@ -1288,7 +1731,8 @@ export const sendMessage = async (req, res) => {
 
     res.json({
       success: true,
-      message: ticket.messages[ticket.messages.length - 1]
+      message: sentMessage,
+      safetyAlerts
     });
   } catch (error) {
     console.error('Send message error:', error);
@@ -1661,6 +2105,7 @@ export const closeTicket = async (req, res) => {
       });
     }
 
+    await restoreUnusedFeeBenefit(ticket);
     ticket.status = 'cancelled';
     ticket.closedAt = new Date();
     ticket.closedBy = userId;
@@ -2354,6 +2799,25 @@ export const detectAmount = async (req, res) => {
       });
     }
 
+    if (amount < MIN_TRADE_USD) {
+      return res.status(400).json({
+        success: false,
+        code: 'TRADE_AMOUNT_TOO_SMALL',
+        message: `Handshake's minimum protected trade is ${formatUsd(MIN_TRADE_USD)}`
+      });
+    }
+
+    try {
+      await assessTradeAmount({ ticketId: ticket.ticketId, userId, amount });
+    } catch (riskError) {
+      return res.status(riskError.statusCode || 409).json({
+        success: false,
+        code: riskError.code || 'TRADE_RISK_REJECTED',
+        message: riskError.message,
+        risk: riskError.details || {}
+      });
+    }
+
     console.log(`✅ Amount detected: $${amount.toFixed(2)}`);
 
     // Updated the amount entry prompt to orange
@@ -2457,6 +2921,29 @@ export const confirmAmount = async (req, res) => {
     const user = await User.findById(userId).select('username');
 
     if (confirmed) {
+      if (Number(ticket.dealAmount || 0) < MIN_TRADE_USD) {
+        return res.status(400).json({
+          success: false,
+          code: 'TRADE_AMOUNT_TOO_SMALL',
+          message: `Handshake's minimum protected trade is ${formatUsd(MIN_TRADE_USD)}`
+        });
+      }
+
+      try {
+        await assessTradeAmount({
+          ticketId: ticket.ticketId,
+          userId,
+          amount: ticket.dealAmount
+        });
+      } catch (riskError) {
+        return res.status(riskError.statusCode || 409).json({
+          success: false,
+          code: riskError.code || 'TRADE_RISK_REJECTED',
+          message: riskError.message,
+          risk: riskError.details || {}
+        });
+      }
+
       if (ticket.dealAmountConfirmed) {
         return res.json({
           success: true,
@@ -2516,14 +3003,30 @@ export const confirmAmount = async (req, res) => {
           timestamp: new Date()
         });
 
-        // Schedules fee prompt to show after 2 seconds (only once)
+        if (ticket.safetyReviewRequired) {
+          ticket.messages.push({
+            isBot: true,
+            content: 'Define Deal Protection',
+            type: 'embed',
+            embedData: {
+              title: 'Write the Deal Before Funding It',
+              description: 'Use the Safety Copilot panel to record the item or service, delivery proof, deadline, inspection window, acceptance criteria, and refund outcome. Both parties must confirm the same terms before payment options unlock.',
+              color: 'blue',
+              requiresAction: true,
+              actionType: 'deal-agreement-setup'
+            },
+            timestamp: new Date()
+          });
+        }
+
+        // Schedules fee prompt to show after 2 seconds for legacy tickets only.
         setTimeout(async () => {
           try {
             const feeTicket = await TradeTicket.findOne({ ticketId })
               .populate('creator', 'username userId avatar')
               .populate('participants.user', 'username userId avatar');
             
-            if (feeTicket && feeTicket.dealAmountConfirmed && !feeTicket.feesConfirmed) {
+            if (feeTicket && !feeTicket.safetyReviewRequired && feeTicket.dealAmountConfirmed && !feeTicket.feesConfirmed) {
               const hasFeePrompt = feeTicket.messages.some(msg => msg.embedData?.actionType === 'fee-selection');
               if (hasFeePrompt) {
                 return;
@@ -2534,8 +3037,8 @@ export const confirmAmount = async (req, res) => {
                 content: 'Fee Options',
                 type: 'embed',
                 embedData: {
-                  title: 'Use a Pass?',
-                  description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\n\n<strong>Fee Structure:</strong>\n• Deals $250+: 1%\n• Deals under $250: $2\n• Deals under $50: $0.50\n• Deals under $10: FREE\n• USDT & USDC: $1 surcharge\n\nPasses allow you to skip these fees entirely.`,
+                  title: 'Apply Handshake Credits?',
+                  description: buildFeePromptDescription(feeTicket.dealAmount),
                   color: 'blue',
                   requiresAction: true,
                   actionType: 'fee-selection'
@@ -2663,11 +3166,11 @@ export const confirmAmount = async (req, res) => {
   }
 };
 
-// Selects fee option (proceed with fees or use pass)
+// Selects fee option (proceed with fees or apply fee credits)
 export const selectFeeOption = async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const { option } = req.body; // 'with-fees' or 'use-pass'
+    const { option } = req.body; // 'with-fees' or 'use-credit'
     const userId = req.user._id;
 
     console.log(`\n💳 FEE OPTION REQUEST:`);
@@ -2676,14 +3179,18 @@ export const selectFeeOption = async (req, res) => {
     console.log(`   Option: ${option}`);
 
     const ticket = await TradeTicket.findOne({ ticketId })
-      .populate('creator', 'username userId avatar passes')
-      .populate('participants.user', 'username userId avatar passes');
+      .populate('creator', 'username userId avatar passes feeCredits')
+      .populate('participants.user', 'username userId avatar passes feeCredits');
 
     if (!ticket) {
       return res.status(404).json({
         success: false,
         message: 'Ticket not found'
       });
+    }
+
+    if (!hasCompletedSafetyReview(ticket)) {
+      return res.status(409).json(buildSafetyGateResponse(ticket));
     }
 
     const isCreator = ticket.creator._id.toString() === userId.toString();
@@ -2701,24 +3208,36 @@ export const selectFeeOption = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId).select('username passes');
+    const user = await User.findById(userId).select('username passes feeCredits');
 
-    if (option === 'use-pass') {
+    if (option === 'use-credit' || option === 'use-pass') {
       // Show private pass prompt to this user only
       console.log(`🎫 User ${user.username} wants to use a pass. Available passes: ${user.passes}`);
       
-      if (user.passes <= 0) {
+      const quote = calculateFeeBreakdown(ticket.dealAmount, user.feeCredits);
+      const hasLegacyPass = user.passes > 0;
+
+      if (quote.creditApplied <= 0 && !hasLegacyPass) {
         return res.status(400).json({
           success: false,
-          message: 'You do not have any passes available'
+          message: 'You do not have any Handshake Credits available'
         });
       }
 
       res.json({
         success: true,
         showPassPrompt: true,
+        availableCredits: Number(user.feeCredits || 0),
+        availableLegacyPasses: Number(user.passes || 0),
         availablePasses: user.passes,
-        message: 'Show pass confirmation to user'
+        platformFee: quote.platformFee,
+        creditToApply: hasLegacyPass && quote.creditApplied <= 0
+          ? quote.platformFee
+          : quote.creditApplied,
+        feeAfterCredit: hasLegacyPass && quote.creditApplied <= 0
+          ? 0
+          : quote.feeDue,
+        message: 'Show credit confirmation to user'
       });
     } else if (option === 'with-fees') {
       // User wants to proceed with fees - need other user to confirm
@@ -2775,7 +3294,7 @@ export const selectFeeOption = async (req, res) => {
   }
 };
 
-// Confirms using a pass
+// Confirms applying fee credits. The route name is retained for older clients.
 export const confirmPassUse = async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -2808,6 +3327,10 @@ export const confirmPassUse = async (req, res) => {
       });
     }
 
+    if (!hasCompletedSafetyReview(ticket)) {
+      return res.status(409).json(buildSafetyGateResponse(ticket));
+    }
+
     if (!ticket.dealAmountConfirmed || ticket.feesConfirmed) {
       return res.status(400).json({
         success: false,
@@ -2815,30 +3338,43 @@ export const confirmPassUse = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId).select('username passes');
+    const user = await User.findById(userId).select('username passes feeCredits');
 
-    if (user.passes <= 0) {
+    if (user.feeCredits <= 0 && user.passes <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'No passes available'
+        message: 'No Handshake Credits available'
       });
     }
 
-    // This check determines whether a pass is already used (race condition protection)
-    if (ticket.passUsedBy) {
+    // Race-condition protection for both credits and legacy passes.
+    if (ticket.feeCreditUsedBy || ticket.passUsedBy) {
       return res.status(400).json({
         success: false,
-        message: 'A pass has already been used for this transaction'
+        message: 'A fee benefit has already been applied to this transaction'
       });
     }
 
-    // Deduct pass from user
-    user.passes -= 1;
+    const platformFee = calculatePlatformFee(ticket.dealAmount);
+    const useLegacyPass = user.feeCredits <= 0 && user.passes > 0;
+    const creditApplied = useLegacyPass
+      ? platformFee
+      : Math.min(Number(user.feeCredits || 0), platformFee);
+
+    if (useLegacyPass) {
+      user.passes -= 1;
+    } else {
+      user.feeCredits = Number((user.feeCredits - creditApplied).toFixed(2));
+    }
     await user.save();
 
-    // Updated ticket
-    ticket.feeDecision = 'with-pass';
-    ticket.passUsedBy = userId;
+    ticket.feeDecision = useLegacyPass ? 'with-pass' : 'with-credit';
+    ticket.platformFeeUsd = platformFee;
+    ticket.feeCreditAppliedUsd = creditApplied;
+    ticket.netPlatformFeeUsd = Number((platformFee - creditApplied).toFixed(2));
+    ticket.feeCreditUsedBy = userId;
+    ticket.passUsedBy = useLegacyPass ? userId : undefined;
+    ticket.legacyPassUsed = useLegacyPass;
     ticket.feesConfirmed = true;
 
     // Removed all fee-related prompts
@@ -2847,14 +3383,18 @@ export const confirmPassUse = async (req, res) => {
         msg.embedData?.actionType === 'fee-confirmation')
     );
 
+    const remainingFee = Number((platformFee - creditApplied).toFixed(2));
+
     // Added success message
     ticket.addUniqueMessage({
       isBot: true,
-      content: 'Pass Used',
+      content: useLegacyPass ? 'Legacy Pass Used' : 'Handshake Credits Applied',
       type: 'embed',
       embedData: {
-        title: 'Pass Used!',
-        description: `@${user.username} used a pass. No fees will be charged for this transaction.`,
+        title: useLegacyPass ? 'Legacy Pass Applied' : 'Handshake Credits Applied',
+        description: useLegacyPass
+          ? `@${user.username} used a legacy pass. The ${formatUsd(platformFee)} platform fee is fully covered.`
+          : `@${user.username} applied ${formatUsd(creditApplied)} in credits to the ${formatUsd(platformFee)} platform fee. Remaining platform fee: ${formatUsd(remainingFee)}.`,
         color: 'green'
       },
       timestamp: new Date()
@@ -2870,7 +3410,7 @@ export const confirmPassUse = async (req, res) => {
       const totalAmount = calculateTotalAmount(
         ticket.dealAmount, 
         ticket.cryptocurrency,
-        true // Pass was used
+        creditApplied
       );
       const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketDepositDestination(ticket);
       const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
@@ -2933,8 +3473,10 @@ export const confirmPassUse = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Pass used successfully',
+      message: useLegacyPass ? 'Legacy pass used successfully' : 'Handshake Credits applied successfully',
+      remainingCredits: Number(user.feeCredits || 0),
       remainingPasses: user.passes,
+      feeBreakdown: getTicketFeeBreakdown(ticket),
       ticket
     });
   } catch (error) {
@@ -2982,6 +3524,10 @@ export const confirmFees = async (req, res) => {
       });
     }
 
+    if (!hasCompletedSafetyReview(ticket)) {
+      return res.status(409).json(buildSafetyGateResponse(ticket));
+    }
+
     if (ticket.feeDecision !== 'with-fees' || !ticket.feeInitiatedBy) {
       return res.status(400).json({
         success: false,
@@ -3001,7 +3547,11 @@ export const confirmFees = async (req, res) => {
 
     if (confirmed) {
       // Confirmed - finalize with fees
+      const feeQuote = calculateFeeBreakdown(ticket.dealAmount);
       ticket.feesConfirmed = true;
+      ticket.platformFeeUsd = feeQuote.platformFee;
+      ticket.feeCreditAppliedUsd = 0;
+      ticket.netPlatformFeeUsd = feeQuote.feeDue;
       console.log(`✅ Fees confirmed`);
 
       // Removed fee prompts
@@ -3033,7 +3583,7 @@ export const confirmFees = async (req, res) => {
         const totalAmount = calculateTotalAmount(
           ticket.dealAmount, 
           ticket.cryptocurrency,
-          false // Fees are being charged
+          0
         );
         const { wallet: botWallet, mode: transactionNetworkMode } = await resolveTicketDepositDestination(ticket);
         const exchangeRate = getTicketExchangeRate(ticket, transactionNetworkMode);
@@ -3131,8 +3681,8 @@ export const confirmFees = async (req, res) => {
         content: 'Fee Options',
         type: 'embed',
         embedData: {
-          title: 'Use a Pass?',
-          description: `You can use a <strong>Pass</strong> to skip transaction fees, or proceed with our standard fees.\\n\\n<strong>Fee Structure:</strong>\\n• Deals $250+: 1%\\n• Deals under $250: $2\\n• Deals under $50: $0.50\\n• Deals under $10: FREE\\n• USDT & USDC: $1 surcharge\\n\\nPasses allow you to skip these fees entirely.`,
+          title: 'Apply Handshake Credits?',
+          description: buildFeePromptDescription(ticket.dealAmount),
           color: 'blue',
           requiresAction: true,
           actionType: 'fee-selection'
@@ -3263,6 +3813,10 @@ export const releaseFunds = async (req, res) => {
       });
     }
 
+    if (!hasCompletedSafetyReview(ticket)) {
+      return res.status(409).json(buildSafetyGateResponse(ticket));
+    }
+
     // This check determines whether transaction is confirmed
     if (!ticket.transactionConfirmed) {
       return res.status(400).json({
@@ -3339,6 +3893,20 @@ export const releaseFunds = async (req, res) => {
     ticket.awaitingPayoutConfirmation = false;
     ticket.pendingPayoutAddress = null;
     ticket.payoutNetworkMode = payoutNetworkMode;
+    const releaseAuthorizedAt = new Date();
+    const releasePayload = {
+      ticketId: ticket.ticketId,
+      dealAmount: Number(ticket.dealAmount),
+      cryptocurrency: ticket.cryptocurrency,
+      depositTransactionHash: ticket.senderTransactionHash || ticket.transactionHash || null,
+      senderId: String(userId),
+      receiverId: String(receiverUser?._id || ''),
+      authorizedAt: releaseAuthorizedAt.toISOString()
+    };
+    ticket.releaseAuthorization = {
+      ...releasePayload,
+      digest: buildAuthorizationDigest(releasePayload)
+    };
 
     // Removed release button message
     ticket.messages = ticket.messages.filter(msg => 
@@ -3560,6 +4128,24 @@ export const confirmPayoutAddress = async (req, res) => {
         || ticket.transactionNetworkMode
         || getActiveNetworkModeForCoin(ticket.cryptocurrency, runtimeConfig);
       const { payoutCrypto, payoutUsd } = buildPayoutDetails(ticket, payoutNetworkMode);
+      const payoutAuthorizedAt = new Date();
+      const payoutAuthorizationPayload = {
+        ticketId: ticket.ticketId,
+        payoutAddress,
+        payoutCrypto,
+        payoutUsd,
+        cryptocurrency: ticket.cryptocurrency,
+        receiverId: String(userId),
+        releaseDigest: ticket.releaseAuthorization?.digest || null,
+        authorizedAt: payoutAuthorizedAt.toISOString()
+      };
+      ticket.payoutAuthorization = {
+        ...payoutAuthorizationPayload,
+        digest: buildAuthorizationDigest(payoutAuthorizationPayload)
+      };
+      ticket.markModified('payoutAuthorization');
+      await ticket.save();
+
       const payoutResult = await sendTicketPayout({
         ticket,
         toAddress: payoutAddress,
@@ -3805,6 +4391,7 @@ export const cancelTicket = async (req, res) => {
       });
     }
 
+    await restoreUnusedFeeBenefit(ticket);
     ticket.status = 'cancelled';
     ticket.awaitingTransaction = false;
     ticket.closeInitiatedBy = req.user._id;

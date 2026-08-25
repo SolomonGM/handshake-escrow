@@ -70,6 +70,11 @@ const userSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  feeCredits: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   totalUSDValue: {
     type: Number,
     default: 0,

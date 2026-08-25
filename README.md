@@ -1,6 +1,6 @@
 ﻿# Handshake
 
-Full-stack web application for cypto escrow service.
+Full-stack application for assisted custodial crypto escrow.
 
 ## Live Site
 
@@ -14,7 +14,9 @@ Site: [Handshake](https://handshake-frontend-9zqv.onrender.com/)
 - MongoDB Atlas compatible data layer
 - Admin runtime controls for per-coin ticket availability toggles
 - Ticket creation hard-stops unavailable coins before persistence, with timed user warnings
-- Automated payout flow is currently implemented for Ethereum tickets
+- Isolated wallet signer with HMAC-authenticated requests, signer-side transfer policy checks, and per-ticket HD deposit addresses
+- Launch-stage custody capacity, account exposure, and enhanced-authentication limits
+- Agreement-bound Safety Copilot with deterministic fallback, privacy-minimized AI review, live scam signals, and neutral evidence briefs
 
 ## Tech Stack
 
@@ -66,6 +68,7 @@ Backend (`backend/.env`)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (if `EMAIL_PROVIDER=smtp`)
 - `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_ENABLED` (signup captcha verification)
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` (global per-IP API throttling)
+- `AI_SAFETY_REVIEW_REQUIRED`, `AI_SAFETY_ENABLED`, `OPENAI_API_KEY`, `OPENAI_SAFETY_MODEL`, `AI_SAFETY_TIMEOUT_MS`
 - `BLOCKCYPHER_TOKEN`
 - `ETH_NETWORK_MODE`, `ETH_TESTNET_WALLET`, `SEPOLIA_RPC_URL`, `BOT_ETH_PRIVATE_KEY`
 - `DISCORD_BOT_TOKEN`, `DISCORD_USER_ID`, `DISCORD_PROFILE_REFRESH_CRON`, `DISCORD_PROFILE_REFRESH_TZ`
@@ -112,7 +115,15 @@ Backend
 - Actual creation availability is controlled at runtime by admin in **Runtime Config -> Ticket Availability**.
 - If a coin is disabled, UI prevents selection and backend returns `TICKET_COIN_UNAVAILABLE`; no ticket is saved.
 - Unavailable coin warnings auto-close after 120 seconds in ticket creation flows.
-- Automated payout confirmation/release is currently Ethereum-only; other ticket coins should remain disabled unless full payout support is implemented.
+- Enable an asset only after its deposit, payout, refund, fee-sweep, reconciliation, provider-failure, and recovery paths pass the release gates in `PRODUCTION_READINESS.md`.
+
+## AI Transaction Safety
+
+- New tickets require a versioned, SHA-256-fingerprinted agreement covering deliverables, delivery proof, deadline, inspection, acceptance, and failure/refund outcomes before payment options appear.
+- Both parties confirm the same agreement and acknowledge the same safety report. Revising terms invalidates the prior review.
+- Deterministic rules remain available when the AI provider is disabled or unavailable. Optional model analysis uses the Responses API with structured JSON output and `store: false`.
+- Only privacy-minimized agreement data and recent text are analyzed; attachments, wallet addresses, email addresses, and phone numbers are excluded or redacted from model context.
+- Safety outputs are advisory. They cannot call the isolated signer, release funds, issue refunds, or decide disputes. Evidence briefs separate recorded facts for trained human review.
 
 ## Security Hardening (Render + Cloudflare)
 

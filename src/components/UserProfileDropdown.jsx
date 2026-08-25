@@ -151,7 +151,7 @@ const UserProfileDropdown = () => {
               </div>
             </div>
             <div className="text-xs text-n-4">
-              <span className="text-n-3">{currentXP}</span> / {maxXP} XP • <span className="text-color-4 font-semibold">{user?.passes || 0}</span> Passes
+              <span className="text-n-3">{currentXP}</span> / {maxXP} XP • <span className="text-color-4 font-semibold">${Number(user?.feeCredits || 0).toFixed(2)}</span> Credits
             </div>
           </div>
 

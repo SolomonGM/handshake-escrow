@@ -11,15 +11,13 @@ import {
 import { allocateDepositAddress } from '../services/hdWalletService.js';
 import { sendTicketPayout } from '../services/ticketPayoutService.js';
 import { convertUsdToCryptoAmount, getExchangeRateForCoin } from '../config/wallets.js';
+import { FEE_CREDIT_BUNDLES } from '../config/pricing.js';
 
 const BLOCKCYPHER_TOKEN = String(process.env.BLOCKCYPHER_TOKEN || '').trim();
 
-// Pass configurations
-const PASS_CONFIG = {
-  '0': { type: 'Single', count: 1, price: 1 },
-  '1': { type: 'Premium', count: 3, price: 5 },
-  '2': { type: 'Rhino', count: 8, price: 12 }
-};
+// Route and collection names remain "passes" for API compatibility. New
+// purchases are fixed-dollar Handshake Credit bundles, never unlimited waivers.
+const PASS_CONFIG = FEE_CREDIT_BUNDLES;
 
 const UTXO_CRYPTOS = new Set(['litecoin', 'bitcoin']);
 const SUPPORTED_CRYPTOS = new Set([
@@ -127,6 +125,7 @@ export const createPassOrder = async (req, res) => {
             orderId: orderWithPayment.orderId,
             passType: orderWithPayment.passType,
             passCount: orderWithPayment.passCount,
+            creditAmount: orderWithPayment.creditAmount,
             priceUSD: orderWithPayment.priceUSD,
             cryptocurrency: orderWithPayment.cryptocurrency,
             cryptoAmount: orderWithPayment.cryptoAmount,
@@ -224,7 +223,8 @@ export const createPassOrder = async (req, res) => {
       user: userId,
       passId,
       passType: passConfig.type,
-      passCount: passConfig.count,
+      passCount: 0,
+      creditAmount: passConfig.creditAmount,
       priceUSD,
       cryptocurrency,
       networkMode: paymentAddressData.networkMode || coinNetworkMode,
@@ -259,6 +259,7 @@ export const createPassOrder = async (req, res) => {
         orderId: order.orderId,
         passType: order.passType,
         passCount: order.passCount,
+        creditAmount: order.creditAmount,
         priceUSD: order.priceUSD,
         cryptocurrency: order.cryptocurrency,
         cryptoAmount: order.cryptoAmount,
@@ -397,21 +398,35 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
     
     await order.save();
 
-    // Added passes to user (use order.passCount to prevent exploits)
+    // Fulfil new orders as fixed-dollar fee credits. Orders created before the
+    // credit launch keep their original pass entitlement for compatibility.
     const user = await User.findById(order.user);
     if (user) {
-      const previousBalance = user.passes || 0;
-      user.passes = previousBalance + order.passCount;
+      const creditAmount = Number(order.creditAmount || 0);
+      const isCreditOrder = creditAmount > 0;
+      const previousBalance = isCreditOrder
+        ? Number(user.feeCredits || 0)
+        : Number(user.passes || 0);
+
+      if (isCreditOrder) {
+        user.feeCredits = previousBalance + creditAmount;
+      } else {
+        user.passes = previousBalance + Number(order.passCount || 0);
+      }
       await user.save();
+
+      const newBalance = isCreditOrder ? user.feeCredits : user.passes;
 
       order.transactionDetails = {
         ...(order.transactionDetails || {}),
         balanceBefore: previousBalance,
-        balanceAfter: user.passes
+        balanceAfter: newBalance
       };
       await order.save();
 
-      console.log(`✅ Added ${order.passCount} passes to ${user.username}. Balance: ${previousBalance} → ${user.passes}`);
+      console.log(isCreditOrder
+        ? `Added $${creditAmount.toFixed(2)} fee credit to ${user.username}. Balance: $${previousBalance.toFixed(2)} -> $${Number(newBalance).toFixed(2)}`
+        : `Added ${order.passCount} legacy passes to ${user.username}. Balance: ${previousBalance} -> ${newBalance}`);
       
       // This emits Socket.IO event for live frontend update.
       if (io) {
@@ -419,7 +434,9 @@ export const completePassOrder = async (orderId, transactionHash, io = null) => 
           orderId,
           status: 'completed',
           passCount: order.passCount,
-          newBalance: user.passes,
+          creditAmount: order.creditAmount,
+          newBalance,
+          balanceType: isCreditOrder ? 'fee-credit' : 'legacy-pass',
           transactionHash,
           completedAt: order.completedAt,
           transactionDetails: order.transactionDetails
@@ -572,15 +589,16 @@ export const adminRefundPassOrder = async (req, res) => {
 
     const resolvedRefundHash = refundTransactionHash || transferResult?.txHash || null;
 
-    // If the order was completed and the admin wants to claw back the passes
-    // they granted (e.g. payment was a chargeback or otherwise disputed),
-    // decrement the user's pass balance.
+    // Revoke the same balance type that the fulfilled order originally added.
     if (revokePasses && order.status === 'completed') {
       const user = await User.findById(order.user);
       if (user) {
-        const currentPasses = Number(user.passes || 0);
-        const passesToRevoke = Number(order.passCount || 0);
-        user.passes = Math.max(0, currentPasses - passesToRevoke);
+        const creditAmount = Number(order.creditAmount || 0);
+        if (creditAmount > 0) {
+          user.feeCredits = Math.max(0, Number(user.feeCredits || 0) - creditAmount);
+        } else {
+          user.passes = Math.max(0, Number(user.passes || 0) - Number(order.passCount || 0));
+        }
         await user.save();
       }
     }

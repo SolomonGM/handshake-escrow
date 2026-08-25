@@ -18,7 +18,7 @@ import usdcLogo from "../assets/optimized/usd-coin-usdc-logo.webp";
 
 const exchangeStats = [
   { value: "8+", label: "Networks" },
-  { value: "24/7", label: "Live escrow" },
+  { value: "On-chain", label: "Escrow tracking" },
   { value: "P2P", label: "Private liquidity" },
 ];
 

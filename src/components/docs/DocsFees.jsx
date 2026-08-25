@@ -3,36 +3,36 @@ import { passes } from "../../constants";
 
 const sections = [
   { label: "Fee overview", href: "#fee-overview" },
-  { label: "Passes", href: "#passes" },
+  { label: "Fee credits", href: "#passes" },
   { label: "When fees apply", href: "#fee-application" },
 ];
 
 const feeCards = [
   {
     title: "Platform fee",
-    text: "Covers escrow automation, ticket management, and live updates.",
+    text: "$50-$999.99: 1.5% with a $1.50 minimum. $1,000-$9,999.99: 1% with a $15 minimum.",
   },
   {
     title: "Network fee",
     text: "Standard blockchain fees required to confirm on-chain transactions.",
   },
   {
-    title: "Pass coverage",
-    text: "Passes can offset platform fees on eligible trades.",
+    title: "High-value fee",
+    text: "$10,000 and above: 0.65% with a $100 minimum. The minimum protected trade is $50.",
   },
 ];
 
 const feeMoments = [
   "Before a ticket is confirmed, you will see any fee prompts in the bot message.",
-  "Passes are applied when a ticket is created, before funds move into escrow.",
+  "Credits are applied after both parties agree the deal amount and before funds move into escrow.",
   "Network fees vary by chain and are outside platform control.",
 ];
 
 const DocsFees = () => {
   return (
     <DocsLayout
-      pageTitle="Fees and Passes"
-      pageIntro="Understand how fees work, what passes cover, and when costs appear during a trade."
+      pageTitle="Fees and Handshake Credits"
+      pageIntro="Understand value-based protection fees, what prepaid credits cover, and when costs appear during a trade."
       sections={sections}
     >
       <section id="fee-overview" className="scroll-mt-[8rem]">
@@ -52,12 +52,12 @@ const DocsFees = () => {
 
       <section id="passes" className="scroll-mt-[8rem]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="h4">Passes</h3>
+          <h3 className="h4">Handshake Credits</h3>
           <a
             href="/passes/purchase"
             className="rounded-full border border-n-6 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-n-1 transition-colors hover:border-[#10B981] hover:text-[#10B981]"
           >
-            View passes
+            View credits
           </a>
         </div>
         <div className="mt-6 grid gap-6 md:grid-cols-3">

@@ -48,6 +48,76 @@ const normalizeMessageAttachments = (attachments) => {
   }).filter(Boolean);
 };
 
+const dealAgreementSchema = new mongoose.Schema({
+  version: { type: Number, default: 1, min: 1 },
+  category: {
+    type: String,
+    enum: ['tangible_goods', 'digital_asset', 'online_service', 'other'],
+    default: 'other'
+  },
+  title: { type: String, default: '' },
+  description: { type: String, default: '' },
+  deliverables: { type: [String], default: [] },
+  deliveryMethod: { type: String, default: '' },
+  deliveryDeadline: { type: Date, default: null },
+  inspectionPeriodHours: { type: Number, default: 24, min: 1, max: 720 },
+  acceptanceCriteria: { type: [String], default: [] },
+  refundTerms: { type: String, default: '' },
+  proposedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  proposedAt: { type: Date, default: null },
+  digest: { type: String, default: null },
+  confirmations: { type: Map, of: Boolean, default: {} },
+  confirmedAt: { type: Date, default: null }
+}, { _id: false });
+
+const safetyFlagSchema = new mongoose.Schema({
+  code: { type: String, required: true },
+  severity: {
+    type: String,
+    enum: ['info', 'low', 'medium', 'high', 'critical'],
+    default: 'low'
+  },
+  title: { type: String, required: true },
+  explanation: { type: String, default: '' },
+  recommendation: { type: String, default: '' },
+  detectedAt: { type: Date, default: Date.now },
+  messageId: { type: mongoose.Schema.Types.ObjectId, default: null }
+}, { _id: false });
+
+const safetyAssessmentSchema = new mongoose.Schema({
+  analysisId: { type: String, default: null },
+  status: { type: String, enum: ['pending', 'complete', 'failed'], default: 'pending' },
+  engine: { type: String, default: null },
+  provider: { type: String, default: null },
+  model: { type: String, default: null },
+  providerError: { type: String, default: null },
+  riskLevel: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+  score: { type: Number, default: 0, min: 0, max: 100 },
+  summary: { type: String, default: '' },
+  flags: { type: [safetyFlagSchema], default: [] },
+  missingTerms: { type: [String], default: [] },
+  recommendedActions: { type: [String], default: [] },
+  dealDigest: { type: String, default: null },
+  messageCountAnalyzed: { type: Number, default: 0 },
+  analyzedAt: { type: Date, default: null },
+  acknowledgements: { type: Map, of: Boolean, default: {} }
+}, { _id: false });
+
+const evidenceBriefSchema = new mongoose.Schema({
+  briefId: { type: String, default: null },
+  engine: { type: String, default: null },
+  model: { type: String, default: null },
+  summary: { type: String, default: '' },
+  chronology: { type: [String], default: [] },
+  agreedTerms: { type: [String], default: [] },
+  evidencePresent: { type: [String], default: [] },
+  evidenceMissing: { type: [String], default: [] },
+  inconsistencies: { type: [String], default: [] },
+  onChainFacts: { type: [String], default: [] },
+  disclaimer: { type: String, default: '' },
+  generatedAt: { type: Date, default: null }
+}, { _id: false });
+
 const tradeTicketSchema = new mongoose.Schema({
   ticketId: {
     type: String,
@@ -117,7 +187,7 @@ const tradeTicketSchema = new mongoose.Schema({
   },
   feeDecision: {
     type: String,
-    enum: ['with-fees', 'with-pass', null],
+    enum: ['with-fees', 'with-credit', 'with-pass', null],
     default: null
   },
   feeInitiatedBy: {
@@ -178,6 +248,42 @@ const tradeTicketSchema = new mongoose.Schema({
   depositNetworkMode: {
     type: String,
     enum: ['mainnet', 'testnet', 'devnet', null],
+    default: null
+  },
+  platformFeeUsd: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  feeCreditAppliedUsd: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  feeCreditUsedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  netPlatformFeeUsd: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  legacyPassUsed: {
+    type: Boolean,
+    default: false
+  },
+  feeBenefitRestoredAt: {
+    type: Date,
+    default: null
+  },
+  releaseAuthorization: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  payoutAuthorization: {
+    type: mongoose.Schema.Types.Mixed,
     default: null
   },
   transactionNetworkMode: {
@@ -327,6 +433,28 @@ const tradeTicketSchema = new mongoose.Schema({
   },
   refundReason: {
     type: String,
+    default: null
+  },
+  safetyReviewRequired: {
+    // Explicitly enabled on new tickets. The false default preserves legacy
+    // in-flight tickets created before this workflow existed.
+    type: Boolean,
+    default: false
+  },
+  dealAgreement: {
+    type: dealAgreementSchema,
+    default: null
+  },
+  safetyAssessment: {
+    type: safetyAssessmentSchema,
+    default: null
+  },
+  liveSafetySignals: {
+    type: [safetyFlagSchema],
+    default: []
+  },
+  aiEvidenceBrief: {
+    type: evidenceBriefSchema,
     default: null
   },
   cryptocurrency: {

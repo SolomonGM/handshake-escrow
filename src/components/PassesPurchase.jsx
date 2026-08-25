@@ -177,7 +177,7 @@ const PassesPurchase = () => {
   useEffect(() => {
     const checkActiveOrder = async () => {
       if (!user || !token) {
-        toast.error('Please login to purchase passes');
+        toast.error('Please log in to purchase Handshake Credits');
         navigate('/');
         return;
       }
@@ -335,9 +335,9 @@ const PassesPurchase = () => {
           setTimeRemaining(null);
           const receipt = {
             transactionHash: data.transactionHash,
-            passType: selectedPass?.title || purchaseData.passType || 'Pass',
-            passCount: data.passCount,
-            newBalance: data.newBalance ?? user?.passes ?? null,
+            passType: selectedPass?.title || purchaseData.passType || 'Fee Credits',
+            creditAmount: data.creditAmount ?? selectedPass?.creditAmount,
+            newBalance: data.newBalance ?? user?.feeCredits ?? null,
             amount: purchaseData.cryptoAmount,
             cryptocurrency: getCryptoInfo()?.symbol || purchaseData.cryptocurrency?.toUpperCase(),
             timestamp: new Date(data.completedAt).toLocaleString(),
@@ -516,7 +516,7 @@ const PassesPurchase = () => {
 
   const handleProceedToPayment = async () => {
     if (!selectedPass) {
-      toast.error('Please select a pass');
+      toast.error('Please select a credit bundle');
       return;
     }
 
@@ -543,8 +543,7 @@ const PassesPurchase = () => {
         `${API_URL}/passes/create-order`,
         {
           passId: selectedPass.id,
-          cryptocurrency: selectedCrypto,
-          passCount: parseInt(selectedPass.passCount.split(' ')[0])
+          cryptocurrency: selectedCrypto
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -651,9 +650,9 @@ const PassesPurchase = () => {
 
     return {
       transactionHash: order.transactionHash,
-      passType: order.passType || purchaseData?.passType || selectedPass?.title || 'Pass',
-      passCount: order.passCount,
-      newBalance: order.transactionDetails?.balanceAfter ?? user?.passes ?? null,
+      passType: order.passType || purchaseData?.passType || selectedPass?.title || 'Fee Credits',
+      creditAmount: order.creditAmount ?? selectedPass?.creditAmount,
+      newBalance: order.transactionDetails?.balanceAfter ?? user?.feeCredits ?? null,
       amount: order.cryptoAmount,
       cryptocurrency: cryptoSymbol || order.cryptocurrency?.toUpperCase(),
       timestamp: new Date(order.completedAt || Date.now()).toLocaleString(),
@@ -726,8 +725,8 @@ const PassesPurchase = () => {
       <div className="container relative z-2">
         <Heading
           className="md:max-w-md lg:max-w-2xl"
-          title="Purchase Passes"
-          text="Skip the fees and trade more freely. Passes never expire!"
+          title="Purchase Handshake Credits"
+          text="Prepay platform fees at a discount. Credits apply dollar-for-dollar and never expire."
         />
 
         {/* Step Indicator */}
@@ -882,7 +881,7 @@ const PassesPurchase = () => {
                     <span className="text-n-1 font-semibold">{selectedPass.title}</span>
                   </div>
                   <div className="flex justify-between text-n-3">
-                    <span>Quantity:</span>
+                    <span>Credit value:</span>
                     <span className="text-n-1 font-semibold">{selectedPass.passCount}</span>
                   </div>
                   <div className="flex justify-between text-n-3">
@@ -1033,8 +1032,8 @@ const PassesPurchase = () => {
                 <ol className="space-y-2 text-sm text-n-3">
                   <li>1. Send exactly <span className="text-[#10B981] font-semibold">{purchaseData.cryptoAmount} {getCryptoInfo().symbol}</span> to the address above</li>
                   <li>2. We&apos;re monitoring the blockchain and will detect your payment automatically</li>
-                  <li>3. After {transactionStatus.required} confirmations, your passes will be added to your account</li>
-                  <li>4. You&apos;ll receive a receipt and can start using your passes immediately</li>
+                  <li>3. After {transactionStatus.required} confirmations, the credits will be added to your account</li>
+                  <li>4. You&apos;ll receive a receipt and can apply the credits immediately</li>
                 </ol>
               </div>
 
@@ -1200,7 +1199,7 @@ const PassesPurchase = () => {
                   </svg>
                 </div>
                 <h3 className="text-3xl font-bold text-n-1 mb-2">Payment Successful!</h3>
-                <p className="text-n-3">Your passes have been added to your account</p>
+                <p className="text-n-3">Your Handshake Credits have been added to your account</p>
               </div>
 
               {/* Receipt */}
@@ -1266,14 +1265,15 @@ const PassesPurchase = () => {
                       <span className="text-n-1 font-semibold">{receiptData.amount} {receiptData.cryptocurrency}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-n-4">Passes Added:</span>
-                      <span className="text-[#10B981] font-bold text-lg">+{receiptData.passCount}</span>
+                      <span className="text-n-4">Credits Added:</span>
+                      <span className="text-[#10B981] font-bold text-lg">+${Number(receiptData.creditAmount || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-n-4">New Balance:</span>
                       <span className="text-n-1 font-bold">
-                        {receiptData.newBalance ?? '--'}
-                        {receiptData.newBalance != null ? ' passes' : ''}
+                        {receiptData.newBalance != null
+                          ? `$${Number(receiptData.newBalance).toFixed(2)}`
+                          : '--'}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1306,7 +1306,7 @@ const PassesPurchase = () => {
                   }}
                   className="w-full px-6 py-3 bg-n-7 hover:bg-n-6 text-n-1 rounded-lg transition-colors"
                 >
-                  Buy More Passes
+                  Buy More Credits
                 </button>
               </div>
             </div>

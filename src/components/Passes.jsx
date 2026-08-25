@@ -16,7 +16,7 @@ const Passes = () => {
             className="relative z-1 drop-shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
             width={510}
             height={510}
-            alt="Passes"
+            alt="Handshake fee credits"
             loading="lazy"
             decoding="async"
           />
@@ -35,8 +35,8 @@ const Passes = () => {
 
         <Heading
           className="relative z-2"
-          tag="Skip the fees, trade more freely"
-          title="Fee passes for active traders"
+          tag="Prepay fees and receive more value"
+          title="Handshake Credits for safer repeat trading"
         />
 
         <div className="relative">
